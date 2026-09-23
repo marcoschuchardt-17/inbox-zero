@@ -161,11 +161,11 @@ If you want to run Inbox Zero in Dockploy, use Dockploy for the containers and s
    - Recommended jobs from `docker-compose.yml`:
      - `GET /api/cron/scheduled-actions` every 15 minutes
      - `GET /api/cron/automation-jobs` every 15 minutes
-     - `GET /api/follow-up-reminders` every 60 minutes
-     - `GET /api/resend/digest/all` every 30 minutes
-     - `GET /api/meeting-briefs` every 15 minutes
-     - `GET /api/meeting-recorder/schedule` every 5 minutes
-     - `GET /api/watch/all` every 6 hours
+     - `GET /api/follow-up-reminders` every 60 minutes (**intentional non-`/api/cron/` route**)
+     - `GET /api/resend/digest/all` every 30 minutes (**intentional non-`/api/cron/` route**)
+     - `GET /api/meeting-briefs` every 15 minutes (**intentional non-`/api/cron/` route**)
+     - `GET /api/meeting-recorder/schedule` every 5 minutes (**intentional non-`/api/cron/` route**)
+     - `GET /api/watch/all` every 6 hours (**intentional non-`/api/cron/` route**)
    - If you use IMAP, also add:
      - `GET /api/cron/imap-poll`
 
