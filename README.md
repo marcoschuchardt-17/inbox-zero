@@ -156,6 +156,7 @@ If you want to run Inbox Zero in Dockploy, use Dockploy for the containers and s
 
 7. **Create Dockploy scheduler jobs instead of running the `cron` container**
    - Recreate the compose cron calls as Dockploy HTTP schedules.
+   - Use the **exact paths below**. Some jobs live under `/api/cron/`, and others do not.
    - Use the same `Authorization` header as the other cron endpoints.
    - Recommended jobs from `docker-compose.yml`:
      - `GET /api/cron/scheduled-actions` every 15 minutes
