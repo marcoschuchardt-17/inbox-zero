@@ -68,14 +68,13 @@ export async function ensureImapMailboxRules(emailAccountId: string) {
         name: definition.name,
         emailAccountId,
         enabled: true,
-        subject: definition.subject,
-        from: definition.from,
+        ...(definition.subject ? { subject: definition.subject } : {}),
+        ...(definition.from ? { from: definition.from } : {}),
         actions: {
           create: {
             type: ActionType.LABEL,
             label: definition.label,
             labelId: keyword,
-            emailAccountId,
           },
         },
       },
