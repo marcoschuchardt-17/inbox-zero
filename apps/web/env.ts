@@ -301,6 +301,19 @@ const parsedEnv = createEnv({
       .string()
       .optional()
       .default("Inbox Zero <updates@transactional.getinboxzero.com>"),
+    IMAP_POLL_ENABLED: booleanString.optional().default(true),
+    IMAP_POLL_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(100),
+    IMAP_POLL_MESSAGE_LIMIT: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(30),
     CRON_SECRET: z.string().optional(),
     BLOG_SYNC_WEBHOOK_SECRET: z.string().min(1).optional(),
     BLOG_SYNC_SANITY_AUTHOR_ID: z.string().min(1).optional(),

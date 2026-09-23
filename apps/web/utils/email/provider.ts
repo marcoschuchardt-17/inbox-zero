@@ -3,6 +3,7 @@ import {
   getOutlookClientForEmail,
 } from "@/utils/email-account-client";
 import { GmailProvider } from "@/utils/email/google";
+import { createImapProvider } from "@/utils/email/imap";
 import { OutlookProvider } from "@/utils/email/microsoft";
 import type { EmailProvider } from "@/utils/email/types";
 import { assertProviderNotRateLimited } from "@/utils/email/rate-limit";
@@ -10,6 +11,7 @@ import { toRateLimitProvider } from "@/utils/email/rate-limit-mode-error";
 import { recordEmailAccountProviderIssue } from "@/utils/email/provider-health";
 import type { Logger } from "@/utils/logger";
 import { flushLoggerSafely } from "@/utils/logger-flush";
+import prisma from "@/utils/prisma";
 
 export async function createEmailProvider({
   emailAccountId,
@@ -20,6 +22,52 @@ export async function createEmailProvider({
   provider: string;
   logger: Logger;
 }): Promise<EmailProvider> {
+  if (provider === "imap") {
+    const config = await prisma.imapSmtpConfig.findUnique({
+      where: { emailAccountId },
+      select: {
+        emailAccountId: true,
+        syncFolder: true,
+        imapHost: true,
+        imapPort: true,
+        imapSecure: true,
+        imapUsername: true,
+        imapPassword: true,
+        smtpHost: true,
+        smtpPort: true,
+        smtpSecure: true,
+        smtpUsername: true,
+        smtpPassword: true,
+        emailAccount: {
+          select: {
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!config) throw new Error("IMAP settings not configured for account");
+
+    return createImapProvider(
+      {
+        emailAccountId,
+        ownerEmail: config.emailAccount.email,
+        syncFolder: config.syncFolder,
+        imapHost: config.imapHost,
+        imapPort: config.imapPort,
+        imapSecure: config.imapSecure,
+        imapUsername: config.imapUsername,
+        imapPassword: config.imapPassword,
+        smtpHost: config.smtpHost,
+        smtpPort: config.smtpPort,
+        smtpSecure: config.smtpSecure,
+        smtpUsername: config.smtpUsername,
+        smtpPassword: config.smtpPassword,
+      },
+      logger,
+    );
+  }
+
   const rateLimitProvider = toRateLimitProvider(provider);
   if (!rateLimitProvider) throw new Error(`Unsupported provider: ${provider}`);
 
