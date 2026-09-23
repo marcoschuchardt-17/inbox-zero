@@ -1,0 +1,169 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - inbox
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - inbox
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  serverless-redis-http:
+    image: hiett/serverless-redis-http:latest
+    restart: unless-stopped
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${UPSTASH_REDIS_TOKEN}
+      SRH_CONNECTION_STRING: redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - inbox
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    image: inbox-zero-web:fork
+    restart: unless-stopped
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
+      NEXT_PUBLIC_BYPASS_PREMIUM_CHECKS: ${NEXT_PUBLIC_BYPASS_PREMIUM_CHECKS}
+      NEXT_PUBLIC_EMAIL_SEND_ENABLED: ${NEXT_PUBLIC_EMAIL_SEND_ENABLED}
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+      UPSTASH_REDIS_URL: ${UPSTASH_REDIS_URL}
+      UPSTASH_REDIS_TOKEN: ${UPSTASH_REDIS_TOKEN}
+      INTERNAL_API_URL: ${INTERNAL_API_URL}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      AUTH_SECRET: ${AUTH_SECRET}
+      EMAIL_ENCRYPT_SECRET: ${EMAIL_ENCRYPT_SECRET}
+      EMAIL_ENCRYPT_SALT: ${EMAIL_ENCRYPT_SALT}
+      CRON_SECRET: ${CRON_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_PUBSUB_TOPIC_NAME: ${GOOGLE_PUBSUB_TOPIC_NAME}
+      DEFAULT_LLMS: ${DEFAULT_LLMS}
+      AUTH_ALLOWED_EMAILS: ${AUTH_ALLOWED_EMAILS}
+      ADMINS: ${ADMINS}
+      SENSITIVE_DATA_POLICY_DEFAULT: ${SENSITIVE_DATA_POLICY_DEFAULT}
+      IMAP_POLL_ENABLED: "true"
+    networks:
+      - inbox
+      - dokploy-network
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  cron:
+    image: alpine:latest
+    restart: unless-stopped
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+    depends_on:
+      - web
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl && {
+        until curl -sS --max-time 5 -o /dev/null http://web:3000/; do
+          echo "[cron] waiting for web"
+          sleep 5
+        done
+        echo "[cron] web is up"
+        (
+          while true; do
+            echo "[cron] Processing scheduled actions..."
+            curl -sS --max-time 20 -o /dev/null -w "[cron] scheduled-actions http:%{http_code}\n" -X GET "http://web:3000/api/cron/scheduled-actions" -H "Authorization: Bearer $${CRON_SECRET}" || echo "[cron] Warning: scheduled-actions request failed"
+            sleep 900
+          done
+        ) &
+        (
+          while true; do
+            echo "[cron] Processing automation jobs..."
+            curl -sS --max-time 20 -o /dev/null -w "[cron] automation-jobs http:%{http_code}\n" -X GET "http://web:3000/api/cron/automation-jobs" -H "Authorization: Bearer $${CRON_SECRET}" || echo "[cron] Warning: automation-jobs request failed"
+            sleep 900
+          done
+        ) &
+        (
+          while true; do
+            echo "[cron] Polling IMAP..."
+            curl -sS --max-time 20 -o /dev/null -w "[cron] imap-poll http:%{http_code}\n" -X GET "http://web:3000/api/cron/imap-poll" -H "Authorization: Bearer $${CRON_SECRET}" || echo "[cron] Warning: imap-poll request failed"
+            sleep 300
+          done
+        ) &
+        (
+          while true; do
+            echo "[cron] Processing follow-up reminders..."
+            curl -sS --max-time 20 -o /dev/null -w "[cron] follow-up-reminders http:%{http_code}\n" -X GET "http://web:3000/api/follow-up-reminders" -H "Authorization: Bearer $${CRON_SECRET}" || echo "[cron] Warning: follow-up-reminders request failed"
+            sleep 3600
+          done
+        ) &
+        (
+          while true; do
+            echo "[cron] Renewing email watches..."
+            curl -sS --max-time 20 -o /dev/null -w "[cron] watch http:%{http_code}\n" -X GET "http://web:3000/api/watch/all" -H "Authorization: Bearer $${CRON_SECRET}" || echo "[cron] Warning: watch request failed"
+            sleep 21600
+          done
+        ) &
+        wait
+        }
+    networks:
+      - inbox
+      - dokploy-network
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  inbox:
+  dokploy-network:
+    external: true
