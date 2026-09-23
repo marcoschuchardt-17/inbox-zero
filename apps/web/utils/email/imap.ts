@@ -3,8 +3,10 @@ import { ImapFlow } from "imapflow";
 import PostalMime from "postal-mime";
 import nodemailer from "nodemailer";
 import { SafeError } from "@/utils/error";
+import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
 import type { EmailProvider, EmailThread } from "@/utils/email/types";
 import type { Logger } from "@/utils/logger";
+import prisma from "@/utils/prisma";
 import type { ParsedMessage } from "@/utils/types";
 import type { SendEmailBody } from "@/utils/types/mail";
 
@@ -338,6 +340,61 @@ export function createImapProvider(
       }
     },
     getFolderCounts: async () => [],
+    getLabels: async () => {
+      const rows = await prisma.label.findMany({
+        where: { emailAccountId: config.emailAccountId, enabled: true },
+        select: { gmailLabelId: true, name: true },
+      });
+      return rows.map((row) => ({
+        id: row.gmailLabelId,
+        name: row.name,
+        type: "user",
+      }));
+    },
+    getLabelByName: async (name: string) => {
+      const row = await prisma.label.findFirst({
+        where: { emailAccountId: config.emailAccountId, name },
+        select: { gmailLabelId: true, name: true },
+      });
+      if (!row) return null;
+      return { id: row.gmailLabelId, name: row.name, type: "user" };
+    },
+    getLabelById: async (labelId: string) => {
+      const row = await prisma.label.findFirst({
+        where: {
+          emailAccountId: config.emailAccountId,
+          gmailLabelId: labelId,
+        },
+        select: { gmailLabelId: true, name: true },
+      });
+      if (!row) return null;
+      return { id: row.gmailLabelId, name: row.name, type: "user" };
+    },
+    createLabel: async (name: string) => {
+      const keyword = imapKeyword(name);
+      const row = await prisma.label.upsert({
+        where: {
+          name_emailAccountId: {
+            name,
+            emailAccountId: config.emailAccountId,
+          },
+        },
+        create: {
+          name,
+          gmailLabelId: keyword,
+          emailAccountId: config.emailAccountId,
+          enabled: true,
+        },
+        update: { enabled: true },
+        select: { gmailLabelId: true, name: true },
+      });
+      return { id: row.gmailLabelId, name: row.name, type: "user" };
+    },
+    labelMessage: async ({ messageId, labelId, labelName }) => {
+      const keyword = imapKeyword(labelId || labelName || "");
+      await addKeywordFlag({ config, logger, messageId, keyword });
+      return { actualLabelId: keyword };
+    },
     watchEmails: async () => null,
     unwatchEmails: async () => undefined,
     syncLocalMail: async () => ({
@@ -350,6 +407,15 @@ export function createImapProvider(
 
   return new Proxy(core as EmailProvider, {
     get(target, property, receiver) {
+      // `then` must stay absent. An async caller adopts a thenable return
+      // value, and this proxy would otherwise reject with "then".
+      if (
+        property === "then" ||
+        property === "catch" ||
+        property === "finally"
+      ) {
+        return undefined;
+      }
       const value = Reflect.get(target, property, receiver);
       if (value !== undefined) return value;
       if (typeof property !== "string") return value;
@@ -405,7 +471,10 @@ async function fetchMailboxMessages({
       mailbox || config.syncFolder || "INBOX",
     );
     try {
-      const messageCount = lock.mailbox.exists;
+      // ImapFlow stores the selected mailbox on the client. The lock has no mailbox field.
+      const openedMailbox = client.mailbox;
+      if (!openedMailbox) return [];
+      const messageCount = openedMailbox.exists;
       if (!messageCount) return [];
       const start = Math.max(1, messageCount - maxResults + 1);
       const messages: ParsedImapMessage[] = [];
@@ -566,7 +635,7 @@ async function parseImapMessage(
       },
     })),
     inline: [],
-    labelIds: [...flags],
+    labelIds: imapFlagsToLabelIds(flags),
     headers: {
       from,
       to,
@@ -622,6 +691,40 @@ function toThread(messages: ParsedMessage[]): EmailThread {
       },
     })),
   };
+}
+
+async function addKeywordFlag({
+  config,
+  logger,
+  messageId,
+  keyword,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  messageId: string;
+  keyword: string;
+}) {
+  const uid = Number(messageId);
+  if (!Number.isFinite(uid)) return;
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    try {
+      await client.messageFlagsAdd(uid, [keyword], { uid: true });
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    logger.error("Failed labeling IMAP message", {
+      error,
+      keyword,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to label IMAP message");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
 }
 
 async function setSeenFlag({

@@ -5,6 +5,10 @@ import { hasCronSecret, hasPostCronSecret } from "@/utils/cron";
 import { withError } from "@/utils/middleware";
 import { captureException } from "@/utils/error";
 import { createEmailProvider } from "@/utils/email/provider";
+import {
+  ensureImapMailboxRules,
+  labelImapMessagesWithStaticRules,
+} from "@/utils/email/imap-mailbox-rules";
 import type { Logger } from "@/utils/logger";
 
 export const maxDuration = 300;
@@ -56,6 +60,7 @@ async function runImapPoll(logger: Logger) {
 
   let processed = 0;
   let failed = 0;
+  let labeled = 0;
 
   for (const account of candidates) {
     try {
@@ -83,6 +88,24 @@ async function runImapPoll(logger: Logger) {
         },
       });
       processed += 1;
+
+      try {
+        await ensureImapMailboxRules(account.emailAccountId);
+        const recent = await provider.getMailboxSyncPage({
+          limit: env.IMAP_POLL_MESSAGE_LIMIT,
+        });
+        labeled += await labelImapMessagesWithStaticRules({
+          emailAccountId: account.emailAccountId,
+          messages: recent.upsertedMessages,
+          provider,
+          logger,
+        });
+      } catch (error) {
+        logger.error("IMAP mailbox rules failed", {
+          error,
+          emailAccountId: account.emailAccountId,
+        });
+      }
     } catch (error) {
       failed += 1;
       logger.error("IMAP poll failed for account", {
@@ -106,5 +129,6 @@ async function runImapPoll(logger: Logger) {
     total: candidates.length,
     processed,
     failed,
+    labeled,
   };
 }
