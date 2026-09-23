@@ -81,7 +81,12 @@ After the core Paperless flow is stable, add:
 2. **Digest action** for low-priority updates to reduce inbox noise.
 3. **Slack/Teams/Telegram notifications** only for high-priority rule matches.
 4. **Follow-up reminders** for waiting-on-reply threads.
-5. **Auto-File Attachments** to Google Drive/OneDrive for operational project storage that should stay outside Paperless.
+5. **Nextcloud project filing** via webhook bridge when operational project files should stay outside Paperless.
+
+### Nextcloud note
+
+Inbox Zero's built-in Auto-File Attachments feature targets Google Drive and Microsoft OneDrive/SharePoint.  
+If you use Nextcloud, route matching emails through `Call webhook` to n8n/Make and upload attachments into your Nextcloud folder structure from there.
 
 ## Governance and Rollout
 
