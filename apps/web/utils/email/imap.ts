@@ -414,7 +414,10 @@ async function fetchMailboxMessages({
       mailbox || config.syncFolder || "INBOX",
     );
     try {
-      const messageCount = lock.mailbox.exists;
+      // ImapFlow stores the selected mailbox on the client. The lock has no mailbox field.
+      const openedMailbox = client.mailbox;
+      if (!openedMailbox) return [];
+      const messageCount = openedMailbox.exists;
       if (!messageCount) return [];
       const start = Math.max(1, messageCount - maxResults + 1);
       const messages: ParsedImapMessage[] = [];
