@@ -59,9 +59,30 @@ export async function ensureImapMailboxRules(emailAccountId: string) {
       where: {
         name_emailAccountId: { name: definition.name, emailAccountId },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        actions: {
+          where: { type: ActionType.LABEL, label: definition.label },
+          select: { id: true },
+        },
+      },
     });
-    if (existing) continue;
+    if (existing) {
+      // A rule created in the UI can already exist without the label action.
+      // Add only that action. Leave webhook actions and custom filters as they are.
+      if (existing.actions.length === 0) {
+        await prisma.action.create({
+          data: {
+            ruleId: existing.id,
+            emailAccountId,
+            type: ActionType.LABEL,
+            label: definition.label,
+            labelId: keyword,
+          },
+        });
+      }
+      continue;
+    }
 
     await prisma.rule.create({
       data: {
