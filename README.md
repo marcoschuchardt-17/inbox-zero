@@ -97,15 +97,81 @@ Open http://localhost:3000
 
 For complete self-hosting instructions, production deployment, OAuth setup, and configuration options, see our **[Self-Hosting Docs](https://docs.getinboxzero.com/hosting/quick-start)**.
 
-#### Dockploy notes
+#### Does Inbox Zero replace my mailbox?
 
-When running with Dockploy/docker-compose, make sure your app env includes:
+Inbox Zero usually **complements** your existing email setup, not replaces it.
 
-- `IMAP_POLL_ENABLED` (default `true`)
-- `IMAP_POLL_BATCH_SIZE` (default `100`)
-- `IMAP_POLL_MESSAGE_LIMIT` (default `30`)
+- You keep your existing mailbox provider and address (for example Gmail, Outlook, or an IMAP inbox).
+- Inbox Zero sits on top as the AI inbox, automation, and triage layer.
+- For many users it can replace the **day-to-day email client UI**, but it does **not** replace the underlying mailbox/account that stores and delivers your email.
 
-Then schedule `GET /api/cron/imap-poll` with your Dockploy scheduler (using the same `Authorization: ****** header used by other cron endpoints).
+#### Deploying with Dockploy
+
+If you want to run Inbox Zero in Dockploy, use Dockploy for the containers and scheduler, and keep your cron jobs out of Docker Compose.
+
+1. **Prepare your server**
+   - Install Docker on the host.
+   - Install Dockploy and connect it to your server.
+   - Point a domain or subdomain at the server for the web app.
+
+2. **Create the data services**
+   - Add a PostgreSQL service.
+   - Add a Redis service.
+   - If you want the same Redis-over-HTTP setup as `docker-compose.yml`, also add `hiett/serverless-redis-http:latest`.
+
+3. **Create the Inbox Zero web service**
+   - Image: `ghcr.io/elie222/inbox-zero:latest`
+   - Port: `3000`
+   - Public URL: set this to the domain you assigned in Dockploy.
+
+4. **Set the required app environment variables**
+   - Minimum required values:
+     - `NEXT_PUBLIC_BASE_URL`
+     - `DATABASE_URL`
+     - `DIRECT_URL`
+     - `UPSTASH_REDIS_URL`
+     - `UPSTASH_REDIS_TOKEN`
+     - `AUTH_SECRET`
+     - `EMAIL_ENCRYPT_SECRET`
+     - `EMAIL_ENCRYPT_SALT`
+     - `INTERNAL_API_KEY`
+     - `API_KEY_SALT`
+     - `CRON_SECRET`
+   - Then add your provider credentials (for example Google, Microsoft, Slack, Telegram, or LLM keys) as needed.
+   - If you are using IMAP accounts, also add:
+     - `IMAP_POLL_ENABLED=true`
+     - `IMAP_POLL_BATCH_SIZE=100`
+     - `IMAP_POLL_MESSAGE_LIMIT=30`
+   - You can copy the full list from `apps/web/.env.example`.
+
+5. **Optional: add the worker service**
+   - Use the same image: `ghcr.io/elie222/inbox-zero:latest`
+   - Command: `/app/docker/scripts/start-worker.sh`
+   - Only needed when you want a dedicated BullMQ worker (`QUEUE_BACKEND=bullmq`).
+
+6. **Start the stack**
+   - Deploy the services in Dockploy.
+   - Open your Inbox Zero domain and complete the onboarding flow.
+   - Connect your mailbox provider.
+
+7. **Create Dockploy scheduler jobs instead of running the `cron` container**
+   - Recreate the compose cron calls as Dockploy HTTP schedules.
+   - Use the same `Authorization` header as the other cron endpoints.
+   - Recommended jobs from `docker-compose.yml`:
+     - `GET /api/cron/scheduled-actions` every 15 minutes
+     - `GET /api/cron/automation-jobs` every 15 minutes
+     - `GET /api/follow-up-reminders` every 60 minutes
+     - `GET /api/resend/digest/all` every 30 minutes
+     - `GET /api/meeting-briefs` every 15 minutes
+     - `GET /api/meeting-recorder/schedule` every 5 minutes
+     - `GET /api/watch/all` every 6 hours
+   - If you use IMAP, also add:
+     - `GET /api/cron/imap-poll`
+
+8. **Verify the installation**
+   - Confirm the web app loads.
+   - Confirm you can sign in and connect a mailbox.
+   - Trigger one scheduler job manually and confirm it returns a successful response.
 
 ### Local Development
 
