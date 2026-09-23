@@ -1,0 +1,101 @@
+---
+title: 'Paperless Workflow'
+description: 'Set up Inbox Zero rules to classify, archive, and route documents into Paperless via webhooks.'
+icon: 'files'
+---
+
+This guide implements a high-impact, low-effort automation flow for document-heavy inboxes:
+
+1. Classify incoming email with Assistant rules.
+2. Apply mailbox actions (`Label` and `Archive`).
+3. Call a webhook that forwards metadata to an automation bridge (n8n or Make).
+4. Ingest documents into Paperless with consistent tags and document types.
+
+## Architecture
+
+Use Inbox Zero as the decision layer and Paperless as the archive layer:
+
+`Inbox Zero Rule -> Call Webhook -> n8n/Make -> Paperless`
+
+- Inbox Zero should decide **what** a message is (invoice, contract, tax, PayPal).
+- n8n/Make should handle retries, routing, transformations, and Paperless API calls.
+- Paperless should store the final classified document state.
+
+## Prerequisites
+
+- At least one active Assistant rule in Inbox Zero.
+- A reachable webhook endpoint (n8n webhook, Make webhook, or your own API).
+- A configured Paperless ingestion flow in your automation bridge.
+- A generated Inbox Zero Webhook Secret in **Settings -> Developer**.
+
+For webhook request details, see [Call Webhook](/essentials/call-webhook).
+
+## Rule Groups (Core Setup)
+
+Create four rule groups first:
+
+- `Rechnungen/Belege` (invoices and receipts)
+- `Verträge` (contracts)
+- `Steuer` (tax-related mail)
+- `Bank/PayPal` (banking and PayPal confirmations)
+
+For each rule, start with:
+
+- `Label`
+- `Call webhook`
+
+After validation, add:
+
+- `Archive`
+
+## PayPal Quick Win
+
+Start with a dedicated PayPal rule:
+
+- **Condition:** sender domain contains `paypal.com` (and any local sender variants you use).
+- **Actions (week 1):** Label + Call webhook.
+- **Actions (after validation):** add Archive.
+
+Recommended Paperless tags from your bridge:
+
+- `paypal`
+- `zahlung`
+- `beleg`
+
+This usually gives the fastest value because payment confirmations are frequent and easy to classify.
+
+## Suggested Rule Matrix
+
+| Rule name | Match focus | Inbox Zero actions (week 1) | Inbox Zero actions (after validation) | Paperless metadata |
+| --- | --- | --- | --- | --- |
+| PayPal Belege | `paypal.com`, payment confirmation semantics | Label, Call webhook | Label, Call webhook, Archive | tags: `paypal`, `zahlung`, `beleg`; type: `receipt`; correspondent: `PayPal` |
+| Rechnungen Allgemein | invoice/receipt/order confirmation semantics | Label, Call webhook | Label, Call webhook, Archive | tags: `rechnung`, `beleg`; type: `invoice` |
+| Verträge | contract, renewal, terms update semantics | Label, Call webhook | Label, Call webhook, Archive | tags: `vertrag`; type: `contract` |
+| Steuer | tax office, VAT, tax advisor, filing semantics | Label, Call webhook | Label, Call webhook, Archive | tags: `steuer`; type: `tax` |
+
+## Project-Oriented Add-ons
+
+After the core Paperless flow is stable, add:
+
+1. **Todoist action** for emails that require explicit follow-up tasks.
+2. **Digest action** for low-priority updates to reduce inbox noise.
+3. **Slack/Teams/Telegram notifications** only for high-priority rule matches.
+4. **Follow-up reminders** for waiting-on-reply threads.
+5. **Auto-File Attachments** to Google Drive/OneDrive for operational project storage that should stay outside Paperless.
+
+## Governance and Rollout
+
+Use phased rollout to avoid bad bulk automation:
+
+- **Week 1:** PayPal + invoices, no archive at first.
+- **Week 2:** contracts + tax.
+- **Week 3:** Todoist + high-priority channel notifications.
+- **Week 4:** tune rules, reduce false positives, then scale archive coverage.
+
+For each rule, review weekly:
+
+- match accuracy
+- false positives
+- missing expected documents
+
+If confidence is high, enable archive on the same rule.

@@ -29,7 +29,8 @@
               "essentials/assistant-settings",
               "essentials/email-digest",
               "essentials/delayed-actions",
-              "essentials/call-webhook"
+              "essentials/call-webhook",
+              "essentials/paperless-workflow"
             ]
           },
           {
