@@ -350,6 +350,15 @@ export function createImapProvider(
 
   return new Proxy(core as EmailProvider, {
     get(target, property, receiver) {
+      // `then` must stay absent. An async caller adopts a thenable return
+      // value, and this proxy would otherwise reject with "then".
+      if (
+        property === "then" ||
+        property === "catch" ||
+        property === "finally"
+      ) {
+        return undefined;
+      }
       const value = Reflect.get(target, property, receiver);
       if (value !== undefined) return value;
       if (typeof property !== "string") return value;
