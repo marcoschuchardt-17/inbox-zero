@@ -104,7 +104,8 @@ When running with Dockploy/docker-compose, make sure your app env includes:
 - `IMAP_POLL_ENABLED` (default `true`)
 - `IMAP_POLL_BATCH_SIZE` (default `100`)
 - `IMAP_POLL_MESSAGE_LIMIT` (default `30`)
-- `IMAP_POLL_INTERVAL_SECONDS` (default `300`, used by the `cron` compose service)
+
+Then schedule `GET /api/cron/imap-poll` with your Dockploy scheduler (using the same `Authorization: ****** header used by other cron endpoints).
 
 ### Local Development
 
