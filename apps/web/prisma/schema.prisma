@@ -258,12 +258,39 @@ model EmailAccount {
   apiKeys                ApiKey[]
   classificationFeedback ClassificationFeedback[]
   mailSplits             MailSplit[]
+  imapSmtpConfig         ImapSmtpConfig?
 
   @@index([userId])
   @@index([lastSummaryEmailAt])
   @@index([lastInboxHealthEmailAt])
   @@index([watchEmailsSubscriptionId])
   @@index([watchEmailsSubscriptionHistory(ops: JsonbPathOps)], type: Gin)
+}
+
+model ImapSmtpConfig {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  emailAccountId String       @unique
+  emailAccount   EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+
+  imapHost     String
+  imapPort     Int
+  imapSecure   Boolean  @default(true)
+  imapUsername String
+  imapPassword String
+
+  smtpHost     String
+  smtpPort     Int
+  smtpSecure   Boolean  @default(true)
+  smtpUsername String
+  smtpPassword String
+
+  syncFolder     String   @default("INBOX")
+  lastSyncUid    BigInt?
+  lastSyncedAt   DateTime?
+  lastConnectionError String?
 }
 
 // A saved filter shown as a tab above the mail list. `values` holds one or more label

@@ -97,6 +97,16 @@ Open http://localhost:3000
 
 For complete self-hosting instructions, production deployment, OAuth setup, and configuration options, see our **[Self-Hosting Docs](https://docs.getinboxzero.com/hosting/quick-start)**.
 
+#### Dockploy notes
+
+When running with Dockploy/docker-compose, make sure your app env includes:
+
+- `IMAP_POLL_ENABLED` (default `true`)
+- `IMAP_POLL_BATCH_SIZE` (default `100`)
+- `IMAP_POLL_MESSAGE_LIMIT` (default `30`)
+
+Then schedule `GET /api/cron/imap-poll` with your Dockploy scheduler (using the same `Authorization: ****** header used by other cron endpoints).
+
 ### Local Development
 
 > **Prerequisites**: [Docker](https://docs.docker.com/engine/install/), [Node.js](https://nodejs.org/) v24+, and [pnpm](https://pnpm.io/) v10+

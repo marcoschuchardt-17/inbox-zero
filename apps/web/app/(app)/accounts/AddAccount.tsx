@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { toastError } from "@/components/Toast";
 import Image from "next/image";
+import Link from "next/link";
 import { MutedText } from "@/components/Typography";
 import { getAccountLinkingUrl } from "@/utils/account-linking";
 import { isGoogleProvider } from "@/utils/email/provider-types";
@@ -74,6 +75,11 @@ export function AddAccount({
             unoptimized
           />
           <span className="ml-2">Add Microsoft</span>
+        </Button>
+        <Button variant="outline" className="w-full" asChild>
+          <Link href="/accounts/imap">
+            <span className="ml-2">Add IMAP/SMTP</span>
+          </Link>
         </Button>
       </div>
 
