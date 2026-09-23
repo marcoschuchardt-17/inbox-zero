@@ -54,7 +54,7 @@ services:
 
   web:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.prod
     image: inbox-zero-web:fork
     restart: unless-stopped
