@@ -293,6 +293,9 @@ export function createImapProvider(
         replyTo: body.replyTo,
         subject: body.subject,
         html: body.messageHtml,
+        inReplyTo: body.replyToEmail?.headerMessageId,
+        references:
+          body.replyToEmail?.references || body.replyToEmail?.headerMessageId,
         attachments: body.attachments?.map((attachment) => ({
           filename: attachment.filename,
           content: attachment.content,

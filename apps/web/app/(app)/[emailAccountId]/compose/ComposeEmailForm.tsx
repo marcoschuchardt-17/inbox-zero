@@ -78,6 +78,7 @@ import {
   updateDraftAction,
   saveComposeDraftAction,
   discardComposeDraftAction,
+  sendEmailAction,
 } from "@/utils/actions/mail";
 import { scheduleEmailAction } from "@/utils/actions/scheduled-email";
 import {
@@ -96,7 +97,10 @@ import {
 } from "@/utils/mail-engine/reply-drafts";
 import { createPreservedEmailBlocks } from "@/utils/email/preserved-blocks";
 import { resolveSendDraftId } from "@/app/(app)/[emailAccountId]/compose/send-draft-reference";
-import { isMicrosoftProvider } from "@/utils/email/provider-types";
+import {
+  isImapProvider,
+  isMicrosoftProvider,
+} from "@/utils/email/provider-types";
 import { stripBrandingSignatures } from "@/utils/referral/signature";
 import { renderSentWithFooterHtml } from "@/utils/email/sent-with-footer";
 import { getActionErrorMessage } from "@/utils/error";
@@ -902,6 +906,33 @@ function ComposeEmailFormContent({
           localDraftIdentity?.messageId ??
           requestId;
         const online = navigator.onLine;
+        if (!client && isImapProvider(accountProvider)) {
+          const result = await sendEmailAction(
+            selectedEmailAccountId,
+            enrichedData,
+          );
+          if (!result?.data?.success) {
+            setSubmissionError(
+              getActionErrorMessage(result ?? {}, {
+                prefix: "Could not send this email",
+              }),
+            );
+            return;
+          }
+          deliveryAccepted = true;
+          try {
+            await clearLocalDraft();
+          } catch {
+            toastError({
+              description:
+                "Email sent, but its local draft copy could not be cleared.",
+            });
+          }
+          onSuccess?.(result.data.messageId, result.data.threadId);
+          onClose?.();
+          refetch?.();
+          return;
+        }
         if (!client) {
           setSubmissionError(
             "Mail is still starting. Try sending again in a moment.",
@@ -1058,6 +1089,7 @@ function ComposeEmailFormContent({
       refetch,
       replyingToEmail,
       selectedEmailAccountId,
+      accountProvider,
     ],
   );
 

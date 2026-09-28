@@ -6,6 +6,18 @@ import type { Logger } from "@/utils/logger";
 
 vi.mock("@/utils/prisma");
 
+const sentMail = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock("nodemailer", () => ({
+  default: {
+    createTransport: () => ({
+      sendMail: async (message: Record<string, unknown>) => {
+        sentMail.push(message);
+        return { messageId: "<sent@example.com>" };
+      },
+    }),
+  },
+}));
+
 const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
   vi.hoisted(() => ({
     movedTo: [] as string[],
@@ -114,6 +126,30 @@ describe("createImapProvider", () => {
 
     expect(resolved).toBe(provider);
     expect(provider.name).toBe("imap");
+  });
+
+  it("sends a reply on the same conversation", async () => {
+    sentMail.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.sendEmailWithHtml({
+      to: "digest@example.com",
+      subject: "Re: Morning digest",
+      messageHtml: "<p>Thanks</p>",
+      replyToEmail: {
+        threadId: "morning digest",
+        headerMessageId: "<digest-reader@example.com>",
+        references: "<digest-reader@example.com>",
+      },
+    });
+
+    expect(result.threadId).toBe("morning digest");
+    expect(sentMail[0]).toMatchObject({
+      to: "digest@example.com",
+      subject: "Re: Morning digest",
+      inReplyTo: "<digest-reader@example.com>",
+      references: "<digest-reader@example.com>",
+    });
   });
 
   it("opens a thread that was moved to Archive", async () => {

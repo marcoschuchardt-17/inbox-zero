@@ -8,7 +8,7 @@ import { useThread } from "@/hooks/useThread";
 import { LoadingContent } from "@/components/LoadingContent";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useAccount } from "@/providers/EmailAccountProvider";
-import { isGoogleProvider } from "@/utils/email/provider-types";
+import { isGoogleProvider, isImapProvider } from "@/utils/email/provider-types";
 
 export function EmailViewer() {
   const { provider } = useAccount();
@@ -22,7 +22,8 @@ export function EmailViewer() {
   } = useDisplayedEmail();
 
   const hideEmail = useCallback(() => showEmail(null), [showEmail]);
-  const supportsViewerReplies = isGoogleProvider(provider);
+  const supportsViewerReplies =
+    isGoogleProvider(provider) || isImapProvider(provider);
 
   return (
     <Sheet open={!!threadId} onOpenChange={hideEmail}>
@@ -35,7 +36,10 @@ export function EmailViewer() {
         {threadId && (
           <ThreadContent
             threadId={threadId}
-            showReplyButton={supportsViewerReplies && showReplyButton}
+            showReplyButton={
+              isImapProvider(provider) ||
+              (supportsViewerReplies && showReplyButton)
+            }
             autoOpenReplyForMessageId={
               supportsViewerReplies
                 ? (autoOpenReplyForMessageId ?? undefined)
