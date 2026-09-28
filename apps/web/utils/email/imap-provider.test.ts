@@ -28,6 +28,7 @@ const {
   movedFrom,
   appended,
   flagsRemoved,
+  flagsAdded,
   deleted,
   mailboxState,
 } = vi.hoisted(() => ({
@@ -35,6 +36,7 @@ const {
   movedFrom: [] as string[],
   appended: [] as { mailbox: string; raw: string }[],
   flagsRemoved: [] as string[],
+  flagsAdded: [] as { uid: number; flags: string[] }[],
   deleted: [] as { mailbox: string; uid: number }[],
   mailboxState: {
     exists: 1,
@@ -74,6 +76,9 @@ vi.mock("imapflow", () => ({
     }
     async messageFlagsRemove(_uid: number, flags: string[]) {
       flagsRemoved.push(...flags);
+    }
+    async messageFlagsAdd(uid: number, flags: string[]) {
+      flagsAdded.push({ uid, flags: [...flags] });
     }
     async connect() {}
     async getMailboxLock(mailbox = "INBOX") {
@@ -320,6 +325,16 @@ describe("createImapProvider", () => {
     expect(messages[0]?.headers["in-reply-to"]).toContain("parent@example.com");
     expect(messages[0]?.textPlain).toContain("The mailbox is ready.");
     expect(messages[0]?.labelIds).toContain("INBOX");
+  });
+
+  it("marks an opened inbox thread as seen", async () => {
+    flagsAdded.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.markRead("<parent@example.com>");
+
+    expect(flagsAdded).toEqual([{ uid: 1, flags: ["\\Seen"] }]);
+    expect(mailboxState.opened).toBe("INBOX");
   });
 
   it("archives a thread into the Archive mailbox", async () => {

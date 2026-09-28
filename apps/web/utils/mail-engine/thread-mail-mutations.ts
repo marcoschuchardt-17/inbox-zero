@@ -165,6 +165,8 @@ function httpActionForPayload(payload: ThreadMutationPayload) {
       return "trash";
     case "untrash":
       return "untrash";
+    case "set_read_state":
+      return payload.read ? "read" : null;
     default:
       return null;
   }

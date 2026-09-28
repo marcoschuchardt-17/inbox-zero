@@ -48,6 +48,15 @@ export function ImapInbox() {
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
   const [archiveError, setArchiveError] = useState("");
 
+  async function markOpenedThreadRead(threadId: string) {
+    const response = await fetchWithAccount({
+      url: `/api/threads/${encodeURIComponent(threadId)}/read`,
+      emailAccountId,
+      init: { method: "POST" },
+    });
+    if (response.ok) await mutate();
+  }
+
   async function moveThread(
     threadId: string,
     action:
@@ -122,12 +131,15 @@ export function ImapInbox() {
                   <button
                     type="button"
                     className="min-w-0 flex-1 px-2 py-3 text-left hover:bg-muted"
-                    onClick={() =>
+                    onClick={() => {
                       showEmail({
                         threadId: thread.id,
                         messageId: message?.id,
-                      })
-                    }
+                      });
+                      if (folder === "inbox") {
+                        markOpenedThreadRead(thread.id).catch(() => undefined);
+                      }
+                    }}
                   >
                     <div className="truncate font-medium">
                       {message?.headers.from || "Unknown sender"}

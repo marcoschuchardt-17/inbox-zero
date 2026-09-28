@@ -121,6 +121,29 @@ describe("thread mail mutation batches", () => {
     ]);
   });
 
+  it("marks IMAP threads read over HTTP without waiting for the mail engine", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "thread-1", messages: [{ id: "message-1" }] }],
+        payload: { kind: "set_read_state", read: true },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/read",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      { threadId: "thread-1", read: true, status: "succeeded" },
+    ]);
+  });
+
   it("reports a failed IMAP archive without waiting for the mail engine", async () => {
     mail.current = null;
     http.fetchWithAccount.mockResolvedValue({ ok: false });

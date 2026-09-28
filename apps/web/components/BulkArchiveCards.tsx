@@ -63,7 +63,7 @@ export function BulkArchiveCards({
   bulkAction: BulkActionType;
   onCategoryChange?: () => Promise<unknown>;
 }) {
-  const { emailAccountId, userEmail } = useAccount();
+  const { emailAccountId, provider, userEmail } = useAccount();
   const { queueArchiveSenders } = useArchiveSenderQueueActions(emailAccountId);
   const [expandedCategory, setExpandedCategory] = useQueryState("expanded");
   const [expandedSenders, setExpandedSenders] = useState<
@@ -247,6 +247,7 @@ export function BulkArchiveCards({
             await addToMarkReadSenderQueue({
               sender: sender.address,
               emailAccountId,
+              provider,
             });
           }
 
@@ -254,6 +255,7 @@ export function BulkArchiveCards({
             await addToDeleteSenderQueue({
               sender: sender.address,
               emailAccountId,
+              provider,
             });
           }
         } catch {
