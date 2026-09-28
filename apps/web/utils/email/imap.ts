@@ -607,10 +607,7 @@ async function parseImapMessage(
   const historyId = String((internalDate || new Date()).getTime());
   const normalizedSubject = subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
   const threadKey =
-    parsed.headers.get("references") ||
-    parsed.headers.get("in-reply-to") ||
-    normalizedSubject ||
-    String(uid);
+    parsed.references || parsed.inReplyTo || normalizedSubject || String(uid);
 
   return {
     id: String(uid),
@@ -649,8 +646,8 @@ async function parseImapMessage(
       subject,
       "reply-to": parsed.replyTo?.[0]?.address || undefined,
       "message-id": parsed.messageId || undefined,
-      references: parsed.headers.get("references") || undefined,
-      "in-reply-to": parsed.headers.get("in-reply-to") || undefined,
+      references: parsed.references || undefined,
+      "in-reply-to": parsed.inReplyTo || undefined,
     },
     _attachments: includeAttachmentBodies ? attachments : [],
     _uid: uid,
