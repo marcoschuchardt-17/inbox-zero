@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 
+import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
+import { SWRConfig } from "swr";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationView } from "@inboxzero/mail-core/ports/mail-store";
 import type { QuerySnapshot } from "@inboxzero/mail-core/queries";
 import { useThread } from "./useThread";
 
 const mail = vi.hoisted(() => ({
+  provider: "google",
   client: {
     observeConversation: vi.fn(),
     ensureMessageContent: vi.fn(),
@@ -18,14 +21,58 @@ vi.mock("@inboxzero/mail-react/MailEngineProvider", () => ({
   useOptionalMailClient: () => mail.client,
 }));
 vi.mock("@/providers/EmailAccountProvider", () => ({
-  useAccount: () => ({ emailAccountId: "account" }),
+  useAccount: () => ({ emailAccountId: "account", provider: mail.provider }),
 }));
 
 describe("useThread", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mail.provider = "google";
     mail.client.ensureMessageContent.mockResolvedValue({ status: "scheduled" });
     mail.client.requestSync.mockResolvedValue({ status: "scheduled" });
+  });
+
+  it("loads an IMAP thread from the mailbox instead of the local mail engine", async () => {
+    mail.provider = "imap";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          thread: {
+            id: "morning digest",
+            messages: [
+              { id: "6", subject: "Morning digest", textPlain: "Hello" },
+            ],
+          },
+        }),
+      })),
+    );
+
+    const { result } = renderHook(() => useThread({ id: "morning digest" }), {
+      wrapper: function Wrapper({ children }: { children: ReactNode }) {
+        return (
+          <SWRConfig
+            value={{
+              fetcher: (url: string) => fetch(url).then((res) => res.json()),
+              provider: () => new Map(),
+            }}
+          >
+            {children}
+          </SWRConfig>
+        );
+      },
+    });
+
+    await waitFor(() =>
+      expect(result.current.data?.thread.messages[0]?.subject).toBe(
+        "Morning digest",
+      ),
+    );
+    expect(mail.client.observeConversation).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/threads/morning%20digest?parseReplies=true",
+    );
   });
 
   it("projects an engine conversation onto the reader thread", async () => {

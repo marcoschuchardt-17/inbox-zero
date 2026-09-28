@@ -129,16 +129,34 @@ export function createImapProvider(
       );
     },
     getThread: async (threadId: string) => {
-      const messages = await fetchMailboxMessages({
-        config,
-        logger,
-        maxResults: 100,
-      });
-      const threadMessages = messages.filter(
-        (message) => message.threadId === threadId,
+      const mailboxes = [config.syncFolder || "INBOX", "Archive"].filter(
+        (mailbox, index, all) =>
+          all.findIndex(
+            (item) => item.toLowerCase() === mailbox.toLowerCase(),
+          ) === index,
       );
-      if (threadMessages.length === 0) throw new SafeError("Thread not found");
-      return toThread(threadMessages);
+      for (const [index, mailbox] of mailboxes.entries()) {
+        let messages: ParsedImapMessage[] = [];
+        try {
+          messages = await fetchMailboxMessages({
+            config,
+            logger,
+            mailbox,
+            maxResults: 100,
+          });
+        } catch (error) {
+          if (index === 0) throw error;
+          logger.warn("Skipped IMAP folder while opening a thread", {
+            error,
+            mailbox,
+          });
+        }
+        const threadMessages = messages.filter(
+          (message) => message.threadId === threadId,
+        );
+        if (threadMessages.length > 0) return toThread(threadMessages);
+      }
+      throw new SafeError("Thread not found");
     },
     getThreadMessages: async (threadId: string) => {
       const thread = await core.getThread(threadId);

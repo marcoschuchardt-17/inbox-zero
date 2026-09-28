@@ -16,6 +16,8 @@ const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
       unseen: [] as number[],
       fromUids: [] as number[],
       allUids: [] as number[],
+      opened: "INBOX",
+      archiveSource: "" as string,
     },
     rawMessage: [
       "From: Sam <sam@example.com>",
@@ -42,10 +44,21 @@ vi.mock("imapflow", () => ({
       flagsRemoved.push(...flags);
     }
     async connect() {}
-    async getMailboxLock() {
+    async getMailboxLock(mailbox = "INBOX") {
+      mailboxState.opened = mailbox;
       return { release() {} };
     }
     async *fetch() {
+      if (mailboxState.opened === "Archive") {
+        if (!mailboxState.archiveSource) return;
+        yield {
+          uid: 9,
+          source: Buffer.from(mailboxState.archiveSource),
+          flags: new Set(["\\Seen"]),
+          internalDate: new Date("2026-09-28T13:00:00.000Z"),
+        };
+        return;
+      }
       yield {
         uid: 1,
         source: Buffer.from(rawMessage),
@@ -101,6 +114,25 @@ describe("createImapProvider", () => {
 
     expect(resolved).toBe(provider);
     expect(provider.name).toBe("imap");
+  });
+
+  it("opens a thread that was moved to Archive", async () => {
+    mailboxState.archiveSource = [
+      "From: Digest <digest@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Morning digest",
+      "Date: Mon, 28 Sep 2026 13:00:00 +0000",
+      "Message-ID: <digest-1@example.com>",
+      "",
+      "Your morning digest.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("morning digest");
+
+    expect(thread.messages[0]?.subject).toBe("Morning digest");
+    expect(thread.messages[0]?.textPlain).toContain("Your morning digest.");
+    mailboxState.archiveSource = "";
   });
 
   it("reads an inbox message from the raw mailbox source", async () => {
