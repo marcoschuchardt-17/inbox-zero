@@ -7,14 +7,18 @@ import type { Logger } from "@/utils/logger";
 vi.mock("@/utils/prisma");
 
 const sentMail = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+const smtpTransports = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 vi.mock("nodemailer", () => ({
   default: {
-    createTransport: () => ({
-      sendMail: async (message: Record<string, unknown>) => {
-        sentMail.push(message);
-        return { messageId: "<sent@example.com>" };
-      },
-    }),
+    createTransport: (options: Record<string, unknown>) => {
+      smtpTransports.push(options);
+      return {
+        sendMail: async (message: Record<string, unknown>) => {
+          sentMail.push(message);
+          return { messageId: "<sent@example.com>" };
+        },
+      };
+    },
   },
 }));
 
@@ -30,6 +34,7 @@ const { rawMessage, movedTo, movedFrom, appended, flagsRemoved, mailboxState } =
       fromUids: [] as number[],
       allUids: [] as number[],
       opened: "INBOX",
+      connectOptions: null as null | Record<string, unknown>,
       archiveSource: "" as string,
       sentSource: "" as string,
       trashSource: "" as string,
@@ -50,6 +55,9 @@ const { rawMessage, movedTo, movedFrom, appended, flagsRemoved, mailboxState } =
 vi.mock("imapflow", () => ({
   ImapFlow: class {
     mailbox = mailboxState;
+    constructor(options: Record<string, unknown>) {
+      mailboxState.connectOptions = options;
+    }
     async search(query: { from?: string; all?: boolean }) {
       if (query?.from) return mailboxState.fromUids;
       if (query?.all) return mailboxState.allUids;
@@ -150,6 +158,28 @@ describe("createImapProvider", () => {
 
     expect(resolved).toBe(provider);
     expect(provider.name).toBe("imap");
+  });
+
+  it("stops waiting when the mail server does not answer", async () => {
+    smtpTransports.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getInboxMessages(1);
+    await provider.sendEmailWithHtml({
+      to: "a@example.com",
+      subject: "Hi",
+      messageHtml: "<p>Hi</p>",
+    });
+
+    expect(mailboxState.connectOptions).toMatchObject({
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
+    });
+    expect(smtpTransports.at(-1)).toMatchObject({
+      connectionTimeout: 10_000,
+      socketTimeout: 10_000,
+    });
   });
 
   it("sends a reply on the same conversation", async () => {

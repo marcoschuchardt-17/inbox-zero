@@ -680,6 +680,7 @@ function createImapClient(config: ImapConfig) {
     logger: false,
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,
+    socketTimeout: 10_000,
   });
 }
 
@@ -692,6 +693,8 @@ function createSmtpTransport(config: ImapConfig) {
       user: config.smtpUsername,
       pass: config.smtpPassword,
     },
+    connectionTimeout: 10_000,
+    socketTimeout: 10_000,
   });
 }
 
