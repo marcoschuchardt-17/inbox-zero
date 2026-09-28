@@ -568,6 +568,43 @@ describe("createImapProvider", () => {
     mailboxState.allUids = [];
   });
 
+  it("stores sent mail so analytics can count it", async () => {
+    mailboxState.allUids = [1];
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: A new IMAP message",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <sent-1@example.com>",
+      "",
+      "Sent from the mailbox.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getMessagesWithPagination({ maxResults: 20 });
+
+    expect(prisma.emailMessage.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          emailAccountId_threadId_messageId: {
+            emailAccountId: "account-1",
+            threadId: "<sent-1@example.com>",
+            messageId: "sent:11",
+          },
+        },
+        create: expect.objectContaining({
+          from: "owner@example.com",
+          to: "sam@example.com",
+          sent: true,
+          inbox: false,
+          read: true,
+        }),
+      }),
+    );
+    mailboxState.allUids = [];
+    mailboxState.sentSource = "";
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",

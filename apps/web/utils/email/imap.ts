@@ -3,6 +3,11 @@ import { ImapFlow } from "imapflow";
 import PostalMime from "postal-mime";
 import nodemailer from "nodemailer";
 import { shouldSkipAutoDraft } from "@/utils/auto-draft";
+import {
+  extractDomainFromEmail,
+  extractEmailAddress,
+  extractNameFromEmail,
+} from "@/utils/email";
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
 import type { EmailProvider, EmailThread } from "@/utils/email/types";
@@ -93,7 +98,10 @@ export function createImapProvider(
       maxResults?: number;
       pageToken?: string;
     }) => {
-      if (!pageToken) await reconcileStoredInbox(config);
+      if (!pageToken) {
+        await reconcileStoredInbox(config);
+        await storeSentMailbox({ config, logger });
+      }
       const offset = Number(pageToken || "0");
       const messages = await fetchMailboxMessages({
         config,
@@ -1532,6 +1540,75 @@ function buildOutgoingMessage({
   return `${headers.join("\r\n")}\r\n\r\n${body}`;
 }
 
+async function storeSentMailbox({
+  config,
+  logger,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+}) {
+  try {
+    const messages = await fetchMailboxMessages({
+      config,
+      logger,
+      mailbox: "Sent",
+      maxResults: 100,
+    });
+    await storeSentMessages({ config, messages });
+  } catch (error) {
+    logger.warn("Skipped storing sent IMAP mail", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+  }
+}
+
+async function storeSentMessages({
+  config,
+  messages,
+}: {
+  config: ImapConfig;
+  messages: ParsedImapMessage[];
+}) {
+  for (const message of messages) {
+    const from = extractEmailAddress(message.headers.from || "");
+    const date = new Date(message.date);
+    if (!from || Number.isNaN(date.getTime())) continue;
+    const to = extractEmailAddress(message.headers.to || "") || "Missing";
+    await prisma.emailMessage.upsert({
+      where: {
+        emailAccountId_threadId_messageId: {
+          emailAccountId: config.emailAccountId,
+          threadId: message.threadId,
+          messageId: `sent:${message.id}`,
+        },
+      },
+      create: {
+        emailAccountId: config.emailAccountId,
+        threadId: message.threadId,
+        messageId: `sent:${message.id}`,
+        date,
+        from,
+        fromName: extractNameFromEmail(message.headers.from || "") || null,
+        fromDomain: extractDomainFromEmail(from),
+        to,
+        read: true,
+        sent: true,
+        draft: false,
+        inbox: false,
+      },
+      update: {
+        date,
+        from,
+        to,
+        read: true,
+        sent: true,
+        inbox: false,
+      },
+    });
+  }
+}
+
 async function saveSentCopy({
   config,
   logger,
@@ -1545,7 +1622,15 @@ async function saveSentCopy({
   try {
     await client.connect();
     await ensureMailbox(client, "Sent");
-    await client.append("Sent", raw, ["\\Seen"]);
+    const appended = await client.append("Sent", raw, ["\\Seen"]);
+    if (appended?.uid) {
+      const message = await parseImapMessage(
+        appended.uid,
+        Buffer.from(raw),
+        new Set(["\\Seen"]),
+      );
+      await storeSentMessages({ config, messages: [message] });
+    }
   } catch (error) {
     logger.error("Failed saving IMAP sent copy", {
       error,
