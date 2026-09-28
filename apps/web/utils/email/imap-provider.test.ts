@@ -3,7 +3,8 @@ import { imapFlagsToLabelIds, imapKeyword } from "./imap-flags";
 import { createImapProvider } from "./imap";
 import type { Logger } from "@/utils/logger";
 
-const { rawMessage } = vi.hoisted(() => ({
+const { rawMessage, movedTo } = vi.hoisted(() => ({
+  movedTo: [] as string[],
   rawMessage: [
     "From: Sam <sam@example.com>",
     "To: inbox.imap@example.com",
@@ -33,6 +34,13 @@ vi.mock("imapflow", () => ({
       };
     }
     async logout() {}
+    async list() {
+      return [{ path: "INBOX", name: "INBOX" }];
+    }
+    async mailboxCreate() {}
+    async messageMove(_uid: number, mailbox: string) {
+      movedTo.push(mailbox);
+    }
   },
 }));
 
@@ -98,6 +106,33 @@ describe("createImapProvider", () => {
     expect(messages[0]?.headers.from).toContain("sam@example.com");
     expect(messages[0]?.headers["in-reply-to"]).toContain("parent@example.com");
     expect(messages[0]?.textPlain).toContain("The mailbox is ready.");
+  });
+
+  it("archives a thread into the Archive mailbox", async () => {
+    movedTo.length = 0;
+    const provider = createImapProvider(
+      {
+        emailAccountId: "account-1",
+        ownerEmail: "owner@example.com",
+        imapHost: "imap.example.com",
+        imapPort: 993,
+        imapSecure: true,
+        imapUsername: "owner@example.com",
+        imapPassword: "secret",
+        smtpHost: "smtp.example.com",
+        smtpPort: 465,
+        smtpSecure: true,
+        smtpUsername: "owner@example.com",
+        smtpPassword: "secret",
+        syncFolder: "INBOX",
+      },
+      logger,
+    );
+
+    const [message] = await provider.getInboxMessages(5);
+    await provider.archiveThread(message?.threadId || "", "owner@example.com");
+
+    expect(movedTo).toEqual(["Archive"]);
   });
 });
 

@@ -308,6 +308,28 @@ export function createImapProvider(
       Promise.all(
         messageIds.map((messageId) => core.archiveMessage(messageId)),
       ).then(() => undefined),
+    archiveThread: async (threadId: string, _ownerEmail: string) => {
+      const messages = await core.getThreadMessages(threadId);
+      await Promise.all(
+        messages.map((message) => core.archiveMessage(message.id)),
+      );
+    },
+    archiveThreadWithLabel: async (threadId: string, ownerEmail: string) => {
+      await core.archiveThread(threadId, ownerEmail);
+    },
+    unarchiveThread: async (threadId: string) => {
+      const messages = await core.getThreadMessages(threadId);
+      await Promise.all(
+        messages.map((message) =>
+          moveMessageToMailbox({
+            config,
+            logger,
+            messageId: message.id,
+            mailbox: "INBOX",
+          }),
+        ),
+      );
+    },
     trashMessages: async (messageIds: string[]) =>
       Promise.all(
         messageIds.map((messageId) =>
@@ -768,6 +790,7 @@ async function moveMessageToMailbox({
   const client = createImapClient(config);
   await client.connect();
   try {
+    await ensureMailbox(client, mailbox);
     const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
     try {
       await client.messageMove(uid, mailbox, { uid: true });
@@ -785,4 +808,12 @@ async function moveMessageToMailbox({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+async function ensureMailbox(client: ImapFlow, mailbox: string) {
+  const boxes = await client.list();
+  const exists = boxes.some(
+    (box) => box.path === mailbox || box.name === mailbox,
+  );
+  if (!exists) await client.mailboxCreate(mailbox);
 }
