@@ -10,6 +10,7 @@ import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useComposeModal } from "@/providers/ComposeModalProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
+import type { GetFoldersResponse } from "@/app/api/user/folders/route";
 import { fetchWithAccount } from "@/utils/fetch";
 import { prefixPath } from "@/utils/path";
 
@@ -40,10 +41,21 @@ const folders = [
 export function ImapInbox() {
   const { emailAccountId } = useAccount();
   const { onOpen: openCompose } = useComposeModal();
-  const [folder, setFolder] = useState<(typeof folders)[number]["id"]>("inbox");
-  const selected = folders.find((item) => item.id === folder) ?? folders[0];
+  const [folder, setFolder] = useState("inbox");
+  const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
+  const extraFolders = (mailboxList ?? []).filter(
+    (item) =>
+      !isStandardMailbox(item.id) && !isStandardMailbox(item.displayName),
+  );
+  const selected = folders.find((item) => item.id === folder);
+  const extra = extraFolders.find(
+    (item) => mailboxFolderId(item.id) === folder,
+  );
   const { data, error, isLoading, mutate } = useSWR<ThreadsListResponse>(
-    selected.query,
+    selected?.query ??
+      (extra
+        ? `/api/threads?limit=30&view=list&folderId=${encodeURIComponent(extra.id)}`
+        : folders[0].query),
   );
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
   const [archiveError, setArchiveError] = useState("");
@@ -65,11 +77,16 @@ export function ImapInbox() {
       | "unarchive"
       | "untrash"
       | "send-draft"
-      | "discard-draft",
+      | "discard-draft"
+      | "restore-folder",
+    sourceFolder?: string,
   ) {
     setArchiveError("");
+    const folderQuery = sourceFolder
+      ? `?folder=${encodeURIComponent(sourceFolder)}`
+      : "";
     const response = await fetchWithAccount({
-      url: `/api/threads/${encodeURIComponent(threadId)}/${action}`,
+      url: `/api/threads/${encodeURIComponent(threadId)}/${action}${folderQuery}`,
       emailAccountId,
       init: { method: "POST" },
     });
@@ -97,13 +114,15 @@ export function ImapInbox() {
             >
               Inbox Zero
             </Link>
-            <PageHeading>{selected.label}</PageHeading>
+            <PageHeading>
+              {selected?.label ?? extra?.displayName ?? "Inbox"}
+            </PageHeading>
           </div>
           <Button type="button" size="sm" onClick={openCompose}>
             Compose
           </Button>
         </div>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {folders.map((item) => (
             <Button
               key={item.id}
@@ -116,6 +135,22 @@ export function ImapInbox() {
               }}
             >
               {item.label}
+            </Button>
+          ))}
+          {extraFolders.map((item) => (
+            <Button
+              key={item.id}
+              type="button"
+              variant={
+                mailboxFolderId(item.id) === folder ? "default" : "outline"
+              }
+              size="sm"
+              onClick={() => {
+                setArchiveError("");
+                setFolder(mailboxFolderId(item.id));
+              }}
+            >
+              {item.displayName}
             </Button>
           ))}
         </div>
@@ -224,6 +259,19 @@ export function ImapInbox() {
                       Move to inbox
                     </Button>
                   ) : null}
+                  {extra ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() =>
+                        moveThread(thread.id, "restore-folder", extra.id)
+                      }
+                    >
+                      Move to inbox
+                    </Button>
+                  ) : null}
                 </li>
               );
             })}
@@ -238,6 +286,16 @@ export function ImapInbox() {
   );
 }
 
+function mailboxFolderId(mailbox: string) {
+  return `mailbox:${mailbox}`;
+}
+
+function isStandardMailbox(name: string) {
+  return ["inbox", "sent", "drafts", "archive", "trash"].includes(
+    name.toLowerCase(),
+  );
+}
+
 function moveError(
   action:
     | "archive"
@@ -245,20 +303,24 @@ function moveError(
     | "unarchive"
     | "untrash"
     | "send-draft"
-    | "discard-draft",
+    | "discard-draft"
+    | "restore-folder",
 ) {
   if (action === "trash") return "Could not move this email to Trash.";
   if (action === "unarchive" || action === "untrash")
     return "Could not move this email to the inbox.";
   if (action === "send-draft") return "Could not send this draft.";
   if (action === "discard-draft") return "Could not discard this draft.";
+  if (action === "restore-folder")
+    return "Could not move this email to the inbox.";
   return "Could not archive this email.";
 }
 
-function emptyFolderCopy(folder: (typeof folders)[number]["id"]) {
+function emptyFolderCopy(folder: string) {
   if (folder === "sent") return "Sent is empty.";
   if (folder === "drafts") return "Drafts is empty.";
   if (folder === "archive") return "Archive is empty.";
   if (folder === "trash") return "Trash is empty.";
+  if (folder.startsWith("mailbox:")) return "This folder is empty.";
   return "The inbox is empty.";
 }

@@ -215,7 +215,10 @@ export function createImapProvider(
     }) => core.getMessagesWithPagination({ query, maxResults, pageToken }),
     getThreadsWithQuery: async ({ query, maxResults = DEFAULT_PAGE_SIZE }) => {
       let messages: ParsedMessage[] = [];
-      const mailbox = query?.type ? mailboxForListType(query.type) : undefined;
+      const mailbox =
+        (query?.type ? mailboxForListType(query.type) : undefined) ||
+        query?.folderId ||
+        undefined;
       if (query?.type === "sent") {
         messages = await core.getSentMessages(maxResults);
       } else if (mailbox) {
@@ -625,6 +628,44 @@ export function createImapProvider(
         emailAccountId: config.emailAccountId,
         messageIds,
         action: "archive",
+      });
+    },
+    restoreThreadFromMailbox: async (
+      threadId: string,
+      sourceMailbox: string,
+    ) => {
+      if (sourceMailbox.toLowerCase() === "junk") {
+        await core.markNotSpam(threadId);
+        return;
+      }
+      const messages = await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox: sourceMailbox,
+        maxResults: 100,
+      });
+      const matches = messages.filter(
+        (message) => message.threadId === threadId,
+      );
+      if (!matches.length) throw new SafeError("Thread not found");
+      const destination = config.syncFolder || "INBOX";
+      await Promise.all(
+        matches.map((message) =>
+          moveMessageToMailbox({
+            config,
+            logger,
+            messageId: message.id,
+            mailbox: destination,
+            sourceMailbox,
+          }),
+        ),
+      );
+      await prisma.emailMessage.updateMany({
+        where: {
+          emailAccountId: config.emailAccountId,
+          messageId: { in: matches.map((message) => message.id) },
+        },
+        data: { inbox: true },
       });
     },
     markMessagesReadState: async (messageIds: string[], read: boolean) => {

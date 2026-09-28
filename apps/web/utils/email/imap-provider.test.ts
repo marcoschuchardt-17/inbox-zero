@@ -813,6 +813,16 @@ describe("createImapProvider", () => {
     mailboxState.draftSource = "";
   });
 
+  it("lists the mailbox named by folder id", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getThreadsWithQuery({
+      query: { folderId: "Receipts" },
+    });
+
+    expect(mailboxState.opened).toBe("Receipts");
+  });
+
   it("lists mail stored in Trash", async () => {
     mailboxState.trashSource = [
       "From: Trash Test <trash@example.com>",
