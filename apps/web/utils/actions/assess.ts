@@ -17,6 +17,8 @@ const STYLE_SAMPLE_SIZE = 20;
 export const assessAction = actionClient
   .metadata({ name: "assessUser" })
   .action(async ({ ctx: { emailAccountId, provider, logger } }) => {
+    if (provider === "imap") return { success: true, skipped: true };
+
     const emailProvider = await createEmailProvider({
       emailAccountId,
       provider,
@@ -42,6 +44,8 @@ export const assessAction = actionClient
 export const analyzeWritingStyleAction = actionClient
   .metadata({ name: "analyzeWritingStyle" })
   .action(async ({ ctx: { emailAccountId, provider, logger } }) => {
+    if (provider === "imap") return { success: true, skipped: true };
+
     const emailAccount = await prisma.emailAccount.findUnique({
       where: { id: emailAccountId },
       select: {
