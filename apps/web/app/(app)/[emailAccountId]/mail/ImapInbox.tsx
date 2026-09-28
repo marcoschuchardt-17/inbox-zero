@@ -45,12 +45,18 @@ export function ImapInbox() {
   const { data, error, isLoading, mutate } = useSWR<ThreadsListResponse>(
     selected.query,
   );
-  const { showEmail } = useDisplayedEmail();
+  const { showEmail, threadId: openThreadId } = useDisplayedEmail();
   const [archiveError, setArchiveError] = useState("");
 
   async function moveThread(
     threadId: string,
-    action: "archive" | "trash" | "unarchive" | "untrash",
+    action:
+      | "archive"
+      | "trash"
+      | "unarchive"
+      | "untrash"
+      | "send-draft"
+      | "discard-draft",
   ) {
     setArchiveError("");
     const response = await fetchWithAccount({
@@ -61,6 +67,12 @@ export function ImapInbox() {
     if (!response.ok) {
       setArchiveError(moveError(action));
       return;
+    }
+    if (
+      openThreadId === threadId &&
+      (action === "send-draft" || action === "discard-draft")
+    ) {
+      showEmail(null);
     }
     await mutate();
   }
@@ -149,6 +161,28 @@ export function ImapInbox() {
                       </Button>
                     </>
                   ) : null}
+                  {folder === "drafts" ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => moveThread(thread.id, "send-draft")}
+                      >
+                        Send
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => moveThread(thread.id, "discard-draft")}
+                      >
+                        Discard
+                      </Button>
+                    </>
+                  ) : null}
                   {folder === "archive" || folder === "trash" ? (
                     <Button
                       type="button"
@@ -179,10 +213,20 @@ export function ImapInbox() {
   );
 }
 
-function moveError(action: "archive" | "trash" | "unarchive" | "untrash") {
+function moveError(
+  action:
+    | "archive"
+    | "trash"
+    | "unarchive"
+    | "untrash"
+    | "send-draft"
+    | "discard-draft",
+) {
   if (action === "trash") return "Could not move this email to Trash.";
   if (action === "unarchive" || action === "untrash")
     return "Could not move this email to the inbox.";
+  if (action === "send-draft") return "Could not send this draft.";
+  if (action === "discard-draft") return "Could not discard this draft.";
   return "Could not archive this email.";
 }
 

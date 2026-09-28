@@ -397,6 +397,61 @@ export function createImapProvider(
         await client.logout().catch(() => undefined);
       }
     },
+    sendDraft: async (draftId: string) => {
+      const drafts = await findDraftMessages({ config, logger, draftId });
+      const draft = drafts.at(-1);
+      if (!draft?.headers.to) throw new SafeError("Draft not found");
+      const transport = createSmtpTransport(config);
+      const messageId = `smtp-${Date.now()}`;
+      const inReplyTo = draft.headers["in-reply-to"];
+      const references = draft.headers.references || inReplyTo;
+      const text = draft.textPlain || draft.snippet;
+      const result = await transport.sendMail({
+        from: config.ownerEmail,
+        to: draft.headers.to,
+        cc: draft.headers.cc,
+        subject: draft.subject,
+        text,
+        html: draft.textHtml,
+        messageId,
+        inReplyTo,
+        references,
+      });
+      const savedId = result.messageId || messageId;
+      await saveSentCopy({
+        config,
+        logger,
+        raw: buildOutgoingMessage({
+          from: config.ownerEmail,
+          to: draft.headers.to,
+          cc: draft.headers.cc,
+          subject: draft.subject,
+          messageId: savedId,
+          inReplyTo,
+          references,
+          contentType: draft.textHtml
+            ? "text/html; charset=utf-8"
+            : "text/plain; charset=utf-8",
+          body: draft.textHtml || text,
+        }),
+      });
+      await Promise.all(
+        drafts.map((message) =>
+          deleteDraftMessage({ config, logger, messageId: message.id }),
+        ),
+      );
+      return { messageId: savedId, threadId: draft.threadId };
+    },
+    deleteDraft: async (draftId: string) => {
+      const drafts = await findDraftMessages({ config, logger, draftId });
+      if (!drafts.length) throw new SafeError("Draft not found");
+      await Promise.all(
+        drafts.map((message) =>
+          deleteDraftMessage({ config, logger, messageId: message.id }),
+        ),
+      );
+      return true;
+    },
     replyToEmail: async (email: ParsedMessage, content: string) => {
       const sent = await core.sendEmail({
         to: email.headers.from,
@@ -1158,6 +1213,58 @@ async function setSeenFlag({
     } finally {
       lock.release();
     }
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+async function findDraftMessages({
+  config,
+  logger,
+  draftId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  draftId: string;
+}) {
+  const messages = await fetchMailboxMessages({
+    config,
+    logger,
+    mailbox: "Drafts",
+    maxResults: 100,
+  });
+  return messages.filter(
+    (message) => message.threadId === draftId || message.id === draftId,
+  );
+}
+
+async function deleteDraftMessage({
+  config,
+  logger,
+  messageId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  messageId: string;
+}) {
+  const uid = Number(messageId);
+  if (!Number.isFinite(uid)) throw new SafeError("Draft not found");
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock("Drafts");
+    try {
+      await client.messageDelete(uid, { uid: true });
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    logger.error("Failed deleting IMAP draft", {
+      error,
+      messageId,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to delete IMAP draft");
   } finally {
     await client.logout().catch(() => undefined);
   }

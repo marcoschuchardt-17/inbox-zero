@@ -22,36 +22,44 @@ vi.mock("nodemailer", () => ({
   },
 }));
 
-const { rawMessage, movedTo, movedFrom, appended, flagsRemoved, mailboxState } =
-  vi.hoisted(() => ({
-    movedTo: [] as string[],
-    movedFrom: [] as string[],
-    appended: [] as { mailbox: string; raw: string }[],
-    flagsRemoved: [] as string[],
-    mailboxState: {
-      exists: 1,
-      unseen: [] as number[],
-      fromUids: [] as number[],
-      allUids: [] as number[],
-      opened: "INBOX",
-      connectOptions: null as null | Record<string, unknown>,
-      archiveSource: "" as string,
-      sentSource: "" as string,
-      trashSource: "" as string,
-      draftSource: "" as string,
-    },
-    rawMessage: [
-      "From: Sam <sam@example.com>",
-      "To: inbox.imap@example.com",
-      "Subject: Welcome to the mailbox",
-      "Date: Mon, 28 Sep 2026 12:00:00 +0000",
-      "Message-ID: <welcome-1@example.com>",
-      "In-Reply-To: <parent@example.com>",
-      "References: <parent@example.com>",
-      "",
-      "The mailbox is ready.",
-    ].join("\r\n"),
-  }));
+const {
+  rawMessage,
+  movedTo,
+  movedFrom,
+  appended,
+  flagsRemoved,
+  deleted,
+  mailboxState,
+} = vi.hoisted(() => ({
+  movedTo: [] as string[],
+  movedFrom: [] as string[],
+  appended: [] as { mailbox: string; raw: string }[],
+  flagsRemoved: [] as string[],
+  deleted: [] as { mailbox: string; uid: number }[],
+  mailboxState: {
+    exists: 1,
+    unseen: [] as number[],
+    fromUids: [] as number[],
+    allUids: [] as number[],
+    opened: "INBOX",
+    connectOptions: null as null | Record<string, unknown>,
+    archiveSource: "" as string,
+    sentSource: "" as string,
+    trashSource: "" as string,
+    draftSource: "" as string,
+  },
+  rawMessage: [
+    "From: Sam <sam@example.com>",
+    "To: inbox.imap@example.com",
+    "Subject: Welcome to the mailbox",
+    "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+    "Message-ID: <welcome-1@example.com>",
+    "In-Reply-To: <parent@example.com>",
+    "References: <parent@example.com>",
+    "",
+    "The mailbox is ready.",
+  ].join("\r\n"),
+}));
 
 vi.mock("imapflow", () => ({
   ImapFlow: class {
@@ -128,6 +136,9 @@ vi.mock("imapflow", () => ({
     async messageMove(_uid: number, mailbox: string) {
       movedFrom.push(mailboxState.opened);
       movedTo.push(mailbox);
+    }
+    async messageDelete(uid: number) {
+      deleted.push({ mailbox: mailboxState.opened, uid });
     }
     async append(mailbox: string, raw: string) {
       appended.push({ mailbox, raw });
@@ -592,6 +603,48 @@ describe("createImapProvider", () => {
     mailboxState.draftSource = "";
   });
 
+  it("sends a saved draft and removes it from Drafts", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    deleted.length = 0;
+    mailboxState.draftSource = savedDraft();
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const listed = await provider.getThreadsWithQuery({
+      query: { type: "drafts" },
+    });
+    const sent = await provider.sendDraft(listed.threads[0]?.id || "");
+
+    expect(sent.threadId).toBe(listed.threads[0]?.id);
+    expect(sentMail.at(-1)).toMatchObject({
+      to: "sam@example.com",
+      subject: "Re: Welcome to the mailbox",
+      inReplyTo: "<welcome-1@example.com>",
+    });
+    expect(String(sentMail.at(-1)?.text)).toContain("Draft reply.");
+    expect(appended.at(-1)?.mailbox).toBe("Sent");
+    expect(String(appended.at(-1)?.raw)).toContain("Draft reply.");
+    expect(deleted).toEqual([{ mailbox: "Drafts", uid: 13 }]);
+    mailboxState.draftSource = "";
+  });
+
+  it("discards a saved draft without sending it", async () => {
+    sentMail.length = 0;
+    deleted.length = 0;
+    mailboxState.draftSource = savedDraft();
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const listed = await provider.getThreadsWithQuery({
+      query: { type: "drafts" },
+    });
+    const removed = await provider.deleteDraft(listed.threads[0]?.id || "");
+
+    expect(removed).toBe(true);
+    expect(sentMail).toEqual([]);
+    expect(deleted).toEqual([{ mailbox: "Drafts", uid: 13 }]);
+    mailboxState.draftSource = "";
+  });
+
   it("lists mail stored in Trash", async () => {
     mailboxState.trashSource = [
       "From: Trash Test <trash@example.com>",
@@ -651,6 +704,19 @@ describe("imap flags", () => {
     expect(imapKeyword("Kontoauszug")).toBe("Kontoauszug");
   });
 });
+
+function savedDraft() {
+  return [
+    "From: Owner <owner@example.com>",
+    "To: sam@example.com",
+    "Subject: Re: Welcome to the mailbox",
+    "Date: Mon, 28 Sep 2026 16:00:00 +0000",
+    "Message-ID: <draft-1@example.com>",
+    "In-Reply-To: <welcome-1@example.com>",
+    "",
+    "Draft reply.",
+  ].join("\r\n");
+}
 
 function imapConfig() {
   return {
