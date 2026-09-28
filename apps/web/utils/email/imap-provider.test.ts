@@ -646,6 +646,38 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("lists sent message ids for response-time stats", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: digest@example.com",
+      "Subject: Re: Please reply",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <reply-1@example.com>",
+      "",
+      "Sent from the mailbox.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getSentMessageIds({
+      maxResults: 10,
+      after: new Date("2026-09-01T00:00:00.000Z"),
+      before: new Date("2026-09-30T00:00:00.000Z"),
+    });
+
+    expect(mailboxState.opened).toBe("Sent");
+    expect(result.messages).toEqual([
+      { id: "11", threadId: "<reply-1@example.com>" },
+    ]);
+    expect(result.nextPageToken).toBeUndefined();
+
+    const outsideRange = await provider.getSentMessageIds({
+      maxResults: 10,
+      after: new Date("2026-10-01T00:00:00.000Z"),
+    });
+    expect(outsideRange.messages).toEqual([]);
+    mailboxState.sentSource = "";
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
