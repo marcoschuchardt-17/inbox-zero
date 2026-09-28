@@ -711,6 +711,21 @@ describe("createImapProvider", () => {
     mailboxState.trashSource = "";
   });
 
+  it("returns recent subjects from one sender", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+    const threads = await provider.getThreadsFromSenderWithSubject(
+      "sam@example.com",
+      3,
+    );
+
+    expect(threads).toEqual([
+      expect.objectContaining({
+        subject: "Welcome to the mailbox",
+        snippet: expect.stringContaining("The mailbox is ready."),
+      }),
+    ]);
+  });
+
   it("returns threads from one sender", async () => {
     const provider = createImapProvider(imapConfig(), logger);
     const result = await provider.getThreadsWithQuery({

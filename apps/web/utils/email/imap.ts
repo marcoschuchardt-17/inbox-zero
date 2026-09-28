@@ -246,6 +246,17 @@ export function createImapProvider(
       });
       return { threads: groupToThreads(filtered).slice(0, maxResults) };
     },
+    getThreadsFromSenderWithSubject: async (sender: string, limit: number) => {
+      const { threads } = await core.getThreadsWithQuery({
+        query: { fromEmail: sender },
+        maxResults: limit,
+      });
+      return threads.map((thread) => ({
+        id: thread.id,
+        snippet: thread.snippet,
+        subject: thread.messages[0]?.subject || "",
+      }));
+    },
     searchThreads: async ({
       query,
       maxResults = DEFAULT_PAGE_SIZE,
