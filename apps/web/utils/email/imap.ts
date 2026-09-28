@@ -163,18 +163,7 @@ export function createImapProvider(
       );
     },
     getThread: async (threadId: string) => {
-      const mailboxes = [
-        config.syncFolder || "INBOX",
-        "Sent",
-        "Archive",
-        "Trash",
-        "Drafts",
-      ].filter(
-        (mailbox, index, all) =>
-          all.findIndex(
-            (item) => item.toLowerCase() === mailbox.toLowerCase(),
-          ) === index,
-      );
+      const mailboxes = await mailboxNamesForRead({ config, logger });
       const collected: ParsedImapMessage[] = [];
       for (const [index, mailbox] of mailboxes.entries()) {
         let messages: ParsedImapMessage[] = [];
@@ -1202,18 +1191,7 @@ async function fetchMessageById({
 }): Promise<ParsedImapMessage | null> {
   const uid = Number(messageId);
   if (!Number.isFinite(uid)) return null;
-  const mailboxes = [
-    config.syncFolder || "INBOX",
-    "Sent",
-    "Archive",
-    "Trash",
-    "Drafts",
-    "Junk",
-  ].filter(
-    (mailbox, index, all) =>
-      all.findIndex((item) => item.toLowerCase() === mailbox.toLowerCase()) ===
-      index,
-  );
+  const mailboxes = await mailboxNamesForRead({ config, logger });
   const client = createImapClient(config);
   await client.connect();
   try {
@@ -2539,4 +2517,43 @@ function senderLabelKeyword(labelId: string) {
   } catch {
     throw new SafeError("Invalid label");
   }
+}
+
+async function mailboxNamesForRead({
+  config,
+  logger,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+}): Promise<string[]> {
+  const names = [
+    config.syncFolder || "INBOX",
+    "Sent",
+    "Archive",
+    "Trash",
+    "Drafts",
+    "Junk",
+  ];
+  const client = createImapClient(config);
+  try {
+    await client.connect();
+    try {
+      const boxes = await client.list();
+      for (const box of boxes) {
+        if (box.path) names.push(box.path);
+      }
+    } finally {
+      await client.logout().catch(() => undefined);
+    }
+  } catch (error) {
+    logger.warn("Skipped IMAP folder list while reading mail", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+  }
+  return names.filter(
+    (mailbox, index, all) =>
+      all.findIndex((item) => item.toLowerCase() === mailbox.toLowerCase()) ===
+      index,
+  );
 }

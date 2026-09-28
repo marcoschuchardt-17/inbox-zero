@@ -59,6 +59,7 @@ const {
     sentSource: "" as string,
     trashSource: "" as string,
     draftSource: "" as string,
+    folderSources: {} as Record<string, string>,
   },
   rawMessage: [
     "From: Sam <sam@example.com>",
@@ -155,6 +156,16 @@ vi.mock("imapflow", () => ({
           source: Buffer.from(mailboxState.trashSource),
           flags: new Set(["\\Seen"]),
           internalDate: new Date("2026-09-28T15:00:00.000Z"),
+        };
+        return;
+      }
+      const folderSource = mailboxState.folderSources[mailboxState.opened];
+      if (folderSource) {
+        yield {
+          uid: 14,
+          source: Buffer.from(folderSource),
+          flags: new Set(["\\Seen"]),
+          internalDate: new Date("2026-09-28T17:00:00.000Z"),
         };
         return;
       }
@@ -277,6 +288,49 @@ describe("createImapProvider", () => {
       "In-Reply-To: <digest-reader@example.com>",
     );
     expect(appended[0]?.raw).toContain("<p>Thanks</p>");
+  });
+
+  it("opens a message stored only in Junk", async () => {
+    mailboxState.folderSources.Junk = [
+      "From: Ads <ads@example.com>",
+      "To: owner@example.com",
+      "Subject: Spam offer",
+      "Date: Mon, 28 Sep 2026 17:00:00 +0000",
+      "Message-ID: <junk-1@example.com>",
+      "",
+      "This is spam.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("<junk-1@example.com>");
+
+    expect(thread.messages[0]?.subject).toBe("Spam offer");
+    expect(thread.messages[0]?.textPlain).toContain("This is spam.");
+    mailboxState.folderSources = {};
+  });
+
+  it("opens a message stored only in a custom folder", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Receipts", name: "Receipts" },
+    ];
+    mailboxState.folderSources.Receipts = [
+      "From: Billing <billing@example.com>",
+      "To: owner@example.com",
+      "Subject: Receipt",
+      "Date: Mon, 28 Sep 2026 17:00:00 +0000",
+      "Message-ID: <receipt-1@example.com>",
+      "",
+      "Amount due.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("<receipt-1@example.com>");
+
+    expect(thread.messages[0]?.subject).toBe("Receipt");
+    expect(thread.messages[0]?.textPlain).toContain("Amount due.");
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+    mailboxState.folderSources = {};
   });
 
   it("opens a thread that was moved to Archive", async () => {
