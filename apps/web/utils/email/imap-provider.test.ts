@@ -246,11 +246,50 @@ describe("createImapProvider", () => {
     ].join("\r\n");
     const provider = createImapProvider(imapConfig(), logger);
 
-    const thread = await provider.getThread("morning digest");
+    const thread = await provider.getThread("<digest-1@example.com>");
 
     expect(thread.messages[0]?.subject).toBe("Morning digest");
     expect(thread.messages[0]?.textPlain).toContain("Your morning digest.");
     mailboxState.archiveSource = "";
+  });
+
+  it("opens an inbox message together with the reply stored in Sent", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 18:00:00 +0000",
+      "Message-ID: <reply-1@example.com>",
+      "In-Reply-To: <welcome-1@example.com>",
+      "References: <parent@example.com> <welcome-1@example.com>",
+      "",
+      "I wrote back.",
+    ].join("\r\n");
+    mailboxState.trashSource = [
+      "From: Sam <sam@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 19:00:00 +0000",
+      "Message-ID: <trashed-reply@example.com>",
+      "References: <parent@example.com>",
+      "",
+      "This reply was trashed.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const [inbox] = await provider.getInboxMessages(5);
+    const thread = await provider.getThread(inbox?.threadId || "");
+
+    expect(thread.messages.map((message) => message.subject)).toEqual([
+      "Welcome to the mailbox",
+      "Re: Welcome to the mailbox",
+    ]);
+    expect(thread.messages[1]?.textPlain).toContain("I wrote back.");
+    expect(
+      thread.messages.some((message) => message.textPlain?.includes("trashed")),
+    ).toBe(false);
+    mailboxState.sentSource = "";
+    mailboxState.trashSource = "";
   });
 
   it("reads an inbox message from the raw mailbox source", async () => {

@@ -37,6 +37,7 @@ type ParsedAttachment = {
 
 type ParsedImapMessage = ParsedMessage & {
   _attachments: ParsedAttachment[];
+  _mailbox?: string;
   _uid: number;
 };
 
@@ -141,6 +142,7 @@ export function createImapProvider(
             (item) => item.toLowerCase() === mailbox.toLowerCase(),
           ) === index,
       );
+      const collected: ParsedImapMessage[] = [];
       for (const [index, mailbox] of mailboxes.entries()) {
         let messages: ParsedImapMessage[] = [];
         try {
@@ -157,16 +159,22 @@ export function createImapProvider(
             mailbox,
           });
         }
-        const threadMessages = messages.filter(
-          (message) => message.threadId === threadId,
-        );
-        if (threadMessages.length > 0) return toThread(threadMessages);
+        for (const message of messages) {
+          if (message.threadId !== threadId) continue;
+          collected.push({ ...message, _mailbox: mailbox });
+        }
       }
-      throw new SafeError("Thread not found");
+      const threadMessages = messagesForOpenThread(collected);
+      if (!threadMessages.length) throw new SafeError("Thread not found");
+      return toThread(threadMessages);
     },
     getThreadMessages: async (threadId: string) => {
-      const thread = await core.getThread(threadId);
-      return thread.messages;
+      const messages = await fetchMailboxMessages({
+        config,
+        logger,
+        maxResults: 100,
+      });
+      return messages.filter((message) => message.threadId === threadId);
     },
     getThreadMessagesInInbox: async (threadId: string) =>
       core.getThreadMessages(threadId),
@@ -908,9 +916,7 @@ async function parseImapMessage(
     };
   });
   const historyId = String((internalDate || new Date()).getTime());
-  const normalizedSubject = subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
-  const threadKey =
-    parsed.references || parsed.inReplyTo || normalizedSubject || String(uid);
+  const threadKey = imapThreadKey(parsed, subject, uid);
 
   return {
     id: String(uid),
@@ -1456,4 +1462,43 @@ async function ensureMailbox(client: ImapFlow, mailbox: string) {
     (box) => box.path === mailbox || box.name === mailbox,
   );
   if (!exists) await client.mailboxCreate(mailbox);
+}
+
+function imapThreadKey(
+  parsed: { references?: string; inReplyTo?: string; messageId?: string },
+  subject: string,
+  uid: number,
+) {
+  const referenced = messageIdsIn(parsed.references);
+  const root = referenced[0] || parsed.inReplyTo || parsed.messageId;
+  if (root) return root;
+  const normalizedSubject = subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
+  return normalizedSubject || String(uid);
+}
+
+function messageIdsIn(value?: string) {
+  if (!value) return [];
+  const wrapped = value.match(/<[^>]+>/g);
+  if (wrapped?.length) return wrapped;
+  return value.split(/\s+/).filter(Boolean);
+}
+
+function messagesForOpenThread(messages: ParsedImapMessage[]) {
+  const hidden = new Set(["trash", "drafts"]);
+  const active = messages.filter(
+    (message) => !hidden.has((message._mailbox || "").toLowerCase()),
+  );
+  const chosen = active.length ? active : messages;
+  const seen = new Set<string>();
+  const unique: ParsedImapMessage[] = [];
+  for (const message of chosen) {
+    const key =
+      message.headers["message-id"] || `${message._mailbox}:${message.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(message);
+  }
+  return unique.sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
 }
