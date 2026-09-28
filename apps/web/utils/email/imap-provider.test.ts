@@ -542,6 +542,27 @@ describe("createImapProvider", () => {
     expect(movedTo).toEqual(["Trash"]);
   });
 
+  it("removes every label keyword from a thread", async () => {
+    flagsRemoved.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+
+    await provider.removeThreadLabels(message.threadId, [
+      "Rechnungen",
+      "Newsletter",
+    ]);
+
+    expect(flagsRemoved).toEqual(["Rechnungen", "Newsletter"]);
+  });
+
+  it("has no provider signature or contact list", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await expect(provider.getSignatures()).resolves.toEqual([]);
+    await expect(provider.searchContacts("ada")).resolves.toEqual([]);
+  });
+
   it("removes a label keyword from a thread", async () => {
     flagsRemoved.length = 0;
     const provider = createImapProvider(imapConfig(), logger);

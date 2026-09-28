@@ -778,6 +778,13 @@ export function createImapProvider(
         ),
       );
     },
+    removeThreadLabels: async (threadId: string, labelIds: string[]) => {
+      for (const labelId of labelIds) {
+        await core.removeThreadLabel(threadId, labelId);
+      }
+    },
+    getSignatures: async () => [],
+    searchContacts: async () => [],
     unarchiveThread: async (threadId: string) => {
       await moveThreadBetweenMailboxes({
         config,

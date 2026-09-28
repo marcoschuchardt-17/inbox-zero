@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { isGoogleProvider } from "@/utils/email/provider-types";
+import { isGoogleProvider, isImapProvider } from "@/utils/email/provider-types";
 
 export function PersonalSignatureSetting() {
   const { data, isLoading, error } = useEmailAccountFull();
@@ -72,6 +72,7 @@ function SignatureDialog({
   const [manualSignature, setManualSignature] = useState(currentSignature);
 
   const isGmail = isGoogleProvider(provider);
+  const isImap = isImapProvider(provider);
 
   const { execute: executeSave, isExecuting: isSaving } = useAction(
     saveSignatureAction.bind(null, emailAccountId),
@@ -164,21 +165,25 @@ function SignatureDialog({
             {isGmail &&
               " You can load signatures from Gmail or enter manually."}
             {!isGmail &&
+              !isImap &&
               " For Outlook, we can extract from recent sent emails or you can enter manually."}
+            {isImap && " Enter the signature here."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleLoadFromProvider}
-              disabled={isFetching}
-            >
-              {isFetching
-                ? "Loading..."
-                : `Load from ${isGmail ? "Gmail" : "Outlook"}`}
-            </Button>
+            {!isImap && (
+              <Button
+                variant="outline"
+                onClick={handleLoadFromProvider}
+                disabled={isFetching}
+              >
+                {isFetching
+                  ? "Loading..."
+                  : `Load from ${isGmail ? "Gmail" : "Outlook"}`}
+              </Button>
+            )}
             {signatures.length > 1 && (
               <Select
                 value={selectedSignature}
