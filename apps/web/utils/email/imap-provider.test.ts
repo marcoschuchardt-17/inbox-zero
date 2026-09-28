@@ -654,6 +654,18 @@ describe("createImapProvider", () => {
     mailboxState.trashSource = "";
   });
 
+  it("restores one trashed message from Trash and one archived message from Archive", async () => {
+    movedFrom.length = 0;
+    movedTo.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.untrashMessages(["12"]);
+    await provider.unarchiveMessages(["9"]);
+
+    expect(movedFrom).toEqual(["Trash", "Archive"]);
+    expect(movedTo).toEqual(["INBOX", "INBOX"]);
+  });
+
   it("lists a saved reply in Drafts", async () => {
     mailboxState.draftSource = [
       "From: Owner <owner@example.com>",

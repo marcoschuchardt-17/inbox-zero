@@ -631,14 +631,24 @@ export function createImapProvider(
         action: "trash",
       });
     },
-    untrashMessages: async (messageIds: string[]) =>
-      Promise.all(
-        messageIds.map((messageId) =>
-          moveMessageToMailbox({ config, logger, messageId, mailbox: "INBOX" }),
-        ),
-      ).then(() => undefined),
-    unarchiveMessages: async (messageIds: string[]) =>
-      core.untrashMessages(messageIds),
+    untrashMessages: async (messageIds: string[]) => {
+      await moveMessagesToMailbox({
+        config,
+        logger,
+        messageIds,
+        mailbox: config.syncFolder || "INBOX",
+        sourceMailbox: "Trash",
+      });
+    },
+    unarchiveMessages: async (messageIds: string[]) => {
+      await moveMessagesToMailbox({
+        config,
+        logger,
+        messageIds,
+        mailbox: config.syncFolder || "INBOX",
+        sourceMailbox: "Archive",
+      });
+    },
     getFolders: async () => {
       const client = createImapClient(config);
       await client.connect();
@@ -1381,6 +1391,30 @@ async function moveThreadBetweenMailboxes({
       }),
     ),
   );
+}
+
+async function moveMessagesToMailbox({
+  config,
+  logger,
+  messageIds,
+  mailbox,
+  sourceMailbox,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  messageIds: string[];
+  mailbox: string;
+  sourceMailbox: string;
+}) {
+  for (const messageId of messageIds) {
+    await moveMessageToMailbox({
+      config,
+      logger,
+      messageId,
+      mailbox,
+      sourceMailbox,
+    });
+  }
 }
 
 async function moveMessageToMailbox({
