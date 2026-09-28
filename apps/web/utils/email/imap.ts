@@ -92,6 +92,7 @@ export function createImapProvider(
       maxResults?: number;
       pageToken?: string;
     }) => {
+      if (!pageToken) await reconcileStoredInbox(config);
       const offset = Number(pageToken || "0");
       const messages = await fetchMailboxMessages({
         config,
@@ -347,13 +348,19 @@ export function createImapProvider(
         messages.map((message) => setSeenFlag({ config, message, read })),
       );
     },
-    archiveMessage: async (messageId: string) =>
-      moveMessageToMailbox({
+    archiveMessage: async (messageId: string) => {
+      await moveMessageToMailbox({
         config,
         logger,
         messageId,
         mailbox: "Archive",
-      }),
+      });
+      await markMessagesLeftInbox({
+        emailAccountId: config.emailAccountId,
+        messageIds: [messageId],
+        action: "archive",
+      });
+    },
     archiveMessages: async (messageIds: string[]) =>
       Promise.all(
         messageIds.map((messageId) => core.archiveMessage(messageId)),
@@ -434,12 +441,18 @@ export function createImapProvider(
         ),
       );
     },
-    trashMessages: async (messageIds: string[]) =>
-      Promise.all(
+    trashMessages: async (messageIds: string[]) => {
+      await Promise.all(
         messageIds.map((messageId) =>
           moveMessageToMailbox({ config, logger, messageId, mailbox: "Trash" }),
         ),
-      ).then(() => undefined),
+      );
+      await markMessagesLeftInbox({
+        emailAccountId: config.emailAccountId,
+        messageIds,
+        action: "trash",
+      });
+    },
     untrashMessages: async (messageIds: string[]) =>
       Promise.all(
         messageIds.map((messageId) =>
@@ -834,6 +847,63 @@ function toThread(messages: ParsedMessage[]): EmailThread {
   };
 }
 
+async function reconcileStoredInbox(config: ImapConfig) {
+  const client = createImapClient(config);
+  await client.connect();
+  let ids: string[] = [];
+  try {
+    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    try {
+      const found = await client.search({ all: true }, { uid: true });
+      ids = Array.isArray(found) ? found.map((uid) => String(uid)) : [];
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+
+  if (!ids.length) {
+    await prisma.emailMessage.updateMany({
+      where: { emailAccountId: config.emailAccountId, inbox: true },
+      data: { inbox: false },
+    });
+    return;
+  }
+
+  await prisma.emailMessage.updateMany({
+    where: {
+      emailAccountId: config.emailAccountId,
+      inbox: true,
+      messageId: { notIn: ids },
+    },
+    data: { inbox: false },
+  });
+}
+
+async function markMessagesLeftInbox({
+  emailAccountId,
+  messageIds,
+  action,
+}: {
+  emailAccountId: string;
+  messageIds: string[];
+  action: "archive" | "trash";
+}) {
+  const ids = messageIds.filter(Boolean);
+  if (!ids.length) return;
+  if (action === "trash") {
+    await prisma.emailMessage.deleteMany({
+      where: { emailAccountId, messageId: { in: ids } },
+    });
+    return;
+  }
+  await prisma.emailMessage.updateMany({
+    where: { emailAccountId, messageId: { in: ids } },
+    data: { inbox: false },
+  });
+}
+
 function isInboxMailbox(mailbox: string, syncFolder: string) {
   const name = mailbox.toLowerCase();
   return name === "inbox" || name === syncFolder.toLowerCase();
@@ -878,6 +948,7 @@ async function moveMessagesFromSenders({
   try {
     await ensureMailbox(client, mailbox);
     const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    const movedIds: string[] = [];
     try {
       const uids = new Set<number>();
       for (const from of senders) {
@@ -887,10 +958,16 @@ async function moveMessagesFromSenders({
       }
       for (const uid of uids) {
         await client.messageMove(uid, mailbox, { uid: true });
+        movedIds.push(String(uid));
       }
     } finally {
       lock.release();
     }
+    await markMessagesLeftInbox({
+      emailAccountId: config.emailAccountId,
+      messageIds: movedIds,
+      action: mailbox === "Trash" ? "trash" : "archive",
+    });
   } catch (error) {
     logger.error("Failed moving IMAP messages from senders", {
       error,

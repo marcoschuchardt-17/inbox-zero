@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import prisma from "@/utils/__mocks__/prisma";
 import { imapFlagsToLabelIds, imapKeyword } from "./imap-flags";
 import { createImapProvider } from "./imap";
 import type { Logger } from "@/utils/logger";
+
+vi.mock("@/utils/prisma");
 
 const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
   vi.hoisted(() => ({
@@ -12,6 +15,7 @@ const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
       exists: 1,
       unseen: [] as number[],
       fromUids: [] as number[],
+      allUids: [] as number[],
     },
     rawMessage: [
       "From: Sam <sam@example.com>",
@@ -29,8 +33,9 @@ const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
 vi.mock("imapflow", () => ({
   ImapFlow: class {
     mailbox = mailboxState;
-    async search(query: { from?: string }) {
+    async search(query: { from?: string; all?: boolean }) {
       if (query?.from) return mailboxState.fromUids;
+      if (query?.all) return mailboxState.allUids;
       return mailboxState.unseen;
     }
     async messageFlagsRemove(_uid: number, flags: string[]) {
@@ -232,6 +237,10 @@ describe("createImapProvider", () => {
     );
 
     expect(movedTo).toEqual(["Archive"]);
+    expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      data: { inbox: false },
+    });
     mailboxState.fromUids = [];
   });
 
@@ -247,6 +256,9 @@ describe("createImapProvider", () => {
     );
 
     expect(movedTo).toEqual(["Trash"]);
+    expect(prisma.emailMessage.deleteMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+    });
     mailboxState.fromUids = [];
   });
 
@@ -260,6 +272,10 @@ describe("createImapProvider", () => {
     );
 
     expect(movedTo).toEqual(["Archive"]);
+    expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      data: { inbox: false },
+    });
     expect(result).toEqual({
       succeededThreadIds: ["welcome to the mailbox"],
       failedThreadIds: [],
@@ -305,6 +321,23 @@ describe("createImapProvider", () => {
     expect(result).toEqual({ status: 200 });
     expect(movedTo).toEqual(["Archive"]);
     mailboxState.fromUids = [];
+  });
+
+  it("clears inbox stats for mail that is no longer in the mailbox", async () => {
+    mailboxState.allUids = [4];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getMessagesWithPagination({ maxResults: 20 });
+
+    expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
+      where: {
+        emailAccountId: "account-1",
+        inbox: true,
+        messageId: { notIn: ["4"] },
+      },
+      data: { inbox: false },
+    });
+    mailboxState.allUids = [];
   });
 
   it("returns threads from one sender", async () => {
