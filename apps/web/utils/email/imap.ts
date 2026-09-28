@@ -100,6 +100,10 @@ export function createImapProvider(
         logger,
         maxResults: maxResults + offset,
       });
+      await dropStaleThreadCopies({
+        emailAccountId: config.emailAccountId,
+        messages,
+      });
       const filtered = query
         ? messages.filter((message) => {
             const haystack =
@@ -1058,6 +1062,30 @@ async function reconcileStoredInbox(config: ImapConfig) {
       messageId: { notIn: ids },
     },
     data: { inbox: false },
+  });
+}
+
+async function dropStaleThreadCopies({
+  emailAccountId,
+  messages,
+}: {
+  emailAccountId: string;
+  messages: { id: string; threadId: string }[];
+}) {
+  const current = new Map<string, string>();
+  for (const message of messages) {
+    if (message.id && message.threadId)
+      current.set(message.id, message.threadId);
+  }
+  if (!current.size) return;
+  await prisma.emailMessage.deleteMany({
+    where: {
+      emailAccountId,
+      OR: [...current].map(([messageId, threadId]) => ({
+        messageId,
+        threadId: { not: threadId },
+      })),
+    },
   });
 }
 

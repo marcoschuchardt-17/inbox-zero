@@ -548,6 +548,26 @@ describe("createImapProvider", () => {
     mailboxState.allUids = [];
   });
 
+  it("drops a stored copy that still uses an older thread id", async () => {
+    mailboxState.allUids = [1];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getMessagesWithPagination({ maxResults: 20 });
+
+    expect(prisma.emailMessage.deleteMany).toHaveBeenCalledWith({
+      where: {
+        emailAccountId: "account-1",
+        OR: [
+          {
+            messageId: "1",
+            threadId: { not: "<parent@example.com>" },
+          },
+        ],
+      },
+    });
+    mailboxState.allUids = [];
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
