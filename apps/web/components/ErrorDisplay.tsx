@@ -1,10 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect } from "react";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { recoverClosedRscStream } from "@/utils/closed-rsc-stream";
 import {
   Empty,
   EmptyDescription,
@@ -22,10 +20,6 @@ export function ErrorDisplay(props: {
   const errorMessage =
     safeErrorToString(props.error?.info?.error) ||
     safeErrorToString(props.error?.error);
-
-  useEffect(() => {
-    recoverClosedRscStream(errorMessage ?? undefined);
-  }, [errorMessage]);
 
   if (errorMessage) {
     return (

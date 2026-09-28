@@ -1,0 +1,46 @@
+diff --git a/dist/client/app-index.js b/dist/client/app-index.js
+index 69f9eac4f2b3b02cf443e241c7e54e4191c175e8..12d2df1f8a69cfe13764f7a73f8bfd595b934a25 100644
+--- a/dist/client/app-index.js
++++ b/dist/client/app-index.js
+@@ -197,6 +197,9 @@ window.__NEXT_CLIENT_RESUME) {
+         callServer: _appcallserver.callServer,
+         findSourceMapURL: _appfindsourcemapurl.findSourceMapURL,
+         debugChannel,
++        // The document can close while a row is still pending. Rejecting that
++        // row throws React #412 and replaces HTML the browser already painted.
++        unstable_allowPartialStream: true,
+         startTime: 0
+     });
+ }
+diff --git a/dist/client/components/router-reducer/fetch-server-response.js b/dist/client/components/router-reducer/fetch-server-response.js
+index 5c216ecfa94ab533a3d4f8e7ac89be852283a038..5cc018b49ee9159f7361ce87549653ecbdd3b10a 100644
+--- a/dist/client/components/router-reducer/fetch-server-response.js
++++ b/dist/client/components/router-reducer/fetch-server-response.js
+@@ -590,7 +590,10 @@ function createFromNextFetch(promiseForResponse, requestHeaders) {
+     return createFromFetch(promiseForResponse, {
+         callServer: _appcallserver.callServer,
+         findSourceMapURL: _appfindsourcemapurl.findSourceMapURL,
+-        debugChannel: createDebugChannel && createDebugChannel(requestHeaders)
++        debugChannel: createDebugChannel && createDebugChannel(requestHeaders),
++        // A navigation payload that ends early must not throw React #412 over
++        // a page that is already on screen.
++        unstable_allowPartialStream: true
+     });
+ }
+ 
+diff --git a/dist/client/components/router-reducer/reducers/server-action-reducer.js b/dist/client/components/router-reducer/reducers/server-action-reducer.js
+index 8de12533acd280239cfd25a38b13ba895ada8e9b..c0d833ffa61567fc842ea2c7e5aa332eaf9dbc7f 100644
+--- a/dist/client/components/router-reducer/reducers/server-action-reducer.js
++++ b/dist/client/components/router-reducer/reducers/server-action-reducer.js
+@@ -160,7 +160,10 @@ async function fetchServerAction(state, nextUrl, action) {
+             callServer: _appcallserver.callServer,
+             findSourceMapURL: _appfindsourcemapurl.findSourceMapURL,
+             temporaryReferences,
+-            debugChannel: createDebugChannel && createDebugChannel(headers)
++            debugChannel: createDebugChannel && createDebugChannel(headers),
++            // An action response that ends early must not throw React #412 over
++            // the page that triggered it.
++            unstable_allowPartialStream: true
+         });
+         // An internal redirect can send an RSC response, but does not have a useful `actionResult`.
+         actionResult = redirectLocation ? undefined : response.a;

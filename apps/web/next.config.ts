@@ -27,9 +27,9 @@ const zodV4CorePath = path.join(
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
-  // The Dokploy proxy already compresses responses. Next's gzip buffers a
-  // streaming Flight payload, and the browser then throws React #412
-  // ("Connection closed.") when the stream ends with rows still pending.
+  // Dokploy already compresses responses. Next's gzip pauses a Flight stream
+  // under backpressure, the document ends with rows still pending, and React
+  // replaces the painted page with error #412.
   compress: false,
   // Sequential Playwright feature groups use separate dev servers. Isolating
   // their caches prevents a new Turbopack process from restoring stale tasks.
