@@ -2291,6 +2291,58 @@ describe("findMatchingRules - Integration Tests", () => {
     expect(result.reasoning).toBe("This is a promotional email");
   });
 
+  it("keeps a static match when no model list is configured", async () => {
+    const staticRule = getRule({
+      id: "invoice-rule",
+      subject: "Rechnung",
+    });
+    const aiRule = getRule({
+      id: "ai-rule",
+      instructions: "Emails I need to respond to",
+    });
+
+    vi.mocked(aiChooseRule).mockRejectedValue(
+      new Error("No configured LLM model list resolved for chat"),
+    );
+
+    const result = await findMatchingRules({
+      rules: [staticRule, aiRule],
+      message: getMessage({
+        headers: getHeaders({ subject: "Rechnung 2026-09" }),
+      }),
+      emailAccount: getEmailAccount(),
+      provider,
+      modelType: "chat",
+      logger,
+    });
+
+    expect(result.matches.map((match) => match.rule.id)).toEqual([
+      "invoice-rule",
+    ]);
+  });
+
+  it("still reports a missing model list when nothing else matches", async () => {
+    const aiRule = getRule({
+      id: "ai-rule",
+      instructions: "Emails I need to respond to",
+    });
+
+    vi.mocked(aiChooseRule).mockRejectedValue(
+      new Error("No configured LLM model list resolved for chat"),
+    );
+
+    await expect(
+      findMatchingRules({
+        rules: [aiRule],
+        message: getMessage(),
+        emailAccount: getEmailAccount(),
+        provider,
+        modelType: "chat",
+        logger,
+      }),
+    ).rejects.toThrow("No configured LLM model list resolved for chat");
+  });
+
   it("should prioritize learned patterns over AI rules", async () => {
     const learnedPatternRule = getRule({
       id: "learned-rule",

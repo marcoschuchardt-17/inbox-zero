@@ -227,20 +227,34 @@ export async function findMatchingRules({
     };
   }
 
-  const llmResult = await aiChooseRule({
-    email,
-    rules: potentialAiMatches,
-    emailAccount,
-    modelType,
-    logger,
-    classificationFeedback,
-  });
+  try {
+    const llmResult = await aiChooseRule({
+      email,
+      rules: potentialAiMatches,
+      emailAccount,
+      modelType,
+      logger,
+      classificationFeedback,
+    });
 
-  return mergeAiResultsIntoMatches({
-    matches,
-    aiResult: llmResult,
-    selectionMetadata,
-  });
+    return mergeAiResultsIntoMatches({
+      matches,
+      aiResult: llmResult,
+      selectionMetadata,
+    });
+  } catch (error) {
+    // A mailbox rule already matched. A deployment with no model list should
+    // keep that match instead of failing the whole run.
+    if (matches.length > 0 && isMissingModelListError(error)) {
+      logger.warn("Skipped AI rules because no model list is configured");
+      return {
+        matches,
+        reasoning: getMatchesReasoning(matches),
+        selectionMetadata,
+      };
+    }
+    throw error;
+  }
 }
 
 function getColdEmailMatchReasons(result: {
@@ -1091,4 +1105,11 @@ function logInvalidEmailMatchPattern({
 }) {
   logger.error("Invalid email match pattern");
   logger.trace("Invalid email match pattern details", { pattern, error });
+}
+
+function isMissingModelListError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.startsWith("No configured LLM model list resolved for ")
+  );
 }
