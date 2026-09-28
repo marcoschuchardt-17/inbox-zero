@@ -318,6 +318,33 @@ export function createImapProvider(
             : undefined,
       };
     },
+    checkIfReplySent: async (senderEmail: string) => {
+      try {
+        return await hasSentMailTo({ config, senderEmail });
+      } catch (error) {
+        logger.warn("Error checking if an IMAP reply was sent", {
+          error,
+          emailAccountId: config.emailAccountId,
+        });
+        return true;
+      }
+    },
+    countReceivedMessages: async (senderEmail: string, threshold: number) => {
+      try {
+        const messages = await findImapMessagesFromSender({
+          config,
+          logger,
+          senderEmail,
+        });
+        return Math.min(messages.length, Math.max(0, threshold));
+      } catch (error) {
+        logger.warn("Error counting received IMAP messages", {
+          error,
+          emailAccountId: config.emailAccountId,
+        });
+        return 0;
+      }
+    },
     searchThreads: async ({
       query,
       maxResults = DEFAULT_PAGE_SIZE,
@@ -1937,6 +1964,68 @@ function isMissingThread(error: unknown) {
 }
 
 const SENT_MAILBOXES = ["Sent", "Sent Items", "[Gmail]/Sent Mail"];
+
+async function hasSentMailTo({
+  config,
+  senderEmail,
+}: {
+  config: ImapConfig;
+  senderEmail: string;
+}) {
+  const sender = extractEmailAddress(senderEmail).toLowerCase();
+  if (!sender) return true;
+
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    for (const mailbox of SENT_MAILBOXES) {
+      const lock = await client
+        .getMailboxLock(mailbox)
+        .catch((error: unknown) => {
+          if (isMissingImapMailbox(error)) return null;
+          throw error;
+        });
+      if (!lock) continue;
+      try {
+        const searched = await client.search(
+          { to: senderEmail },
+          { uid: true },
+        );
+        const uids = Array.isArray(searched) ? searched : [];
+        const newest = [...uids].sort((a, b) => b - a).slice(0, 8);
+        if (!newest.length) continue;
+        const wanted = new Set(newest.map(String));
+        for await (const message of client.fetch(
+          newest.join(","),
+          {
+            uid: true,
+            source: true,
+            flags: true,
+            internalDate: true,
+          },
+          { uid: true },
+        )) {
+          if (!wanted.has(String(message.uid)) || !message.source) continue;
+          const parsed = await parseImapMessage(
+            message.uid,
+            message.source,
+            message.flags ?? new Set(),
+            messageInternalDate(message.internalDate),
+          );
+          const recipients = extractEmailAddresses(parsed.headers.to);
+          if (recipients.some((address) => address.toLowerCase() === sender)) {
+            return true;
+          }
+        }
+      } finally {
+        lock.release();
+      }
+    }
+    return false;
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
 
 async function fetchSentMessages({
   config,

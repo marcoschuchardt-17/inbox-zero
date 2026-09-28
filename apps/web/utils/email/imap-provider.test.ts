@@ -79,8 +79,18 @@ vi.mock("imapflow", () => ({
     constructor(options: Record<string, unknown>) {
       mailboxState.connectOptions = options;
     }
-    async search(query: { from?: string; all?: boolean; or?: unknown }) {
+    async search(query: {
+      from?: string;
+      to?: string;
+      all?: boolean;
+      or?: unknown;
+    }) {
       if (query?.from) return mailboxState.fromUids;
+      if (query?.to) {
+        return mailboxState.opened === "Sent"
+          ? mailboxState.sentSearchUids
+          : [];
+      }
       if (query?.all) return mailboxState.allUids;
       if (query?.or) {
         return mailboxState.opened === "Sent"
@@ -1084,6 +1094,38 @@ describe("createImapProvider", () => {
       "Please trash this message.",
     );
     mailboxState.trashSource = "";
+  });
+
+  it("detects a sent reply and counts mail from that sender", async () => {
+    mailboxState.sentSearchUids = [11];
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Welcome",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <reply-sam@example.com>",
+      "",
+      "Replying to Sam.",
+    ].join("\r\n");
+    mailboxState.fromUids = [1];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await expect(provider.checkIfReplySent("sam@example.com")).resolves.toBe(
+      true,
+    );
+    await expect(provider.checkIfReplySent("other@example.com")).resolves.toBe(
+      false,
+    );
+    await expect(
+      provider.countReceivedMessages("sam@example.com", 5),
+    ).resolves.toBe(1);
+    await expect(
+      provider.countReceivedMessages("other@example.com", 5),
+    ).resolves.toBe(0);
+
+    mailboxState.sentSearchUids = [];
+    mailboxState.sentSource = "";
+    mailboxState.fromUids = [];
   });
 
   it("returns messages from one sender and skips a different address", async () => {
