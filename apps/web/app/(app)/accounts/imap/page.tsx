@@ -172,6 +172,21 @@ export default function AddImapAccountPage() {
               explainText="Usually INBOX"
             />
 
+            <div className="flex flex-wrap gap-6 text-sm">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" {...register("imapSecure")} />
+                IMAP TLS
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" {...register("smtpSecure")} />
+                SMTP TLS
+              </label>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Leave TLS on for ports 993 and 465. Turn it off for STARTTLS on
+              ports 143 and 587.
+            </p>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
