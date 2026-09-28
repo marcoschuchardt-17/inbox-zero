@@ -442,6 +442,7 @@ export function createImapProvider(
       }
     },
     getFolderCounts: async () => [],
+    getFiltersList: async () => [],
     getInboxStats: () => readInboxStats(config),
     getLabels: async () => {
       const rows = await prisma.label.findMany({
@@ -572,9 +573,8 @@ async function fetchMailboxMessages({
   const client = createImapClient(config);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock(
-      mailbox || config.syncFolder || "INBOX",
-    );
+    const selectedMailbox = mailbox || config.syncFolder || "INBOX";
+    const lock = await client.getMailboxLock(selectedMailbox);
     try {
       // ImapFlow stores the selected mailbox on the client. The lock has no mailbox field.
       const openedMailbox = client.mailbox;
@@ -591,14 +591,19 @@ async function fetchMailboxMessages({
         internalDate: true,
       })) {
         if (!message.source) continue;
-        messages.push(
-          await parseImapMessage(
-            message.uid,
-            message.source,
-            message.flags,
-            message.internalDate,
-          ),
+        const parsed = await parseImapMessage(
+          message.uid,
+          message.source,
+          message.flags,
+          message.internalDate,
         );
+        if (
+          isInboxMailbox(selectedMailbox, config.syncFolder || "INBOX") &&
+          !parsed.labelIds?.includes("INBOX")
+        ) {
+          parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+        }
+        messages.push(parsed);
       }
       return messages.sort(
         (a, b) => Number(a.internalDate || "0") - Number(b.internalDate || "0"),
@@ -793,6 +798,11 @@ function toThread(messages: ParsedMessage[]): EmailThread {
       },
     })),
   };
+}
+
+function isInboxMailbox(mailbox: string, syncFolder: string) {
+  const name = mailbox.toLowerCase();
+  return name === "inbox" || name === syncFolder.toLowerCase();
 }
 
 async function readInboxStats(config: ImapConfig) {

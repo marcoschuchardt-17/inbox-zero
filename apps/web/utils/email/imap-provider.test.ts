@@ -125,6 +125,7 @@ describe("createImapProvider", () => {
     expect(messages[0]?.headers.from).toContain("sam@example.com");
     expect(messages[0]?.headers["in-reply-to"]).toContain("parent@example.com");
     expect(messages[0]?.textPlain).toContain("The mailbox is ready.");
+    expect(messages[0]?.labelIds).toContain("INBOX");
   });
 
   it("archives a thread into the Archive mailbox", async () => {
@@ -285,6 +286,11 @@ describe("createImapProvider", () => {
     await provider.removeThreadLabel(message.threadId, "Rechnungen");
 
     expect(flagsRemoved).toEqual(["Rechnungen"]);
+  });
+
+  it("has no server-side filters", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+    await expect(provider.getFiltersList()).resolves.toEqual([]);
   });
 });
 
