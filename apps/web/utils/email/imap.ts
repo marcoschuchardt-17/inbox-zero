@@ -1182,10 +1182,26 @@ async function parseImapMessage(
       "message-id": parsed.messageId || undefined,
       references: parsed.references || undefined,
       "in-reply-to": parsed.inReplyTo || undefined,
+      "list-unsubscribe": headerValue(parsed.headers, "list-unsubscribe"),
+      "list-unsubscribe-post": headerValue(
+        parsed.headers,
+        "list-unsubscribe-post",
+      ),
     },
     _attachments: includeAttachmentBodies ? attachments : [],
     _uid: uid,
   };
+}
+
+function headerValue(
+  headers: { key: string; value: string }[] | undefined,
+  name: string,
+) {
+  const values = (headers || [])
+    .filter((header) => header.key === name)
+    .map((header) => header.value.trim())
+    .filter(Boolean);
+  return values.length ? values.join(", ") : undefined;
 }
 
 function messageSnippet(textBody: string, htmlBody: string) {

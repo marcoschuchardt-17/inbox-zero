@@ -53,6 +53,7 @@ const {
       name: string;
     }[],
     opened: "INBOX",
+    inboxSource: "",
     connectOptions: null as null | Record<string, unknown>,
     archiveSource: "" as string,
     sentSource: "" as string,
@@ -149,7 +150,7 @@ vi.mock("imapflow", () => ({
       }
       yield {
         uid: 1,
-        source: Buffer.from(rawMessage),
+        source: Buffer.from(mailboxState.inboxSource || rawMessage),
         flags: new Set(["\\Seen"]),
         internalDate: new Date("2026-09-28T12:00:00.000Z"),
       };
@@ -318,6 +319,31 @@ describe("createImapProvider", () => {
     ).toBe(false);
     mailboxState.sentSource = "";
     mailboxState.trashSource = "";
+  });
+
+  it("keeps the unsubscribe header from the mailbox message", async () => {
+    mailboxState.inboxSource = [
+      "From: News <news@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Weekly",
+      "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+      "Message-ID: <weekly@example.com>",
+      "List-Unsubscribe: <https://example.com/unsub>, <mailto:unsub@example.com>",
+      "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
+      "",
+      "The weekly note.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const [message] = await provider.getInboxMessages(1);
+
+    expect(message?.headers["list-unsubscribe"]).toBe(
+      "<https://example.com/unsub>, <mailto:unsub@example.com>",
+    );
+    expect(message?.headers["list-unsubscribe-post"]).toBe(
+      "List-Unsubscribe=One-Click",
+    );
+    mailboxState.inboxSource = "";
   });
 
   it("reads an inbox message from the raw mailbox source", async () => {
