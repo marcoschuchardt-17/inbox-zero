@@ -500,6 +500,30 @@ describe("createImapProvider", () => {
     mailboxState.archiveSource = "";
   });
 
+  it("moves trashed mail back from Trash", async () => {
+    movedTo.length = 0;
+    movedFrom.length = 0;
+    mailboxState.trashSource = [
+      "From: Trash Test <trash@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Please trash this",
+      "Date: Mon, 28 Sep 2026 15:00:00 +0000",
+      "Message-ID: <trash-me@example.com>",
+      "",
+      "Please trash this message.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const listed = await provider.getThreadsWithQuery({
+      query: { type: "trash" },
+    });
+    await provider.untrashThread(listed.threads[0]?.id || "");
+
+    expect(movedFrom).toEqual(["Trash"]);
+    expect(movedTo).toEqual(["INBOX"]);
+    mailboxState.trashSource = "";
+  });
+
   it("lists mail stored in Trash", async () => {
     mailboxState.trashSource = [
       "From: Trash Test <trash@example.com>",

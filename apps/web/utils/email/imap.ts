@@ -513,27 +513,22 @@ export function createImapProvider(
       );
     },
     unarchiveThread: async (threadId: string) => {
-      const messages = await fetchMailboxMessages({
+      await moveThreadBetweenMailboxes({
         config,
         logger,
-        mailbox: "Archive",
-        maxResults: 100,
+        threadId,
+        sourceMailbox: "Archive",
+        destinationMailbox: config.syncFolder || "INBOX",
       });
-      const matches = messages.filter(
-        (message) => message.threadId === threadId,
-      );
-      if (!matches.length) throw new SafeError("Thread not found");
-      await Promise.all(
-        matches.map((message) =>
-          moveMessageToMailbox({
-            config,
-            logger,
-            messageId: message.id,
-            mailbox: config.syncFolder || "INBOX",
-            sourceMailbox: "Archive",
-          }),
-        ),
-      );
+    },
+    untrashThread: async (threadId: string) => {
+      await moveThreadBetweenMailboxes({
+        config,
+        logger,
+        threadId,
+        sourceMailbox: "Trash",
+        destinationMailbox: config.syncFolder || "INBOX",
+      });
     },
     trashMessages: async (messageIds: string[]) => {
       await Promise.all(
@@ -1162,6 +1157,40 @@ async function setSeenFlag({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+async function moveThreadBetweenMailboxes({
+  config,
+  logger,
+  threadId,
+  sourceMailbox,
+  destinationMailbox,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  threadId: string;
+  sourceMailbox: string;
+  destinationMailbox: string;
+}) {
+  const messages = await fetchMailboxMessages({
+    config,
+    logger,
+    mailbox: sourceMailbox,
+    maxResults: 100,
+  });
+  const matches = messages.filter((message) => message.threadId === threadId);
+  if (!matches.length) throw new SafeError("Thread not found");
+  await Promise.all(
+    matches.map((message) =>
+      moveMessageToMailbox({
+        config,
+        logger,
+        messageId: message.id,
+        mailbox: destinationMailbox,
+        sourceMailbox,
+      }),
+    ),
+  );
 }
 
 async function moveMessageToMailbox({

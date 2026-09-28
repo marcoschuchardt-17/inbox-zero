@@ -43,7 +43,7 @@ export function ImapInbox() {
 
   async function moveThread(
     threadId: string,
-    action: "archive" | "trash" | "unarchive",
+    action: "archive" | "trash" | "unarchive" | "untrash",
   ) {
     setArchiveError("");
     const response = await fetchWithAccount({
@@ -134,13 +134,18 @@ export function ImapInbox() {
                       </Button>
                     </>
                   ) : null}
-                  {folder === "archive" ? (
+                  {folder === "archive" || folder === "trash" ? (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="mt-3"
-                      onClick={() => moveThread(thread.id, "unarchive")}
+                      onClick={() =>
+                        moveThread(
+                          thread.id,
+                          folder === "trash" ? "untrash" : "unarchive",
+                        )
+                      }
                     >
                       Move to inbox
                     </Button>
@@ -159,9 +164,10 @@ export function ImapInbox() {
   );
 }
 
-function moveError(action: "archive" | "trash" | "unarchive") {
+function moveError(action: "archive" | "trash" | "unarchive" | "untrash") {
   if (action === "trash") return "Could not move this email to Trash.";
-  if (action === "unarchive") return "Could not move this email to the inbox.";
+  if (action === "unarchive" || action === "untrash")
+    return "Could not move this email to the inbox.";
   return "Could not archive this email.";
 }
 
