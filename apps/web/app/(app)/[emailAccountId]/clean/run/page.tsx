@@ -28,20 +28,23 @@ export default async function CleanRunPage(props: {
 
   if (!emailAccount) return <CardTitle>Email account not found</CardTitle>;
 
-  const threads = await getThreadsByJobId({ emailAccountId, jobId });
-
   const job = jobId
     ? await getJobById({ emailAccountId, jobId })
     : await getLastJob({ emailAccountId });
 
   if (!job) return <CardTitle>Job not found</CardTitle>;
 
+  const threads = await getThreadsByJobId({
+    emailAccountId,
+    jobId: job.id,
+  });
+
   const [total, done] = await Promise.all([
     prisma.cleanupThread.count({
-      where: { jobId, emailAccountId },
+      where: { jobId: job.id, emailAccountId },
     }),
     prisma.cleanupThread.count({
-      where: { jobId, emailAccountId, archived: true },
+      where: { jobId: job.id, emailAccountId, archived: true },
     }),
   ]);
 
