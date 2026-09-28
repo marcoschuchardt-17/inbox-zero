@@ -12,9 +12,11 @@ import { useProductAnalytics } from "@/hooks/useProductAnalytics";
 export function IntroStep({
   unhandledCount,
   cleanAction,
+  countType,
 }: {
   unhandledCount: number;
   cleanAction: CleanAction;
+  countType: "inbox" | "unread";
 }) {
   const { onNext } = useStep();
   const analytics = useProductAnalytics("deep_clean");
@@ -44,8 +46,8 @@ export function IntroStep({
           <>
             <SectionDescription className="mx-auto mt-2 max-w-prose">
               You have {unhandledCount.toLocaleString()}{" "}
-              {cleanAction === CleanAction.ARCHIVE ? "unarchived" : "unread"}{" "}
-              emails in your inbox.
+              {inboxCountLabel(cleanAction, countType)}{" "}
+              {unhandledCount === 1 ? "email" : "emails"} in your inbox.
             </SectionDescription>
             <SectionDescription className="mx-auto mt-2 max-w-prose">
               Let's clean up your inbox while keeping important emails safe.
@@ -70,4 +72,14 @@ export function IntroStep({
       </div>
     </div>
   );
+}
+
+function inboxCountLabel(
+  cleanAction: CleanAction,
+  countType: "inbox" | "unread",
+) {
+  if (countType === "unread" || cleanAction !== CleanAction.ARCHIVE) {
+    return "unread";
+  }
+  return "unarchived";
 }

@@ -49,7 +49,7 @@ export default async function CleanPage(props: {
     provider: emailAccount.account.provider,
     logger: createScopedLogger("clean-onboarding").with({ emailAccountId }),
   });
-  const { unhandledCount } = await getUnhandledCount(emailProvider);
+  const { unhandledCount, type } = await getUnhandledCount(emailProvider);
 
   const step = Number.parseInt(searchParams.step || "") || CleanStep.INTRO;
 
@@ -89,7 +89,11 @@ export default async function CleanPage(props: {
       // first / default step
       default:
         return (
-          <IntroStep unhandledCount={unhandledCount} cleanAction={"ARCHIVE"} />
+          <IntroStep
+            unhandledCount={unhandledCount}
+            cleanAction={"ARCHIVE"}
+            countType={type}
+          />
         );
     }
   };
