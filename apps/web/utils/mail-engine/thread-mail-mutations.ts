@@ -5,6 +5,8 @@ import {
 } from "@/utils/mail-engine/mutation-change";
 import { submitConversationChange } from "@/utils/mail-engine/submit-conversations";
 import { admissionRejectionCopy } from "@/utils/mail-engine/admission-notice";
+import { isImapProvider } from "@/utils/email/provider-types";
+import { fetchWithAccount } from "@/utils/fetch";
 import { randomUuid } from "@/utils/uuid";
 
 type ThreadMailMutationTarget = {
@@ -31,12 +33,14 @@ export async function enqueueThreadMailMutationBatch(
     batchId = randomUuid(),
     clientSource,
     emailAccountId,
+    provider,
     payload,
     threads,
   }: {
     batchId?: string;
     clientSource?: { kind: "sender"; sender: string };
     emailAccountId: string;
+    provider?: string;
     payload: ThreadMutationPayload;
     threads: readonly ThreadMailMutationTarget[];
   },
@@ -55,6 +59,17 @@ export async function enqueueThreadMailMutationBatch(
   });
   if (!targets.length)
     return { batchId, mutations: [] as ThreadMailMutation[] };
+
+  if (isImapProvider(provider)) {
+    return submitImapHttpBatch({
+      batchId,
+      clientSource,
+      emailAccountId,
+      now,
+      payload,
+      targets,
+    });
+  }
 
   const client = await waitForActiveMailClient();
   const change = mutationPayloadToChange(payload);
@@ -95,6 +110,71 @@ export async function enqueueThreadMailMutationBatch(
 
 const ENGINE_WAIT_MS = 30_000;
 const ENGINE_POLL_MS = 25;
+
+async function submitImapHttpBatch({
+  batchId,
+  clientSource,
+  emailAccountId,
+  now,
+  payload,
+  targets,
+}: {
+  batchId: string;
+  clientSource?: { kind: "sender"; sender: string };
+  emailAccountId: string;
+  now: number;
+  payload: ThreadMutationPayload;
+  targets: { messageIds: string[]; threadId: string }[];
+}) {
+  const action = httpActionForPayload(payload);
+  if (!action) throw new Error("Unsupported mail mutation");
+
+  const mutations: ThreadMailMutation[] = [];
+  for (const target of targets) {
+    const response = await fetchWithAccount({
+      url: `/api/threads/${encodeURIComponent(target.threadId)}/${action}`,
+      emailAccountId,
+      init: { method: "POST" },
+    });
+    if (!response.ok) throw new Error(httpFailureCopy(action));
+    mutations.push({
+      id: randomUuid(),
+      batchId,
+      clientSource,
+      emailAccountId,
+      threadId: target.threadId,
+      messageIds: target.messageIds,
+      ...payload,
+      status: "succeeded",
+      attempts: 0,
+      nextAttemptAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  return { batchId, mutations };
+}
+
+function httpActionForPayload(payload: ThreadMutationPayload) {
+  switch (payload.kind) {
+    case "archive":
+      return "archive";
+    case "unarchive":
+      return "unarchive";
+    case "trash":
+      return "trash";
+    case "untrash":
+      return "untrash";
+    default:
+      return null;
+  }
+}
+
+function httpFailureCopy(action: string) {
+  if (action === "archive") return "Failed to archive email";
+  if (action === "trash") return "Failed to trash email";
+  return "Failed to update email";
+}
 
 async function waitForActiveMailClient() {
   const deadline = Date.now() + ENGINE_WAIT_MS;

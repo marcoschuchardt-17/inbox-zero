@@ -13,8 +13,16 @@ const mail = vi.hoisted(() => ({
   },
 }));
 
+const http = vi.hoisted(() => ({
+  fetchWithAccount: vi.fn(),
+}));
+
 vi.mock("@/utils/mail-engine/active-client", () => ({
   getActiveMailClient: () => mail.current,
+}));
+
+vi.mock("@/utils/fetch", () => ({
+  fetchWithAccount: (...args: unknown[]) => http.fetchWithAccount(...args),
 }));
 
 describe("thread mail mutation batches", () => {
@@ -23,6 +31,7 @@ describe("thread mail mutation batches", () => {
     mail.current = mail.client;
     mail.client.getDiagnostics.mockResolvedValue({ revision: 1 });
     mail.client.submitConversations.mockResolvedValue({ status: "queued" });
+    http.fetchWithAccount.mockResolvedValue({ ok: true });
   });
 
   it("submits each complete thread snapshot through the engine", async () => {
@@ -67,6 +76,64 @@ describe("thread mail mutation batches", () => {
       },
     ]);
     expect(mail.client.submitConversations).toHaveBeenCalledTimes(2);
+  });
+
+  it("archives IMAP threads over HTTP without waiting for the mail engine", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        clientSource: { kind: "sender", sender: "receipts@example.com" },
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [
+          { id: "thread-1", messages: [{ id: "message-1" }] },
+          { id: "thread-2", messages: [{ id: "message-2" }] },
+        ],
+        payload: { kind: "archive" },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenNthCalledWith(1, {
+      url: "/api/threads/thread-1/archive",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(http.fetchWithAccount).toHaveBeenNthCalledWith(2, {
+      url: "/api/threads/thread-2/archive",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      {
+        emailAccountId: "account",
+        threadId: "thread-1",
+        messageIds: ["message-1"],
+        status: "succeeded",
+      },
+      {
+        emailAccountId: "account",
+        threadId: "thread-2",
+        messageIds: ["message-2"],
+        status: "succeeded",
+      },
+    ]);
+  });
+
+  it("reports a failed IMAP archive without waiting for the mail engine", async () => {
+    mail.current = null;
+    http.fetchWithAccount.mockResolvedValue({ ok: false });
+
+    await expect(
+      enqueueThreadMailMutationBatch({
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "thread-1", messages: [{ id: "message-1" }] }],
+        payload: { kind: "archive" },
+      }),
+    ).rejects.toThrow("Failed to archive email");
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
   });
 
   it("waits until the mail engine is published", async () => {
