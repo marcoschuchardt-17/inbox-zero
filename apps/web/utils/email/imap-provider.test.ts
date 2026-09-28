@@ -35,7 +35,7 @@ const {
 } = vi.hoisted(() => ({
   movedTo: [] as string[],
   movedFrom: [] as string[],
-  appended: [] as { mailbox: string; raw: string }[],
+  appended: [] as { mailbox: string; raw: string; flags?: string[] }[],
   flagsRemoved: [] as string[],
   flagsAdded: [] as { uid: number; flags: string[] }[],
   deleted: [] as { mailbox: string; uid: number }[],
@@ -179,8 +179,8 @@ vi.mock("imapflow", () => ({
     async messageDelete(uid: number) {
       deleted.push({ mailbox: mailboxState.opened, uid });
     }
-    async append(mailbox: string, raw: string) {
-      appended.push({ mailbox, raw });
+    async append(mailbox: string, raw: string, flags?: string[]) {
+      appended.push({ mailbox, raw, flags });
       return { uid: 7 };
     }
   },
@@ -1116,6 +1116,50 @@ describe("createImapProvider", () => {
     mailboxState.missingMailboxes = ["Drafts"];
     await expect(provider.getDraft(message.id)).resolves.toBeNull();
     mailboxState.missingMailboxes = [];
+    mailboxState.draftSource = "";
+  });
+
+  it("saves a new message as a draft and can replace that draft", async () => {
+    appended.length = 0;
+    deleted.length = 0;
+    mailboxState.draftSource = "";
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const created = await provider.createDraft({
+      to: "",
+      subject: "Note to send",
+      messageHtml: "<p>Hold this</p>",
+    });
+
+    expect(created.id).toMatch(/^<imap-draft-.+@example\.com>$/);
+    expect(appended[0]?.mailbox).toBe("Drafts");
+    expect(appended[0]?.flags).toEqual(["\\Draft"]);
+    expect(appended[0]?.raw).toContain(`Message-ID: ${created.id}`);
+    expect(appended[0]?.raw).toContain("Subject: Note to send");
+    expect(appended[0]?.raw).toContain("<p>Hold this</p>");
+
+    mailboxState.draftSource = savedDraft();
+    await provider.updateDraft("<draft-1@example.com>", {
+      to: "sam@example.com",
+      cc: "copy@example.com",
+      subject: "Updated note",
+      messageHtml: "<p>Changed</p>",
+    });
+
+    expect(deleted).toEqual([{ mailbox: "Drafts", uid: 13 }]);
+    const replacement = appended.at(-1);
+    expect(replacement?.mailbox).toBe("Drafts");
+    expect(replacement?.raw).toContain("Message-ID: <draft-1@example.com>");
+    expect(replacement?.raw).toContain("In-Reply-To: <welcome-1@example.com>");
+    expect(replacement?.raw).toContain("To: sam@example.com");
+    expect(replacement?.raw).toContain("Cc: copy@example.com");
+    expect(replacement?.raw).toContain("Subject: Updated note");
+    expect(replacement?.raw).toContain("<p>Changed</p>");
+    await expect(
+      provider.getDraft("<draft-1@example.com>"),
+    ).resolves.toMatchObject({
+      id: "13",
+    });
     mailboxState.draftSource = "";
   });
 

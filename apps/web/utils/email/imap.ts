@@ -505,6 +505,70 @@ export function createImapProvider(
         await client.logout().catch(() => undefined);
       }
     },
+    createDraft: async ({ to, subject, messageHtml, replyToMessageId }) => {
+      const domain = config.ownerEmail.split("@")[1] || "localhost";
+      const messageId = `<imap-draft-${crypto.randomUUID()}@${domain}>`;
+      const original = replyToMessageId
+        ? await fetchMessageById({
+            config,
+            logger,
+            messageId: replyToMessageId,
+          })
+        : null;
+      const parentId = original?.headers["message-id"];
+      await appendDraftRaw({
+        config,
+        logger,
+        raw: buildOutgoingMessage({
+          from: config.ownerEmail,
+          to,
+          subject,
+          messageId,
+          inReplyTo: parentId,
+          references: parentId
+            ? [original?.headers.references, parentId].filter(Boolean).join(" ")
+            : undefined,
+          contentType: "text/html; charset=utf-8",
+          body: messageHtml,
+        }),
+      });
+      return { id: messageId };
+    },
+    updateDraft: async (draftId, params) => {
+      const drafts = await findDraftMessages({ config, logger, draftId });
+      const current = drafts.at(-1);
+      if (!current) throw new SafeError("Draft not found");
+      const messageId = current.headers["message-id"] || draftId;
+      const appended = await appendDraftRaw({
+        config,
+        logger,
+        raw: buildOutgoingMessage({
+          from: config.ownerEmail,
+          to: params.to ?? current.headers.to,
+          cc: params.cc ?? current.headers.cc,
+          bcc: params.bcc,
+          subject: params.subject ?? current.subject,
+          messageId,
+          inReplyTo: current.headers["in-reply-to"],
+          references: current.headers.references,
+          contentType: "text/html; charset=utf-8",
+          body:
+            params.messageHtml ?? current.textHtml ?? current.textPlain ?? "",
+        }),
+      });
+      const newUid = appended?.uid == null ? "" : String(appended.uid);
+      await Promise.all(
+        drafts
+          .filter((message) => message.id !== newUid)
+          .map((message) =>
+            deleteDraftMessage({
+              config,
+              logger,
+              messageId: message.id,
+            }),
+          ),
+      );
+    },
     sendDraft: async (draftId: string) => {
       const drafts = await findDraftMessages({ config, logger, draftId });
       const draft = drafts.at(-1);
@@ -1633,8 +1697,36 @@ async function findDraftMessages({
     maxResults: 100,
   });
   return messages.filter(
-    (message) => message.threadId === draftId || message.id === draftId,
+    (message) =>
+      message.threadId === draftId ||
+      message.id === draftId ||
+      message.headers["message-id"] === draftId,
   );
+}
+
+async function appendDraftRaw({
+  config,
+  logger,
+  raw,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  raw: string;
+}) {
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    await ensureMailbox(client, "Drafts");
+    return await client.append("Drafts", raw, ["\\Draft"]);
+  } catch (error) {
+    logger.error("Failed saving IMAP draft", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to save IMAP draft");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
 }
 
 async function deleteDraftMessage({

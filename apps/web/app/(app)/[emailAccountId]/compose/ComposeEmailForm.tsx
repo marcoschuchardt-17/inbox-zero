@@ -482,11 +482,7 @@ function ComposeEmailFormContent({
     getContent: getDraftContent,
   });
   const providerAutosave = useProviderDraftAutosave({
-    // IMAP sends through SMTP and stores the copy in Sent. This autosave only
-    // knows how to update a Gmail or Outlook draft.
-    enabled:
-      !isImapProvider(accountProvider) &&
-      (Boolean(providerDraftMessageId) || isNewCompose),
+    enabled: Boolean(providerDraftMessageId) || isNewCompose,
     sessionKey: isNewCompose
       ? `${selectedEmailAccountId}:${requestId}`
       : undefined,
@@ -924,6 +920,18 @@ function ComposeEmailFormContent({
             return;
           }
           deliveryAccepted = true;
+          if (providerDraftId.current) {
+            const discarded = await discardComposeDraftAction(
+              selectedEmailAccountId,
+              { draftId: providerDraftId.current },
+            );
+            if (!discarded?.data) {
+              toastError({
+                description:
+                  "Email sent, but the saved draft is still in Drafts.",
+              });
+            }
+          }
           try {
             await clearLocalDraft();
           } catch {
