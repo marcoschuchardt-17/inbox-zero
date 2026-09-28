@@ -71,6 +71,20 @@ describe("redis usage tracking", () => {
     });
   });
 
+  it("returns no usage when Redis has no URL", async () => {
+    vi.mocked(redis.get).mockRejectedValue(
+      new TypeError("Failed to parse URL from /pipeline"),
+    );
+
+    await expect(
+      getUsage({
+        emailAccountId: "email-account-1",
+        legacyEmail: "person@example.com",
+        userId: "user-1",
+      }),
+    ).resolves.toEqual({});
+  });
+
   it("reads usage by email account ID, falling back to legacy openai field names", async () => {
     vi.mocked(redis.hgetall).mockResolvedValue({ openaiCalls: 3 });
 
