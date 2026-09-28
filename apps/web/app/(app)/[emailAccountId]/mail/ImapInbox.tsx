@@ -126,6 +126,8 @@ export function ImapInbox() {
           <ul className="mt-4 divide-y">
             {data.threads.map((thread) => {
               const message = thread.messages.at(-1);
+              const unread =
+                folder === "inbox" && message?.labelIds?.includes("UNREAD");
               return (
                 <li key={thread.id} className="flex items-start gap-2">
                   <button
@@ -141,8 +143,19 @@ export function ImapInbox() {
                       }
                     }}
                   >
-                    <div className="truncate font-medium">
+                    <div
+                      className={
+                        unread
+                          ? "truncate font-semibold"
+                          : "truncate font-medium"
+                      }
+                    >
                       {message?.headers.from || "Unknown sender"}
+                      {unread ? (
+                        <span className="ml-2 font-normal text-xs text-muted-foreground">
+                          Unread
+                        </span>
+                      ) : null}
                     </div>
                     <div className="truncate text-sm">
                       {message?.subject || "(No subject)"}
