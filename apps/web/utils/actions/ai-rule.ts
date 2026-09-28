@@ -288,7 +288,7 @@ export const testAiCustomContentAction = actionClient
           action: "testAiCustomContent",
           flushReason: "test-mode-error",
         });
-        throw error;
+        throw ruleRunError(error);
       }
     },
   );
@@ -327,5 +327,17 @@ async function flushAndRethrowRunRulesActionError({
     });
   }
 
-  throw error;
+  throw ruleRunError(error);
+}
+
+function ruleRunError(error: unknown) {
+  if (
+    error instanceof Error &&
+    error.message.startsWith("No configured LLM model list resolved for ")
+  ) {
+    return new SafeError(
+      "Add an API key for a chat model before running rules.",
+    );
+  }
+  return error;
 }
