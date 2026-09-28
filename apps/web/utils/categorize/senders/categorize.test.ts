@@ -108,6 +108,30 @@ describe("categorizeWithAi", () => {
     ]);
   });
 
+  it("keeps static matches when no model list is configured", async () => {
+    vi.mocked(aiCategorizeSenders).mockRejectedValue(
+      new Error("No configured LLM model list resolved for economy"),
+    );
+    const sendersWithEmails = new Map([
+      ["newsletter@substack.com", []],
+      ["person@example.com", []],
+    ]);
+
+    const result = await categorizeWithAi({
+      emailAccount,
+      sendersWithEmails,
+      categories: [
+        { name: "Newsletter", description: "Editorial" },
+        { name: "Other", description: "Unclear" },
+      ],
+    });
+
+    expect(result).toEqual([
+      { sender: "newsletter@substack.com", category: "Newsletter" },
+      { sender: "person@example.com", category: undefined },
+    ]);
+  });
+
   it("applies static rules and skips AI for senders when the matching category exists", async () => {
     const sendersWithEmails = new Map([
       ["newsletter@substack.com", []],
