@@ -129,7 +129,11 @@ export function createImapProvider(
       );
     },
     getThread: async (threadId: string) => {
-      const mailboxes = [config.syncFolder || "INBOX", "Archive"].filter(
+      const mailboxes = [
+        config.syncFolder || "INBOX",
+        "Sent",
+        "Archive",
+      ].filter(
         (mailbox, index, all) =>
           all.findIndex(
             (item) => item.toLowerCase() === mailbox.toLowerCase(),
@@ -188,11 +192,14 @@ export function createImapProvider(
       pageToken,
     }) => core.getMessagesWithPagination({ query, maxResults, pageToken }),
     getThreadsWithQuery: async ({ query, maxResults = DEFAULT_PAGE_SIZE }) => {
-      const messages = await fetchMailboxMessages({
-        config,
-        logger,
-        maxResults,
-      });
+      const messages =
+        query?.type === "sent"
+          ? await core.getSentMessages(maxResults)
+          : await fetchMailboxMessages({
+              config,
+              logger,
+              maxResults,
+            });
       const fromEmail = query?.fromEmail?.trim().toLowerCase();
       const filtered = messages.filter((message) => {
         if (
@@ -829,7 +836,7 @@ async function parseImapMessage(
     date: (internalDate || new Date()).toISOString(),
     internalDate: historyId,
     subject,
-    snippet: (textBody || htmlBody || "").slice(0, 280),
+    snippet: messageSnippet(textBody, htmlBody),
     textPlain: textBody || undefined,
     textHtml: htmlBody || undefined,
     bodyContentType: htmlBody ? "html" : "text",
@@ -865,6 +872,11 @@ async function parseImapMessage(
     _attachments: includeAttachmentBodies ? attachments : [],
     _uid: uid,
   };
+}
+
+function messageSnippet(textBody: string, htmlBody: string) {
+  const source = textBody || htmlBody.replace(/<[^>]+>/g, " ");
+  return source.replace(/\s+/g, " ").trim().slice(0, 280);
 }
 
 function groupToThreads(messages: ParsedMessage[]): EmailThread[] {

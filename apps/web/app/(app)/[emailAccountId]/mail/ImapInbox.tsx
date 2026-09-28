@@ -10,10 +10,21 @@ import { useAccount } from "@/providers/EmailAccountProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
 import { fetchWithAccount } from "@/utils/fetch";
 
+const folders = [
+  { id: "inbox", label: "Inbox", query: "/api/threads?limit=30&view=list" },
+  {
+    id: "sent",
+    label: "Sent",
+    query: "/api/threads?limit=30&view=list&type=sent",
+  },
+] as const;
+
 export function ImapInbox() {
   const { emailAccountId } = useAccount();
+  const [folder, setFolder] = useState<(typeof folders)[number]["id"]>("inbox");
+  const selected = folders.find((item) => item.id === folder) ?? folders[0];
   const { data, error, isLoading, mutate } = useSWR<ThreadsListResponse>(
-    "/api/threads?limit=30&view=list",
+    selected.query,
   );
   const { showEmail } = useDisplayedEmail();
   const [archiveError, setArchiveError] = useState("");
@@ -35,7 +46,23 @@ export function ImapInbox() {
   return (
     <LoadingContent loading={isLoading} error={error}>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-        <PageHeading>Inbox</PageHeading>
+        <PageHeading>{selected.label}</PageHeading>
+        <div className="mt-3 flex gap-2">
+          {folders.map((item) => (
+            <Button
+              key={item.id}
+              type="button"
+              variant={item.id === folder ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setArchiveError("");
+                setFolder(item.id);
+              }}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
         {archiveError ? (
           <p className="mt-3 text-sm text-destructive">{archiveError}</p>
         ) : null}
@@ -65,22 +92,24 @@ export function ImapInbox() {
                       {message?.snippet}
                     </div>
                   </button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    onClick={() => archiveThread(thread.id)}
-                  >
-                    Archive
-                  </Button>
+                  {folder === "inbox" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => archiveThread(thread.id)}
+                    >
+                      Archive
+                    </Button>
+                  ) : null}
                 </li>
               );
             })}
           </ul>
         ) : (
           <p className="mt-4 text-sm text-muted-foreground">
-            The inbox is empty.
+            {folder === "sent" ? "Sent is empty." : "The inbox is empty."}
           </p>
         )}
       </div>

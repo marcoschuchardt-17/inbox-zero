@@ -30,6 +30,7 @@ const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
       allUids: [] as number[],
       opened: "INBOX",
       archiveSource: "" as string,
+      sentSource: "" as string,
     },
     rawMessage: [
       "From: Sam <sam@example.com>",
@@ -68,6 +69,16 @@ vi.mock("imapflow", () => ({
           source: Buffer.from(mailboxState.archiveSource),
           flags: new Set(["\\Seen"]),
           internalDate: new Date("2026-09-28T13:00:00.000Z"),
+        };
+        return;
+      }
+      if (mailboxState.opened === "Sent") {
+        if (!mailboxState.sentSource) return;
+        yield {
+          uid: 11,
+          source: Buffer.from(mailboxState.sentSource),
+          flags: new Set(["\\Seen"]),
+          internalDate: new Date("2026-09-28T14:00:00.000Z"),
         };
         return;
       }
@@ -412,6 +423,42 @@ describe("createImapProvider", () => {
       data: { inbox: false },
     });
     mailboxState.allUids = [];
+  });
+
+  it("lists a reply stored in Sent", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: digest@example.com",
+      "Subject: Re: Please reply",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <reply-1@example.com>",
+      "In-Reply-To: <please-reply@example.com>",
+      "References: <please-reply@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Saving a copy of this reply.</p>",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+
+    expect(mailboxState.opened).toBe("Sent");
+    expect(result.threads).toHaveLength(1);
+    expect(result.threads[0]?.messages[0]?.subject).toBe("Re: Please reply");
+    expect(result.threads[0]?.messages[0]?.textHtml).toContain(
+      "<p>Saving a copy of this reply.</p>",
+    );
+    expect(result.threads[0]?.messages[0]?.snippet).toContain(
+      "Saving a copy of this reply.",
+    );
+    expect(result.threads[0]?.messages[0]?.snippet).not.toContain("<p>");
+
+    const opened = await provider.getThread(result.threads[0]?.id || "");
+    expect(opened.messages[0]?.subject).toBe("Re: Please reply");
+    mailboxState.sentSource = "";
   });
 
   it("returns threads from one sender", async () => {
