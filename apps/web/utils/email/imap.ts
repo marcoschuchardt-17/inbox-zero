@@ -272,6 +272,7 @@ export function createImapProvider(
     },
     sendEmail: async ({ to, cc, bcc, subject, messageText, attachments }) => {
       const transport = createSmtpTransport(config);
+      const messageId = `smtp-${Date.now()}`;
       const result = await transport.sendMail({
         from: config.ownerEmail,
         to,
@@ -280,11 +281,30 @@ export function createImapProvider(
         subject,
         text: messageText,
         attachments,
+        messageId,
       });
-      return { messageId: result.messageId || `smtp-${Date.now()}` };
+      const savedId = result.messageId || messageId;
+      await saveSentCopy({
+        config,
+        logger,
+        raw: buildOutgoingMessage({
+          from: config.ownerEmail,
+          to,
+          cc,
+          bcc,
+          subject,
+          messageId: savedId,
+          contentType: "text/plain; charset=utf-8",
+          body: messageText,
+        }),
+      });
+      return { messageId: savedId };
     },
     sendEmailWithHtml: async (body: SendEmailBody) => {
       const transport = createSmtpTransport(config);
+      const messageId = `smtp-${Date.now()}`;
+      const references =
+        body.replyToEmail?.references || body.replyToEmail?.headerMessageId;
       const result = await transport.sendMail({
         from: body.from || config.ownerEmail,
         to: body.to,
@@ -293,9 +313,9 @@ export function createImapProvider(
         replyTo: body.replyTo,
         subject: body.subject,
         html: body.messageHtml,
+        messageId,
         inReplyTo: body.replyToEmail?.headerMessageId,
-        references:
-          body.replyToEmail?.references || body.replyToEmail?.headerMessageId,
+        references,
         attachments: body.attachments?.map((attachment) => ({
           filename: attachment.filename,
           content: attachment.content,
@@ -303,8 +323,25 @@ export function createImapProvider(
           contentType: attachment.contentType,
         })),
       });
+      const savedId = result.messageId || messageId;
+      await saveSentCopy({
+        config,
+        logger,
+        raw: buildOutgoingMessage({
+          from: body.from || config.ownerEmail,
+          to: body.to,
+          cc: body.cc,
+          bcc: body.bcc,
+          subject: body.subject,
+          messageId: savedId,
+          inReplyTo: body.replyToEmail?.headerMessageId,
+          references,
+          contentType: "text/html; charset=utf-8",
+          body: body.messageHtml,
+        }),
+      });
       return {
-        messageId: result.messageId || `smtp-${Date.now()}`,
+        messageId: savedId,
         threadId: body.replyToEmail?.threadId || `smtp-thread-${Date.now()}`,
       };
     },
@@ -1156,6 +1193,69 @@ function buildDraftMessage({
     "",
     args.content,
   ].join("\r\n");
+}
+
+function buildOutgoingMessage({
+  from,
+  to,
+  cc,
+  bcc,
+  subject,
+  messageId,
+  inReplyTo,
+  references,
+  contentType,
+  body,
+}: {
+  from: string;
+  to: string;
+  cc?: string;
+  bcc?: string;
+  subject: string;
+  messageId: string;
+  inReplyTo?: string;
+  references?: string;
+  contentType: string;
+  body: string;
+}) {
+  const headers = [
+    `From: ${from}`,
+    `To: ${to}`,
+    cc ? `Cc: ${cc}` : undefined,
+    bcc ? `Bcc: ${bcc}` : undefined,
+    `Subject: ${subject}`,
+    `Message-ID: ${messageId}`,
+    inReplyTo ? `In-Reply-To: ${inReplyTo}` : undefined,
+    references ? `References: ${references}` : undefined,
+    `Date: ${new Date().toUTCString()}`,
+    "MIME-Version: 1.0",
+    `Content-Type: ${contentType}`,
+  ].filter((line): line is string => Boolean(line));
+  return `${headers.join("\r\n")}\r\n\r\n${body}`;
+}
+
+async function saveSentCopy({
+  config,
+  logger,
+  raw,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  raw: string;
+}) {
+  const client = createImapClient(config);
+  try {
+    await client.connect();
+    await ensureMailbox(client, "Sent");
+    await client.append("Sent", raw, ["\\Seen"]);
+  } catch (error) {
+    logger.error("Failed saving IMAP sent copy", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
 }
 
 async function ensureMailbox(client: ImapFlow, mailbox: string) {

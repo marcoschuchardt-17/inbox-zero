@@ -130,6 +130,7 @@ describe("createImapProvider", () => {
 
   it("sends a reply on the same conversation", async () => {
     sentMail.length = 0;
+    appended.length = 0;
     const provider = createImapProvider(imapConfig(), logger);
 
     const result = await provider.sendEmailWithHtml({
@@ -150,6 +151,11 @@ describe("createImapProvider", () => {
       inReplyTo: "<digest-reader@example.com>",
       references: "<digest-reader@example.com>",
     });
+    expect(appended[0]?.mailbox).toBe("Sent");
+    expect(appended[0]?.raw).toContain(
+      "In-Reply-To: <digest-reader@example.com>",
+    );
+    expect(appended[0]?.raw).toContain("<p>Thanks</p>");
   });
 
   it("opens a thread that was moved to Archive", async () => {
