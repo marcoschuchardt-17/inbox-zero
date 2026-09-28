@@ -436,7 +436,7 @@ export function RuleForm({
           title="When I get an email"
           className="!mt-6"
           errors={
-            errors.conditions?.root?.message ? (
+            isSubmitted && errors.conditions?.root?.message ? (
               <AlertError
                 title="Error"
                 description={errors.conditions.root.message}
