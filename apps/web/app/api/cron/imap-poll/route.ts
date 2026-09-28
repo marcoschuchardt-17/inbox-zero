@@ -6,6 +6,7 @@ import { withError } from "@/utils/middleware";
 import { captureException } from "@/utils/error";
 import { createEmailProvider } from "@/utils/email/provider";
 import {
+  archiveBlockedImapSenders,
   ensureImapMailboxRules,
   labelImapMessagesWithStaticRules,
 } from "@/utils/email/imap-mailbox-rules";
@@ -99,6 +100,11 @@ async function runImapPoll(logger: Logger) {
           messages: recent.upsertedMessages,
           provider,
           logger,
+        });
+        await archiveBlockedImapSenders({
+          emailAccountId: account.emailAccountId,
+          messages: recent.upsertedMessages,
+          provider,
         });
       } catch (error) {
         logger.error("IMAP mailbox rules failed", {

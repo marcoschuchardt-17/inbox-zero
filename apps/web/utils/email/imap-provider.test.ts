@@ -292,6 +292,37 @@ describe("createImapProvider", () => {
     const provider = createImapProvider(imapConfig(), logger);
     await expect(provider.getFiltersList()).resolves.toEqual([]);
   });
+
+  it("archives the sender when a block filter is created", async () => {
+    movedTo.length = 0;
+    mailboxState.fromUids = [1];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.createAutoArchiveFilter({
+      from: "sam@example.com",
+    });
+
+    expect(result).toEqual({ status: 200 });
+    expect(movedTo).toEqual(["Archive"]);
+    mailboxState.fromUids = [];
+  });
+
+  it("returns threads from one sender", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+    const result = await provider.getThreadsWithQuery({
+      query: { fromEmail: "sam@example.com" },
+    });
+
+    expect(result.threads).toHaveLength(1);
+    expect(result.threads[0]?.messages[0]?.headers.from).toContain(
+      "sam@example.com",
+    );
+
+    const other = await provider.getThreadsWithQuery({
+      query: { fromEmail: "other@example.com" },
+    });
+    expect(other.threads).toEqual([]);
+  });
 });
 
 describe("imap flags", () => {

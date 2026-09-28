@@ -1,5 +1,6 @@
-import { ActionType } from "@/generated/prisma/enums";
+import { ActionType, NewsletterStatus } from "@/generated/prisma/enums";
 import { matchesStaticRule } from "@/utils/ai/choose-rule/match-rules";
+import { extractEmailAddress } from "@/utils/email";
 import { imapKeyword } from "@/utils/email/imap-flags";
 import type { EmailProvider } from "@/utils/email/types";
 import type { Logger } from "@/utils/logger";
@@ -161,8 +162,50 @@ export async function labelImapMessagesWithStaticRules({
   return labeled;
 }
 
+export function blockedSenderAddresses(
+  messages: ParsedMessage[],
+  blockedSenders: string[],
+) {
+  const blocked = new Set(
+    blockedSenders.map((sender) => sender.trim().toLowerCase()).filter(Boolean),
+  );
+  const found = new Set<string>();
+  for (const message of messages) {
+    const from = extractEmailAddress(message.headers.from).toLowerCase();
+    if (from && blocked.has(from)) found.add(from);
+  }
+  return [...found];
+}
+
+export async function archiveBlockedImapSenders({
+  emailAccountId,
+  messages,
+  provider,
+}: {
+  emailAccountId: string;
+  messages: ParsedMessage[];
+  provider: EmailProvider;
+}) {
+  const blocked = await prisma.newsletter.findMany({
+    where: { emailAccountId, status: NewsletterStatus.AUTO_ARCHIVED },
+    select: { email: true },
+  });
+  const fromEmails = blockedSenderAddresses(
+    messages,
+    blocked.map((row) => row.email),
+  );
+  if (!fromEmails.length) return 0;
+  await provider.bulkArchiveFromSenders(fromEmails, "", emailAccountId);
+  return fromEmails.length;
+}
+
 function matchesLoweredStaticRule(
-  rule: { from: string | null; to: string | null; subject: string | null; body: string | null },
+  rule: {
+    from: string | null;
+    to: string | null;
+    subject: string | null;
+    body: string | null;
+  },
   message: ParsedMessage,
   logger: Logger,
 ) {

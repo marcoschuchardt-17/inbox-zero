@@ -168,6 +168,30 @@ export function createImapProvider(
       maxResults = DEFAULT_PAGE_SIZE,
       pageToken,
     }) => core.getMessagesWithPagination({ query, maxResults, pageToken }),
+    getThreadsWithQuery: async ({ query, maxResults = DEFAULT_PAGE_SIZE }) => {
+      const messages = await fetchMailboxMessages({
+        config,
+        logger,
+        maxResults,
+      });
+      const fromEmail = query?.fromEmail?.trim().toLowerCase();
+      const filtered = messages.filter((message) => {
+        if (
+          fromEmail &&
+          !message.headers.from.toLowerCase().includes(fromEmail)
+        ) {
+          return false;
+        }
+        if (query?.isUnread && !message.labelIds?.includes("UNREAD")) {
+          return false;
+        }
+        if (query?.labelId && !message.labelIds?.includes(query.labelId)) {
+          return false;
+        }
+        return true;
+      });
+      return { threads: groupToThreads(filtered).slice(0, maxResults) };
+    },
     searchThreads: async ({
       query,
       maxResults = DEFAULT_PAGE_SIZE,
@@ -443,6 +467,16 @@ export function createImapProvider(
     },
     getFolderCounts: async () => [],
     getFiltersList: async () => [],
+    createAutoArchiveFilter: async ({ from }) => {
+      await moveMessagesFromSenders({
+        config,
+        logger,
+        fromEmails: [from],
+        mailbox: "Archive",
+      });
+      return { status: 200 };
+    },
+    deleteFilter: async () => ({ status: 200 }),
     getInboxStats: () => readInboxStats(config),
     getLabels: async () => {
       const rows = await prisma.label.findMany({
