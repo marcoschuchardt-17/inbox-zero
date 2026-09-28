@@ -6,6 +6,7 @@ import { withError } from "@/utils/middleware";
 import { captureException } from "@/utils/error";
 import { createEmailProvider } from "@/utils/email/provider";
 import {
+  applyImapStaticMailboxActions,
   archiveBlockedImapSenders,
   ensureImapMailboxRules,
   labelImapMessagesWithStaticRules,
@@ -96,6 +97,12 @@ async function runImapPoll(logger: Logger) {
           limit: env.IMAP_POLL_MESSAGE_LIMIT,
         });
         labeled += await labelImapMessagesWithStaticRules({
+          emailAccountId: account.emailAccountId,
+          messages: recent.upsertedMessages,
+          provider,
+          logger,
+        });
+        await applyImapStaticMailboxActions({
           emailAccountId: account.emailAccountId,
           messages: recent.upsertedMessages,
           provider,
