@@ -499,6 +499,11 @@ export function createImapProvider(
       await Promise.all(
         messages.map((message) => setSeenFlag({ config, message, read })),
       );
+      await markStoredReadState({
+        emailAccountId: config.emailAccountId,
+        messageIds: messages.map((message) => message.id),
+        read,
+      });
     },
     markRead: async (threadId: string) => core.markReadThread(threadId, true),
     markMessagesReadState: async (messageIds: string[], read: boolean) => {
@@ -506,6 +511,11 @@ export function createImapProvider(
       await Promise.all(
         messages.map((message) => setSeenFlag({ config, message, read })),
       );
+      await markStoredReadState({
+        emailAccountId: config.emailAccountId,
+        messageIds: messages.map((message) => message.id),
+        read,
+      });
     },
     archiveMessage: async (messageId: string) => {
       await moveMessageToMailbox({
@@ -1048,6 +1058,23 @@ async function reconcileStoredInbox(config: ImapConfig) {
       messageId: { notIn: ids },
     },
     data: { inbox: false },
+  });
+}
+
+async function markStoredReadState({
+  emailAccountId,
+  messageIds,
+  read,
+}: {
+  emailAccountId: string;
+  messageIds: string[];
+  read: boolean;
+}) {
+  const ids = messageIds.filter(Boolean);
+  if (!ids.length) return;
+  await prisma.emailMessage.updateMany({
+    where: { emailAccountId, messageId: { in: ids } },
+    data: { read },
   });
 }
 

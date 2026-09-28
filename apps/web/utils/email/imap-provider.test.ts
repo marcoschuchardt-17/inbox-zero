@@ -335,6 +335,10 @@ describe("createImapProvider", () => {
 
     expect(flagsAdded).toEqual([{ uid: 1, flags: ["\\Seen"] }]);
     expect(mailboxState.opened).toBe("INBOX");
+    expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      data: { read: true },
+    });
   });
 
   it("archives a thread into the Archive mailbox", async () => {
