@@ -388,6 +388,7 @@ export function createImapProvider(
       }
     },
     getFolderCounts: async () => [],
+    getInboxStats: () => readInboxStats(config),
     getLabels: async () => {
       const rows = await prisma.label.findMany({
         where: { emailAccountId: config.emailAccountId, enabled: true },
@@ -738,6 +739,27 @@ function toThread(messages: ParsedMessage[]): EmailThread {
       },
     })),
   };
+}
+
+async function readInboxStats(config: ImapConfig) {
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    try {
+      const opened = client.mailbox;
+      const total = opened ? opened.exists : 0;
+      const unseen = await client.search({ seen: false }, { uid: true });
+      return {
+        total,
+        unread: Array.isArray(unseen) ? unseen.length : 0,
+      };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
 }
 
 async function addKeywordFlag({

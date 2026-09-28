@@ -3,9 +3,10 @@ import { imapFlagsToLabelIds, imapKeyword } from "./imap-flags";
 import { createImapProvider } from "./imap";
 import type { Logger } from "@/utils/logger";
 
-const { rawMessage, movedTo, appended } = vi.hoisted(() => ({
+const { rawMessage, movedTo, appended, mailboxState } = vi.hoisted(() => ({
   movedTo: [] as string[],
   appended: [] as { mailbox: string; raw: string }[],
+  mailboxState: { exists: 1, unseen: [] as number[] },
   rawMessage: [
     "From: Sam <sam@example.com>",
     "To: inbox.imap@example.com",
@@ -21,7 +22,10 @@ const { rawMessage, movedTo, appended } = vi.hoisted(() => ({
 
 vi.mock("imapflow", () => ({
   ImapFlow: class {
-    mailbox = { exists: 1 };
+    mailbox = mailboxState;
+    async search() {
+      return mailboxState.unseen;
+    }
     async connect() {}
     async getMailboxLock() {
       return { release() {} };
@@ -173,6 +177,36 @@ describe("createImapProvider", () => {
     expect(appended[0]?.mailbox).toBe("Drafts");
     expect(appended[0]?.raw).toContain("Thanks, I will reply.");
     expect(appended[0]?.raw).toContain("In-Reply-To: <welcome-1@example.com>");
+  });
+
+  it("counts messages in the inbox and how many are unread", async () => {
+    mailboxState.exists = 4;
+    mailboxState.unseen = [2, 3];
+    const provider = createImapProvider(
+      {
+        emailAccountId: "account-1",
+        ownerEmail: "owner@example.com",
+        imapHost: "imap.example.com",
+        imapPort: 993,
+        imapSecure: true,
+        imapUsername: "owner@example.com",
+        imapPassword: "secret",
+        smtpHost: "smtp.example.com",
+        smtpPort: 465,
+        smtpSecure: true,
+        smtpUsername: "owner@example.com",
+        smtpPassword: "secret",
+        syncFolder: "INBOX",
+      },
+      logger,
+    );
+
+    await expect(provider.getInboxStats()).resolves.toEqual({
+      total: 4,
+      unread: 2,
+    });
+    mailboxState.exists = 1;
+    mailboxState.unseen = [];
   });
 });
 
