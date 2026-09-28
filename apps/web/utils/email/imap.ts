@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import { ImapFlow } from "imapflow";
 import PostalMime from "postal-mime";
 import nodemailer from "nodemailer";
+import { shouldSkipAutoDraft } from "@/utils/auto-draft";
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
 import type { EmailProvider, EmailThread } from "@/utils/email/types";
@@ -260,6 +261,31 @@ export function createImapProvider(
         messageId: result.messageId || `smtp-${Date.now()}`,
         threadId: body.replyToEmail?.threadId || `smtp-thread-${Date.now()}`,
       };
+    },
+    draftEmail: async (email, args, userEmail) => {
+      if (shouldSkipAutoDraft({ logger, source: "imap" })) {
+        return { draftId: "" };
+      }
+
+      const client = createImapClient(config);
+      await client.connect();
+      try {
+        await ensureMailbox(client, "Drafts");
+        const appended = await client.append(
+          "Drafts",
+          buildDraftMessage({ email, args, from: userEmail }),
+          ["\\Draft"],
+        );
+        return { draftId: String(appended?.uid ?? "") };
+      } catch (error) {
+        logger.error("Failed saving IMAP draft", {
+          error,
+          emailAccountId: config.emailAccountId,
+        });
+        throw new SafeError("Failed to save IMAP draft");
+      } finally {
+        await client.logout().catch(() => undefined);
+      }
     },
     replyToEmail: async (email: ParsedMessage, content: string) => {
       const sent = await core.sendEmail({
@@ -808,6 +834,42 @@ async function moveMessageToMailbox({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+function buildDraftMessage({
+  email,
+  args,
+  from,
+}: {
+  email: ParsedMessage;
+  args: {
+    to?: string;
+    subject?: string;
+    content: string;
+    cc?: string;
+    bcc?: string;
+  };
+  from: string;
+}) {
+  const to = args.to || email.headers.from;
+  const subject =
+    args.subject ||
+    (email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject}`);
+  const messageId = email.headers["message-id"];
+  return [
+    `From: ${from}`,
+    `To: ${to}`,
+    ...(args.cc ? [`Cc: ${args.cc}`] : []),
+    ...(args.bcc ? [`Bcc: ${args.bcc}`] : []),
+    `Subject: ${subject}`,
+    ...(messageId
+      ? [`In-Reply-To: ${messageId}`, `References: ${messageId}`]
+      : []),
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    args.content,
+  ].join("\r\n");
 }
 
 async function ensureMailbox(client: ImapFlow, mailbox: string) {

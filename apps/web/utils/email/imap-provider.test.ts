@@ -3,8 +3,9 @@ import { imapFlagsToLabelIds, imapKeyword } from "./imap-flags";
 import { createImapProvider } from "./imap";
 import type { Logger } from "@/utils/logger";
 
-const { rawMessage, movedTo } = vi.hoisted(() => ({
+const { rawMessage, movedTo, appended } = vi.hoisted(() => ({
   movedTo: [] as string[],
+  appended: [] as { mailbox: string; raw: string }[],
   rawMessage: [
     "From: Sam <sam@example.com>",
     "To: inbox.imap@example.com",
@@ -40,6 +41,10 @@ vi.mock("imapflow", () => ({
     async mailboxCreate() {}
     async messageMove(_uid: number, mailbox: string) {
       movedTo.push(mailbox);
+    }
+    async append(mailbox: string, raw: string) {
+      appended.push({ mailbox, raw });
+      return { uid: 7 };
     }
   },
 }));
@@ -133,6 +138,41 @@ describe("createImapProvider", () => {
     await provider.archiveThread(message?.threadId || "", "owner@example.com");
 
     expect(movedTo).toEqual(["Archive"]);
+  });
+
+  it("saves a reply draft in the Drafts mailbox", async () => {
+    appended.length = 0;
+    const provider = createImapProvider(
+      {
+        emailAccountId: "account-1",
+        ownerEmail: "owner@example.com",
+        imapHost: "imap.example.com",
+        imapPort: 993,
+        imapSecure: true,
+        imapUsername: "owner@example.com",
+        imapPassword: "secret",
+        smtpHost: "smtp.example.com",
+        smtpPort: 465,
+        smtpSecure: true,
+        smtpUsername: "owner@example.com",
+        smtpPassword: "secret",
+        syncFolder: "INBOX",
+      },
+      logger,
+    );
+
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+    const result = await provider.draftEmail(
+      message,
+      { content: "Thanks, I will reply." },
+      "owner@example.com",
+    );
+
+    expect(result.draftId).toBe("7");
+    expect(appended[0]?.mailbox).toBe("Drafts");
+    expect(appended[0]?.raw).toContain("Thanks, I will reply.");
+    expect(appended[0]?.raw).toContain("In-Reply-To: <welcome-1@example.com>");
   });
 });
 
