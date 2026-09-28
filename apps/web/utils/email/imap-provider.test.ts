@@ -165,6 +165,12 @@ vi.mock("imapflow", () => ({
         internalDate: new Date("2026-09-28T12:00:00.000Z"),
       };
     }
+    async fetchOne(uid: number) {
+      for await (const message of this.fetch()) {
+        if (message.uid === uid) return message;
+      }
+      return false;
+    }
     async logout() {}
     async list() {
       return mailboxState.listed;
@@ -289,6 +295,19 @@ describe("createImapProvider", () => {
 
     expect(thread.messages[0]?.subject).toBe("Morning digest");
     expect(thread.messages[0]?.textPlain).toContain("Your morning digest.");
+    mailboxState.archiveSource = "";
+  });
+
+  it("downloads an attachment stored in Archive", async () => {
+    mailboxState.archiveSource = archivedAttachment();
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const attachment = await provider.getAttachment("9", "9:0");
+
+    expect(Buffer.from(attachment.data, "base64").toString("utf8")).toBe(
+      "Note",
+    );
+    expect(attachment.size).toBe(4);
     mailboxState.archiveSource = "";
   });
 
@@ -1320,6 +1339,31 @@ describe("imap flags", () => {
     expect(imapKeyword("Kontoauszug")).toBe("Kontoauszug");
   });
 });
+
+function archivedAttachment() {
+  return [
+    "From: Ads <ads@example.com>",
+    "To: owner@example.com",
+    "Subject: File",
+    "Date: Mon, 28 Sep 2026 18:00:00 +0000",
+    "Message-ID: <file@example.com>",
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="bound"',
+    "",
+    "--bound",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "See attached.",
+    "--bound",
+    'Content-Type: text/plain; name="note.txt"',
+    'Content-Disposition: attachment; filename="note.txt"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    "Tm90ZQ==",
+    "--bound--",
+    "",
+  ].join("\r\n");
+}
 
 function savedDraft() {
   return [

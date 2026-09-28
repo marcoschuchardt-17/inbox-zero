@@ -1202,33 +1202,50 @@ async function fetchMessageById({
 }): Promise<ParsedImapMessage | null> {
   const uid = Number(messageId);
   if (!Number.isFinite(uid)) return null;
+  const mailboxes = [
+    config.syncFolder || "INBOX",
+    "Sent",
+    "Archive",
+    "Trash",
+    "Drafts",
+    "Junk",
+  ].filter(
+    (mailbox, index, all) =>
+      all.findIndex((item) => item.toLowerCase() === mailbox.toLowerCase()) ===
+      index,
+  );
   const client = createImapClient(config);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
-    try {
-      const message = await client.fetchOne(
-        uid,
-        { uid: true, source: true, flags: true, internalDate: true },
-        { uid: true },
-      );
-      if (!message?.source) return null;
-      return parseImapMessage(
-        message.uid,
-        message.source,
-        message.flags,
-        message.internalDate,
-        includeAttachmentBodies,
-      );
-    } finally {
-      lock.release();
+    for (const mailbox of mailboxes) {
+      try {
+        const lock = await client.getMailboxLock(mailbox);
+        try {
+          const message = await client.fetchOne(
+            uid,
+            { uid: true, source: true, flags: true, internalDate: true },
+            { uid: true },
+          );
+          if (!message?.source) continue;
+          return parseImapMessage(
+            message.uid,
+            message.source,
+            message.flags,
+            message.internalDate,
+            includeAttachmentBodies,
+          );
+        } finally {
+          lock.release();
+        }
+      } catch (error) {
+        if (isMissingImapMailbox(error)) continue;
+        logger.warn("Skipped IMAP folder while reading a message", {
+          error,
+          mailbox,
+          emailAccountId: config.emailAccountId,
+        });
+      }
     }
-  } catch (error) {
-    logger.error("Failed fetching IMAP message", {
-      error,
-      uid,
-      emailAccountId: config.emailAccountId,
-    });
     return null;
   } finally {
     await client.logout().catch(() => undefined);
