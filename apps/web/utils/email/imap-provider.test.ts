@@ -1086,6 +1086,30 @@ describe("createImapProvider", () => {
     mailboxState.trashSource = "";
   });
 
+  it("returns messages from one sender and skips a different address", async () => {
+    mailboxState.fromUids = [1];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const matched = await provider.getMessagesFromSender({
+      senderEmail: "sam@example.com",
+      maxResults: 5,
+    });
+    const differentSender = await provider.getMessagesFromSender({
+      senderEmail: "other@example.com",
+      maxResults: 5,
+    });
+    const olderThanTheMessage = await provider.getMessagesFromSender({
+      senderEmail: "sam@example.com",
+      before: new Date("2026-09-01T00:00:00.000Z"),
+    });
+
+    expect(matched.messages.map((message) => message.id)).toEqual(["1"]);
+    expect(matched.messages[0]?.headers.from).toContain("sam@example.com");
+    expect(differentSender.messages).toEqual([]);
+    expect(olderThanTheMessage.messages).toEqual([]);
+    mailboxState.fromUids = [];
+  });
+
   it("returns recent subjects from one sender", async () => {
     const provider = createImapProvider(imapConfig(), logger);
     const threads = await provider.getThreadsFromSenderWithSubject(

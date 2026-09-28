@@ -294,6 +294,30 @@ export function createImapProvider(
         subject: thread.messages[0]?.subject || "",
       }));
     },
+    getMessagesFromSender: async ({
+      senderEmail,
+      maxResults = DEFAULT_PAGE_SIZE,
+      pageToken,
+      before,
+      after,
+    }) => {
+      const messages = await findImapMessagesFromSender({
+        config,
+        logger,
+        senderEmail,
+        before,
+        after,
+      });
+      const offset = Number(pageToken || "0") || 0;
+      const page = messages.slice(offset, offset + maxResults);
+      return {
+        messages: page,
+        nextPageToken:
+          offset + maxResults < messages.length
+            ? String(offset + maxResults)
+            : undefined,
+      };
+    },
     searchThreads: async ({
       query,
       maxResults = DEFAULT_PAGE_SIZE,
@@ -1937,6 +1961,97 @@ async function fetchSentMessages({
     }
   }
   return [];
+}
+
+async function findImapMessagesFromSender({
+  config,
+  logger,
+  senderEmail,
+  before,
+  after,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  senderEmail: string;
+  before?: Date;
+  after?: Date;
+}) {
+  const sender = extractEmailAddress(senderEmail).toLowerCase();
+  if (!sender) return [];
+
+  const client = createImapClient(config);
+  await client.connect();
+  const found: ParsedImapMessage[] = [];
+  try {
+    const syncFolder = config.syncFolder || "INBOX";
+    for (const folder of [syncFolder, "Archive"]) {
+      const lock = await client
+        .getMailboxLock(folder)
+        .catch((error: unknown) => {
+          if (isMissingImapMailbox(error)) return null;
+          throw error;
+        });
+      if (!lock) continue;
+      try {
+        const searched = await client.search(
+          { from: senderEmail },
+          { uid: true },
+        );
+        const uids = Array.isArray(searched) ? searched : [];
+        // Newest UIDs are enough for unsubscribe and sender history lookups.
+        const newest = [...uids].sort((a, b) => b - a).slice(0, 50);
+        if (!newest.length) continue;
+        const wanted = new Set(newest.map(String));
+        for await (const message of client.fetch(
+          newest.join(","),
+          {
+            uid: true,
+            source: true,
+            flags: true,
+            internalDate: true,
+          },
+          { uid: true },
+        )) {
+          if (!wanted.has(String(message.uid)) || !message.source) continue;
+          const parsed = await parseImapMessage(
+            message.uid,
+            message.source,
+            message.flags ?? new Set(),
+            messageInternalDate(message.internalDate),
+          );
+          if (
+            extractEmailAddress(parsed.headers.from).toLowerCase() !== sender
+          ) {
+            continue;
+          }
+          const sentAt = new Date(parsed.date);
+          if (Number.isNaN(sentAt.getTime())) continue;
+          if (before && sentAt >= before) continue;
+          if (after && sentAt <= after) continue;
+          if (
+            isInboxMailbox(folder, syncFolder) &&
+            !parsed.labelIds?.includes("INBOX")
+          ) {
+            parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+          }
+          found.push(parsed);
+        }
+      } finally {
+        lock.release();
+      }
+    }
+    return found.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+  } catch (error) {
+    logger.error("Failed reading IMAP messages from a sender", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to read IMAP mailbox");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
 }
 
 function isMissingImapMailbox(error: unknown) {
