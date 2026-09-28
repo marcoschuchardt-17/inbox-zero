@@ -45,6 +45,12 @@ const {
     unseen: [] as number[],
     fromUids: [] as number[],
     allUids: [] as number[],
+    inboxSearchUids: [] as number[],
+    sentSearchUids: [] as number[],
+    listed: [{ path: "INBOX", name: "INBOX" }] as {
+      path: string;
+      name: string;
+    }[],
     opened: "INBOX",
     connectOptions: null as null | Record<string, unknown>,
     archiveSource: "" as string,
@@ -71,9 +77,14 @@ vi.mock("imapflow", () => ({
     constructor(options: Record<string, unknown>) {
       mailboxState.connectOptions = options;
     }
-    async search(query: { from?: string; all?: boolean }) {
+    async search(query: { from?: string; all?: boolean; or?: unknown }) {
       if (query?.from) return mailboxState.fromUids;
       if (query?.all) return mailboxState.allUids;
+      if (query?.or) {
+        return mailboxState.opened === "Sent"
+          ? mailboxState.sentSearchUids
+          : mailboxState.inboxSearchUids;
+      }
       return mailboxState.unseen;
     }
     async messageFlagsRemove(_uid: number, flags: string[]) {
@@ -137,7 +148,7 @@ vi.mock("imapflow", () => ({
     }
     async logout() {}
     async list() {
-      return [{ path: "INBOX", name: "INBOX" }];
+      return mailboxState.listed;
     }
     async mailboxCreate(mailbox: string) {
       created.push(mailbox);
@@ -697,6 +708,83 @@ describe("createImapProvider", () => {
     });
     expect(outsideRange.messages).toEqual([]);
     mailboxState.sentSource = "";
+  });
+
+  it("treats earlier company-domain mail as prior contact and ignores the open message", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Sent", name: "Sent" },
+    ];
+    mailboxState.inboxSearchUids = [1];
+    mailboxState.sentSearchUids = [11];
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: billing@acme.example",
+      "Subject: Invoice question",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <invoice-question@example.com>",
+      "",
+      "Earlier mail to the company.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const earlierCompanyMail =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "introducer@acme.example",
+        date: new Date("2026-09-28T15:00:00.000Z"),
+        messageId: "1",
+      });
+    mailboxState.sentSearchUids = [];
+    const onlyTheOpenMessage =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "sam@example.com",
+        date: new Date("2026-09-28T13:00:00.000Z"),
+        messageId: "1",
+      });
+
+    expect(earlierCompanyMail).toBe(true);
+    expect(onlyTheOpenMessage).toBe(false);
+    mailboxState.sentSource = "";
+    mailboxState.inboxSearchUids = [];
+    mailboxState.sentSearchUids = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+  });
+
+  it("matches a public-email sender by the full address", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Sent", name: "Sent" },
+    ];
+    mailboxState.sentSearchUids = [11];
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: mutual.contact@gmail.com",
+      "Subject: Re: Hello",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <hello-reply@example.com>",
+      "",
+      "Earlier reply.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const samePerson =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "mutual.contact@gmail.com",
+        date: new Date("2026-09-28T15:00:00.000Z"),
+        messageId: "1",
+      });
+    const differentPerson =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "other.person@gmail.com",
+        date: new Date("2026-09-28T15:00:00.000Z"),
+        messageId: "1",
+      });
+
+    expect(samePerson).toBe(true);
+    expect(differentPerson).toBe(false);
+    mailboxState.sentSource = "";
+    mailboxState.sentSearchUids = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
   });
 
   it("includes a sent reply in the thread and archives only the inbox copy", async () => {

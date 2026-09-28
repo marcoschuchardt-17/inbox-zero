@@ -6,7 +6,9 @@ import { shouldSkipAutoDraft } from "@/utils/auto-draft";
 import {
   extractDomainFromEmail,
   extractEmailAddress,
+  extractEmailAddresses,
   extractNameFromEmail,
+  getSearchTermForSender,
 } from "@/utils/email";
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
@@ -107,6 +109,18 @@ export function createImapProvider(
         })),
       };
     },
+    hasPreviousCommunicationsWithSenderOrDomain: async ({
+      from,
+      date,
+      messageId,
+    }) =>
+      hasEarlierImapCorrespondence({
+        config,
+        logger,
+        from,
+        date,
+        messageId,
+      }),
     getMessagesWithPagination: async ({
       maxResults = DEFAULT_PAGE_SIZE,
       pageToken,
@@ -1889,4 +1903,140 @@ function inboxCopies<T extends { labelIds?: string[] | null }>(messages: T[]) {
 
 function isMissingThread(error: unknown) {
   return error instanceof SafeError && error.message === "Thread not found";
+}
+
+async function hasEarlierImapCorrespondence({
+  config,
+  logger,
+  from,
+  date,
+  messageId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  from: string;
+  date: Date;
+  messageId: string;
+}): Promise<boolean> {
+  const searchTerm = getSearchTermForSender(from).trim();
+  if (!searchTerm) return false;
+
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const boxes = await client.list();
+    const syncFolder = config.syncFolder || "INBOX";
+    for (const folder of correspondenceFolders(boxes, syncFolder)) {
+      const lock = await client.getMailboxLock(folder).catch(() => null);
+      if (!lock) continue;
+      try {
+        const found = await client.search(
+          { or: [{ from: searchTerm }, { to: searchTerm }] },
+          { uid: true },
+        );
+        const candidates = uidsToCheck(
+          Array.isArray(found) ? found : [],
+          folder === syncFolder ? messageId : undefined,
+        );
+        if (!candidates.length) continue;
+        const wanted = new Set(candidates.map(String));
+        for await (const message of client.fetch(
+          candidates.join(","),
+          {
+            uid: true,
+            source: true,
+            flags: true,
+            internalDate: true,
+          },
+          { uid: true },
+        )) {
+          if (!wanted.has(String(message.uid)) || !message.source) continue;
+          if (folder === syncFolder && String(message.uid) === messageId) {
+            continue;
+          }
+          const parsed = await parseImapMessage(
+            message.uid,
+            message.source,
+            message.flags ?? new Set(),
+            messageInternalDate(message.internalDate),
+          );
+          const sentAt = new Date(parsed.date);
+          if (Number.isNaN(sentAt.getTime()) || sentAt >= date) continue;
+          if (
+            addressesMatchSearchTerm(
+              [parsed.headers.from, parsed.headers.to],
+              searchTerm,
+            )
+          ) {
+            return true;
+          }
+        }
+      } finally {
+        lock.release();
+      }
+    }
+    return false;
+  } catch (error) {
+    logger.error("Failed checking IMAP prior contact", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to read IMAP mailbox");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+function correspondenceFolders(
+  boxes: { path?: string | null; name?: string | null }[],
+  syncFolder: string,
+) {
+  const folders = new Set<string>();
+  if (syncFolder) folders.add(syncFolder);
+  for (const box of boxes) {
+    const path = box.path || "";
+    if (path && isSentFolder(box.name || "", path)) folders.add(path);
+  }
+  return [...folders];
+}
+
+function isSentFolder(name: string, path: string) {
+  const normalizedName = name.toLowerCase();
+  const normalizedPath = path.toLowerCase();
+  return (
+    normalizedName === "sent" ||
+    normalizedName === "sent items" ||
+    normalizedPath === "sent" ||
+    normalizedPath === "sent items" ||
+    normalizedPath === "[gmail]/sent mail" ||
+    normalizedPath.endsWith("/sent")
+  );
+}
+
+// Search hits can be old mail with low UIDs or mail that was moved and got a new UID.
+function uidsToCheck(uids: number[], currentMessageId?: string) {
+  const remaining = uids.filter(
+    (uid) => Number.isFinite(uid) && String(uid) !== currentMessageId,
+  );
+  if (remaining.length <= 8) return remaining;
+  const sorted = [...remaining].sort((a, b) => a - b);
+  return [...new Set([...sorted.slice(0, 4), ...sorted.slice(-4)])];
+}
+
+function messageInternalDate(value: Date | string | undefined) {
+  if (value instanceof Date) return value;
+  if (value) return new Date(value);
+  return;
+}
+
+function addressesMatchSearchTerm(headers: string[], searchTerm: string) {
+  const term = searchTerm.toLowerCase();
+  const matchFullAddress = term.includes("@");
+  return headers.some((header) =>
+    extractEmailAddresses(header).some((address) => {
+      const normalized = address.toLowerCase();
+      if (matchFullAddress) return normalized === term;
+      return extractDomainFromEmail(normalized).toLowerCase() === term;
+    }),
+  );
 }
