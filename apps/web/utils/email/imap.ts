@@ -343,6 +343,26 @@ export function createImapProvider(
     archiveThreadWithLabel: async (threadId: string, ownerEmail: string) => {
       await core.archiveThread(threadId, ownerEmail);
     },
+    bulkArchiveFromSenders: async (fromEmails: string[]) => {
+      await archiveMessagesFromSenders({ config, logger, fromEmails });
+    },
+    trashThread: async (threadId: string) => {
+      const messages = await core.getThreadMessages(threadId);
+      await core.trashMessages(messages.map((message) => message.id));
+    },
+    removeThreadLabel: async (threadId: string, labelId: string) => {
+      const messages = await core.getThreadMessages(threadId);
+      const keyword = imapKeyword(labelId);
+      await Promise.all(
+        messages.map((message) =>
+          removeKeywordFlag({
+            config,
+            messageId: message.id,
+            keyword,
+          }),
+        ),
+      );
+    },
     unarchiveThread: async (threadId: string) => {
       const messages = await core.getThreadMessages(threadId);
       await Promise.all(
@@ -754,6 +774,71 @@ async function readInboxStats(config: ImapConfig) {
         total,
         unread: Array.isArray(unseen) ? unseen.length : 0,
       };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+async function archiveMessagesFromSenders({
+  config,
+  logger,
+  fromEmails,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  fromEmails: string[];
+}) {
+  const senders = fromEmails.map((email) => email.trim()).filter(Boolean);
+  if (!senders.length) return;
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    await ensureMailbox(client, "Archive");
+    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    try {
+      const uids = new Set<number>();
+      for (const from of senders) {
+        const found = await client.search({ from }, { uid: true });
+        if (!Array.isArray(found)) continue;
+        for (const uid of found) uids.add(uid);
+      }
+      for (const uid of uids) {
+        await client.messageMove(uid, "Archive", { uid: true });
+      }
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    logger.error("Failed archiving IMAP messages from senders", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to archive IMAP messages");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+async function removeKeywordFlag({
+  config,
+  messageId,
+  keyword,
+}: {
+  config: ImapConfig;
+  messageId: string;
+  keyword: string;
+}) {
+  const uid = Number(messageId);
+  if (!Number.isFinite(uid)) return;
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    try {
+      await client.messageFlagsRemove(uid, [keyword], { uid: true });
     } finally {
       lock.release();
     }

@@ -3,28 +3,38 @@ import { imapFlagsToLabelIds, imapKeyword } from "./imap-flags";
 import { createImapProvider } from "./imap";
 import type { Logger } from "@/utils/logger";
 
-const { rawMessage, movedTo, appended, mailboxState } = vi.hoisted(() => ({
-  movedTo: [] as string[],
-  appended: [] as { mailbox: string; raw: string }[],
-  mailboxState: { exists: 1, unseen: [] as number[] },
-  rawMessage: [
-    "From: Sam <sam@example.com>",
-    "To: inbox.imap@example.com",
-    "Subject: Welcome to the mailbox",
-    "Date: Mon, 28 Sep 2026 12:00:00 +0000",
-    "Message-ID: <welcome-1@example.com>",
-    "In-Reply-To: <parent@example.com>",
-    "References: <parent@example.com>",
-    "",
-    "The mailbox is ready.",
-  ].join("\r\n"),
-}));
+const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
+  vi.hoisted(() => ({
+    movedTo: [] as string[],
+    appended: [] as { mailbox: string; raw: string }[],
+    flagsRemoved: [] as string[],
+    mailboxState: {
+      exists: 1,
+      unseen: [] as number[],
+      fromUids: [] as number[],
+    },
+    rawMessage: [
+      "From: Sam <sam@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+      "Message-ID: <welcome-1@example.com>",
+      "In-Reply-To: <parent@example.com>",
+      "References: <parent@example.com>",
+      "",
+      "The mailbox is ready.",
+    ].join("\r\n"),
+  }));
 
 vi.mock("imapflow", () => ({
   ImapFlow: class {
     mailbox = mailboxState;
-    async search() {
+    async search(query: { from?: string }) {
+      if (query?.from) return mailboxState.fromUids;
       return mailboxState.unseen;
+    }
+    async messageFlagsRemove(_uid: number, flags: string[]) {
+      flagsRemoved.push(...flags);
     }
     async connect() {}
     async getMailboxLock() {
@@ -208,6 +218,43 @@ describe("createImapProvider", () => {
     mailboxState.exists = 1;
     mailboxState.unseen = [];
   });
+
+  it("archives every inbox message from a sender", async () => {
+    movedTo.length = 0;
+    mailboxState.fromUids = [1];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.bulkArchiveFromSenders(
+      ["sam@example.com"],
+      "owner@example.com",
+      "account-1",
+    );
+
+    expect(movedTo).toEqual(["Archive"]);
+    mailboxState.fromUids = [];
+  });
+
+  it("moves a thread into Trash", async () => {
+    movedTo.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+
+    await provider.trashThread(message.threadId, "owner@example.com", "user");
+
+    expect(movedTo).toEqual(["Trash"]);
+  });
+
+  it("removes a label keyword from a thread", async () => {
+    flagsRemoved.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+
+    await provider.removeThreadLabel(message.threadId, "Rechnungen");
+
+    expect(flagsRemoved).toEqual(["Rechnungen"]);
+  });
 });
 
 describe("imap flags", () => {
@@ -224,3 +271,21 @@ describe("imap flags", () => {
     expect(imapKeyword("Kontoauszug")).toBe("Kontoauszug");
   });
 });
+
+function imapConfig() {
+  return {
+    emailAccountId: "account-1",
+    ownerEmail: "owner@example.com",
+    imapHost: "imap.example.com",
+    imapPort: 993,
+    imapSecure: true,
+    imapUsername: "owner@example.com",
+    imapPassword: "secret",
+    smtpHost: "smtp.example.com",
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpUsername: "owner@example.com",
+    smtpPassword: "secret",
+    syncFolder: "INBOX",
+  };
+}
