@@ -18,9 +18,10 @@ vi.mock("nodemailer", () => ({
   },
 }));
 
-const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
+const { rawMessage, movedTo, movedFrom, appended, flagsRemoved, mailboxState } =
   vi.hoisted(() => ({
     movedTo: [] as string[],
+    movedFrom: [] as string[],
     appended: [] as { mailbox: string; raw: string }[],
     flagsRemoved: [] as string[],
     mailboxState: {
@@ -106,6 +107,7 @@ vi.mock("imapflow", () => ({
     }
     async mailboxCreate() {}
     async messageMove(_uid: number, mailbox: string) {
+      movedFrom.push(mailboxState.opened);
       movedTo.push(mailbox);
     }
     async append(mailbox: string, raw: string) {
@@ -470,6 +472,32 @@ describe("createImapProvider", () => {
     const opened = await provider.getThread(result.threads[0]?.id || "");
     expect(opened.messages[0]?.subject).toBe("Re: Please reply");
     mailboxState.sentSource = "";
+  });
+
+  it("moves archived mail back from Archive", async () => {
+    movedTo.length = 0;
+    movedFrom.length = 0;
+    mailboxState.archiveSource = [
+      "From: Digest <digest@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Morning digest",
+      "Date: Mon, 28 Sep 2026 13:00:00 +0000",
+      "Message-ID: <digest-1@example.com>",
+      "",
+      "Your morning digest.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const listed = await provider.getThreadsWithQuery({
+      query: { type: "archive" },
+    });
+    await provider.unarchiveThread(listed.threads[0]?.id || "");
+
+    expect(mailboxState.opened).toBe("Archive");
+    expect(listed.threads[0]?.messages[0]?.subject).toBe("Morning digest");
+    expect(movedFrom).toEqual(["Archive"]);
+    expect(movedTo).toEqual(["INBOX"]);
+    mailboxState.archiveSource = "";
   });
 
   it("lists mail stored in Trash", async () => {

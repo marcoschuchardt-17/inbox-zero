@@ -18,6 +18,11 @@ const folders = [
     query: "/api/threads?limit=30&view=list&type=sent",
   },
   {
+    id: "archive",
+    label: "Archive",
+    query: "/api/threads?limit=30&view=list&type=archive",
+  },
+  {
     id: "trash",
     label: "Trash",
     query: "/api/threads?limit=30&view=list&type=trash",
@@ -34,7 +39,10 @@ export function ImapInbox() {
   const { showEmail } = useDisplayedEmail();
   const [archiveError, setArchiveError] = useState("");
 
-  async function moveThread(threadId: string, action: "archive" | "trash") {
+  async function moveThread(
+    threadId: string,
+    action: "archive" | "trash" | "unarchive",
+  ) {
     setArchiveError("");
     const response = await fetchWithAccount({
       url: `/api/threads/${encodeURIComponent(threadId)}/${action}`,
@@ -42,11 +50,7 @@ export function ImapInbox() {
       init: { method: "POST" },
     });
     if (!response.ok) {
-      setArchiveError(
-        action === "trash"
-          ? "Could not move this email to Trash."
-          : "Could not archive this email.",
-      );
+      setArchiveError(moveError(action));
       return;
     }
     await mutate();
@@ -123,6 +127,17 @@ export function ImapInbox() {
                       </Button>
                     </>
                   ) : null}
+                  {folder === "archive" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => moveThread(thread.id, "unarchive")}
+                    >
+                      Move to inbox
+                    </Button>
+                  ) : null}
                 </li>
               );
             })}
@@ -137,8 +152,15 @@ export function ImapInbox() {
   );
 }
 
+function moveError(action: "archive" | "trash" | "unarchive") {
+  if (action === "trash") return "Could not move this email to Trash.";
+  if (action === "unarchive") return "Could not move this email to the inbox.";
+  return "Could not archive this email.";
+}
+
 function emptyFolderCopy(folder: (typeof folders)[number]["id"]) {
   if (folder === "sent") return "Sent is empty.";
+  if (folder === "archive") return "Archive is empty.";
   if (folder === "trash") return "Trash is empty.";
   return "The inbox is empty.";
 }

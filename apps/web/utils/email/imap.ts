@@ -196,17 +196,19 @@ export function createImapProvider(
       let messages: ParsedMessage[] = [];
       if (query?.type === "sent") {
         messages = await core.getSentMessages(maxResults);
-      } else if (query?.type === "trash") {
+      } else if (query?.type === "archive" || query?.type === "trash") {
+        const mailbox = query.type === "archive" ? "Archive" : "Trash";
         try {
           messages = await fetchMailboxMessages({
             config,
             logger,
-            mailbox: "Trash",
+            mailbox,
             maxResults,
           });
         } catch (error) {
-          logger.warn("Skipped IMAP Trash folder", {
+          logger.warn("Skipped IMAP folder", {
             error,
+            mailbox,
             emailAccountId: config.emailAccountId,
           });
         }
@@ -511,14 +513,24 @@ export function createImapProvider(
       );
     },
     unarchiveThread: async (threadId: string) => {
-      const messages = await core.getThreadMessages(threadId);
+      const messages = await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox: "Archive",
+        maxResults: 100,
+      });
+      const matches = messages.filter(
+        (message) => message.threadId === threadId,
+      );
+      if (!matches.length) throw new SafeError("Thread not found");
       await Promise.all(
-        messages.map((message) =>
+        matches.map((message) =>
           moveMessageToMailbox({
             config,
             logger,
             messageId: message.id,
-            mailbox: "INBOX",
+            mailbox: config.syncFolder || "INBOX",
+            sourceMailbox: "Archive",
           }),
         ),
       );
@@ -1157,11 +1169,13 @@ async function moveMessageToMailbox({
   logger,
   messageId,
   mailbox,
+  sourceMailbox,
 }: {
   config: ImapConfig;
   logger: Logger;
   messageId: string;
   mailbox: string;
+  sourceMailbox?: string;
 }) {
   const uid = Number(messageId);
   if (!Number.isFinite(uid)) return;
@@ -1169,7 +1183,9 @@ async function moveMessageToMailbox({
   await client.connect();
   try {
     await ensureMailbox(client, mailbox);
-    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    const lock = await client.getMailboxLock(
+      sourceMailbox || config.syncFolder || "INBOX",
+    );
     try {
       await client.messageMove(uid, mailbox, { uid: true });
     } finally {
