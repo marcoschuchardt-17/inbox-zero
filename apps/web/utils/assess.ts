@@ -8,6 +8,7 @@ import type { Logger } from "@/utils/logger";
 import { GmailLabel } from "@/utils/gmail/label";
 import { OutlookLabel } from "@/utils/outlook/constants";
 import { getFilters, getForwardingAddresses } from "@/utils/gmail/settings";
+import { isImapProvider } from "@/utils/email/provider-types";
 
 export async function assessUser({
   client,
@@ -165,13 +166,26 @@ export async function getUnhandledCount(client: EmailProvider): Promise<{
   unhandledCount: number;
   type: "inbox" | "unread";
 }> {
+  // IMAP has no Gmail/Outlook label totals. One mailbox status call is the
+  // inbox size and the unread size.
+  if (isImapProvider(client.toJSON().type)) {
+    return unhandledFromCounts(await client.getInboxStats());
+  }
+
   const [inboxCount, unreadCount] = await Promise.all([
     getInboxCount(client),
     getUnreadCount(client),
   ]);
-  const unhandledCount = Math.min(unreadCount, inboxCount);
+  return unhandledFromCounts({ total: inboxCount, unread: unreadCount });
+}
+
+function unhandledFromCounts(counts: { total: number; unread: number }): {
+  unhandledCount: number;
+  type: "inbox" | "unread";
+} {
+  const unhandledCount = Math.min(counts.unread, counts.total);
   return {
     unhandledCount,
-    type: unhandledCount === inboxCount ? "inbox" : "unread",
+    type: unhandledCount === counts.total ? "inbox" : "unread",
   };
 }
