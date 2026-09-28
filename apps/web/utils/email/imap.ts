@@ -2397,7 +2397,6 @@ async function saveSenderLabelFilters({
             type: ActionType.LABEL,
             label: keyword,
             labelId: keyword,
-            emailAccountId,
           },
         },
       },

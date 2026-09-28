@@ -673,7 +673,6 @@ describe("createImapProvider", () => {
           actions: {
             create: expect.objectContaining({
               labelId: "Receipt",
-              emailAccountId: "account-1",
             }),
           },
         }),
