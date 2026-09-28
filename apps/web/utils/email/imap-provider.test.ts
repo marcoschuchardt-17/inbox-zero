@@ -234,6 +234,37 @@ describe("createImapProvider", () => {
     mailboxState.fromUids = [];
   });
 
+  it("moves every inbox message from a sender into Trash", async () => {
+    movedTo.length = 0;
+    mailboxState.fromUids = [1];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.bulkTrashFromSenders(
+      ["sam@example.com"],
+      "owner@example.com",
+      "account-1",
+    );
+
+    expect(movedTo).toEqual(["Trash"]);
+    mailboxState.fromUids = [];
+  });
+
+  it("archives the messages that belong to a thread", async () => {
+    movedTo.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.bulkArchiveThreads(
+      [{ threadId: "welcome to the mailbox", messageIds: ["1"] }],
+      "owner@example.com",
+    );
+
+    expect(movedTo).toEqual(["Archive"]);
+    expect(result).toEqual({
+      succeededThreadIds: ["welcome to the mailbox"],
+      failedThreadIds: [],
+    });
+  });
+
   it("moves a thread into Trash", async () => {
     movedTo.length = 0;
     const provider = createImapProvider(imapConfig(), logger);

@@ -344,7 +344,41 @@ export function createImapProvider(
       await core.archiveThread(threadId, ownerEmail);
     },
     bulkArchiveFromSenders: async (fromEmails: string[]) => {
-      await archiveMessagesFromSenders({ config, logger, fromEmails });
+      await moveMessagesFromSenders({
+        config,
+        logger,
+        fromEmails,
+        mailbox: "Archive",
+      });
+    },
+    bulkTrashFromSenders: async (fromEmails: string[]) => {
+      await moveMessagesFromSenders({
+        config,
+        logger,
+        fromEmails,
+        mailbox: "Trash",
+      });
+    },
+    bulkArchiveThreads: async (threads) => {
+      const succeededThreadIds: string[] = [];
+      const failedThreadIds: string[] = [];
+      for (const thread of threads) {
+        if (!thread.messageIds.length) {
+          failedThreadIds.push(thread.threadId);
+          continue;
+        }
+        try {
+          await core.archiveMessages(thread.messageIds);
+          succeededThreadIds.push(thread.threadId);
+        } catch (error) {
+          logger.error("Failed archiving IMAP thread", {
+            error,
+            threadId: thread.threadId,
+          });
+          failedThreadIds.push(thread.threadId);
+        }
+      }
+      return { succeededThreadIds, failedThreadIds };
     },
     trashThread: async (threadId: string) => {
       const messages = await core.getThreadMessages(threadId);
@@ -782,21 +816,23 @@ async function readInboxStats(config: ImapConfig) {
   }
 }
 
-async function archiveMessagesFromSenders({
+async function moveMessagesFromSenders({
   config,
   logger,
   fromEmails,
+  mailbox,
 }: {
   config: ImapConfig;
   logger: Logger;
   fromEmails: string[];
+  mailbox: "Archive" | "Trash";
 }) {
   const senders = fromEmails.map((email) => email.trim()).filter(Boolean);
   if (!senders.length) return;
   const client = createImapClient(config);
   await client.connect();
   try {
-    await ensureMailbox(client, "Archive");
+    await ensureMailbox(client, mailbox);
     const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
     try {
       const uids = new Set<number>();
@@ -806,17 +842,18 @@ async function archiveMessagesFromSenders({
         for (const uid of found) uids.add(uid);
       }
       for (const uid of uids) {
-        await client.messageMove(uid, "Archive", { uid: true });
+        await client.messageMove(uid, mailbox, { uid: true });
       }
     } finally {
       lock.release();
     }
   } catch (error) {
-    logger.error("Failed archiving IMAP messages from senders", {
+    logger.error("Failed moving IMAP messages from senders", {
       error,
+      mailbox,
       emailAccountId: config.emailAccountId,
     });
-    throw new SafeError("Failed to archive IMAP messages");
+    throw new SafeError(`Failed to move IMAP messages to ${mailbox}`);
   } finally {
     await client.logout().catch(() => undefined);
   }
