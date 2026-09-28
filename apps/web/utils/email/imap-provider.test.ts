@@ -31,6 +31,7 @@ const { rawMessage, movedTo, appended, flagsRemoved, mailboxState } =
       opened: "INBOX",
       archiveSource: "" as string,
       sentSource: "" as string,
+      trashSource: "" as string,
     },
     rawMessage: [
       "From: Sam <sam@example.com>",
@@ -79,6 +80,16 @@ vi.mock("imapflow", () => ({
           source: Buffer.from(mailboxState.sentSource),
           flags: new Set(["\\Seen"]),
           internalDate: new Date("2026-09-28T14:00:00.000Z"),
+        };
+        return;
+      }
+      if (mailboxState.opened === "Trash") {
+        if (!mailboxState.trashSource) return;
+        yield {
+          uid: 12,
+          source: Buffer.from(mailboxState.trashSource),
+          flags: new Set(["\\Seen"]),
+          internalDate: new Date("2026-09-28T15:00:00.000Z"),
         };
         return;
       }
@@ -459,6 +470,33 @@ describe("createImapProvider", () => {
     const opened = await provider.getThread(result.threads[0]?.id || "");
     expect(opened.messages[0]?.subject).toBe("Re: Please reply");
     mailboxState.sentSource = "";
+  });
+
+  it("lists mail stored in Trash", async () => {
+    mailboxState.trashSource = [
+      "From: Trash Test <trash@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Please trash this",
+      "Date: Mon, 28 Sep 2026 15:00:00 +0000",
+      "Message-ID: <trash-me@example.com>",
+      "",
+      "Please trash this message.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "trash" },
+    });
+
+    expect(mailboxState.opened).toBe("Trash");
+    expect(result.threads).toHaveLength(1);
+    expect(result.threads[0]?.messages[0]?.subject).toBe("Please trash this");
+
+    const opened = await provider.getThread(result.threads[0]?.id || "");
+    expect(opened.messages[0]?.textPlain).toContain(
+      "Please trash this message.",
+    );
+    mailboxState.trashSource = "";
   });
 
   it("returns threads from one sender", async () => {

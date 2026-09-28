@@ -17,6 +17,11 @@ const folders = [
     label: "Sent",
     query: "/api/threads?limit=30&view=list&type=sent",
   },
+  {
+    id: "trash",
+    label: "Trash",
+    query: "/api/threads?limit=30&view=list&type=trash",
+  },
 ] as const;
 
 export function ImapInbox() {
@@ -29,15 +34,19 @@ export function ImapInbox() {
   const { showEmail } = useDisplayedEmail();
   const [archiveError, setArchiveError] = useState("");
 
-  async function archiveThread(threadId: string) {
+  async function moveThread(threadId: string, action: "archive" | "trash") {
     setArchiveError("");
     const response = await fetchWithAccount({
-      url: `/api/threads/${encodeURIComponent(threadId)}/archive`,
+      url: `/api/threads/${encodeURIComponent(threadId)}/${action}`,
       emailAccountId,
       init: { method: "POST" },
     });
     if (!response.ok) {
-      setArchiveError("Could not archive this email.");
+      setArchiveError(
+        action === "trash"
+          ? "Could not move this email to Trash."
+          : "Could not archive this email.",
+      );
       return;
     }
     await mutate();
@@ -93,15 +102,26 @@ export function ImapInbox() {
                     </div>
                   </button>
                   {folder === "inbox" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() => archiveThread(thread.id)}
-                    >
-                      Archive
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => moveThread(thread.id, "archive")}
+                      >
+                        Archive
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => moveThread(thread.id, "trash")}
+                      >
+                        Trash
+                      </Button>
+                    </>
                   ) : null}
                 </li>
               );
@@ -109,10 +129,16 @@ export function ImapInbox() {
           </ul>
         ) : (
           <p className="mt-4 text-sm text-muted-foreground">
-            {folder === "sent" ? "Sent is empty." : "The inbox is empty."}
+            {emptyFolderCopy(folder)}
           </p>
         )}
       </div>
     </LoadingContent>
   );
+}
+
+function emptyFolderCopy(folder: (typeof folders)[number]["id"]) {
+  if (folder === "sent") return "Sent is empty.";
+  if (folder === "trash") return "Trash is empty.";
+  return "The inbox is empty.";
 }

@@ -133,6 +133,7 @@ export function createImapProvider(
         config.syncFolder || "INBOX",
         "Sent",
         "Archive",
+        "Trash",
       ].filter(
         (mailbox, index, all) =>
           all.findIndex(
@@ -192,14 +193,30 @@ export function createImapProvider(
       pageToken,
     }) => core.getMessagesWithPagination({ query, maxResults, pageToken }),
     getThreadsWithQuery: async ({ query, maxResults = DEFAULT_PAGE_SIZE }) => {
-      const messages =
-        query?.type === "sent"
-          ? await core.getSentMessages(maxResults)
-          : await fetchMailboxMessages({
-              config,
-              logger,
-              maxResults,
-            });
+      let messages: ParsedMessage[] = [];
+      if (query?.type === "sent") {
+        messages = await core.getSentMessages(maxResults);
+      } else if (query?.type === "trash") {
+        try {
+          messages = await fetchMailboxMessages({
+            config,
+            logger,
+            mailbox: "Trash",
+            maxResults,
+          });
+        } catch (error) {
+          logger.warn("Skipped IMAP Trash folder", {
+            error,
+            emailAccountId: config.emailAccountId,
+          });
+        }
+      } else {
+        messages = await fetchMailboxMessages({
+          config,
+          logger,
+          maxResults,
+        });
+      }
       const fromEmail = query?.fromEmail?.trim().toLowerCase();
       const filtered = messages.filter((message) => {
         if (
