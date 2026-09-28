@@ -15,6 +15,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { getAppErrorBoundaryLogContext } from "@/components/app-error-boundary-log-context";
+import { recoverClosedRscStream } from "@/utils/closed-rsc-stream";
 import { createClientLogger } from "@/utils/logger-client";
 
 export function AppErrorBoundary({
@@ -45,6 +46,8 @@ export function AppErrorBoundary({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: log each boundary error once with the route context captured at that time
   useEffect(() => {
+    if (recoverClosedRscStream(error.message)) return;
+
     const logger = createClientLogger("app-error-boundary");
     const context = getAppErrorBoundaryLogContext({
       error,
