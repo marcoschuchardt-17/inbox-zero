@@ -21,6 +21,11 @@ const folders = [
     query: "/api/threads?limit=30&view=list&type=sent",
   },
   {
+    id: "drafts",
+    label: "Drafts",
+    query: "/api/threads?limit=30&view=list&type=drafts",
+  },
+  {
     id: "archive",
     label: "Archive",
     query: "/api/threads?limit=30&view=list&type=archive",
@@ -183,6 +188,7 @@ function moveError(action: "archive" | "trash" | "unarchive" | "untrash") {
 
 function emptyFolderCopy(folder: (typeof folders)[number]["id"]) {
   if (folder === "sent") return "Sent is empty.";
+  if (folder === "drafts") return "Drafts is empty.";
   if (folder === "archive") return "Archive is empty.";
   if (folder === "trash") return "Trash is empty.";
   return "The inbox is empty.";

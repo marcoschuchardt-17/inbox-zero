@@ -38,6 +38,7 @@ const { rawMessage, movedTo, movedFrom, appended, flagsRemoved, mailboxState } =
       archiveSource: "" as string,
       sentSource: "" as string,
       trashSource: "" as string,
+      draftSource: "" as string,
     },
     rawMessage: [
       "From: Sam <sam@example.com>",
@@ -89,6 +90,16 @@ vi.mock("imapflow", () => ({
           source: Buffer.from(mailboxState.sentSource),
           flags: new Set(["\\Seen"]),
           internalDate: new Date("2026-09-28T14:00:00.000Z"),
+        };
+        return;
+      }
+      if (mailboxState.opened === "Drafts") {
+        if (!mailboxState.draftSource) return;
+        yield {
+          uid: 13,
+          source: Buffer.from(mailboxState.draftSource),
+          flags: new Set(["\\Draft", "\\Seen"]),
+          internalDate: new Date("2026-09-28T16:00:00.000Z"),
         };
         return;
       }
@@ -552,6 +563,33 @@ describe("createImapProvider", () => {
     expect(movedFrom).toEqual(["Trash"]);
     expect(movedTo).toEqual(["INBOX"]);
     mailboxState.trashSource = "";
+  });
+
+  it("lists a saved reply in Drafts", async () => {
+    mailboxState.draftSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 16:00:00 +0000",
+      "Message-ID: <draft-1@example.com>",
+      "In-Reply-To: <welcome-1@example.com>",
+      "",
+      "Draft reply.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "drafts" },
+    });
+
+    expect(mailboxState.opened).toBe("Drafts");
+    expect(result.threads[0]?.messages[0]?.subject).toBe(
+      "Re: Welcome to the mailbox",
+    );
+
+    const opened = await provider.getThread(result.threads[0]?.id || "");
+    expect(opened.messages[0]?.textPlain).toContain("Draft reply.");
+    mailboxState.draftSource = "";
   });
 
   it("lists mail stored in Trash", async () => {

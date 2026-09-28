@@ -134,6 +134,7 @@ export function createImapProvider(
         "Sent",
         "Archive",
         "Trash",
+        "Drafts",
       ].filter(
         (mailbox, index, all) =>
           all.findIndex(
@@ -194,10 +195,10 @@ export function createImapProvider(
     }) => core.getMessagesWithPagination({ query, maxResults, pageToken }),
     getThreadsWithQuery: async ({ query, maxResults = DEFAULT_PAGE_SIZE }) => {
       let messages: ParsedMessage[] = [];
+      const mailbox = query?.type ? mailboxForListType(query.type) : undefined;
       if (query?.type === "sent") {
         messages = await core.getSentMessages(maxResults);
-      } else if (query?.type === "archive" || query?.type === "trash") {
-        const mailbox = query.type === "archive" ? "Archive" : "Trash";
+      } else if (mailbox) {
         try {
           messages = await fetchMailboxMessages({
             config,
@@ -1160,6 +1161,13 @@ async function setSeenFlag({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+function mailboxForListType(type: string) {
+  if (type === "archive") return "Archive";
+  if (type === "trash") return "Trash";
+  if (type === "drafts") return "Drafts";
+  return;
 }
 
 async function moveThreadBetweenMailboxes({
