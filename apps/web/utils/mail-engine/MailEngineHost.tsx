@@ -22,7 +22,10 @@ import {
   hasDesktopMailEngineIpc,
 } from "@/utils/mail-engine/desktop-ipc";
 import { selectMailEngineRuntimeMode } from "@/utils/mail-engine/runtime-mode";
-import { isMicrosoftProvider } from "@/utils/email/provider-types";
+import {
+  isImapProvider,
+  isMicrosoftProvider,
+} from "@/utils/email/provider-types";
 import { browserMailEngineCapabilities } from "@/utils/mail-engine/worker-protocol";
 import {
   MAIL_ENGINE_OWNER_LOCK,
@@ -66,6 +69,7 @@ export function MailEngineHost({ children }: { children: ReactNode }) {
 }
 
 export function MailCoverageGate({ children }: { children: ReactNode }) {
+  const { provider } = useAccount();
   const status = useContext(MailEngineRuntimeStatusContext);
   // SSR has no OPFS; checking capabilities before hydration paints the
   // storage-error shell instead of the shared loading state.
@@ -77,6 +81,13 @@ export function MailCoverageGate({ children }: { children: ReactNode }) {
 
   if (!isClient) {
     return <LoadingContent loading>{null}</LoadingContent>;
+  }
+  if (isImapProvider(provider)) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6 text-muted-foreground text-sm">
+        This mailbox is connected with IMAP. Use Automation for this account.
+      </div>
+    );
   }
   const mode = selectMailEngineRuntimeMode({
     desktopIpc: hasDesktopMailEngineIpc(),
@@ -101,7 +112,7 @@ function MailEngineRuntimeInner({ children }: { children: ReactNode }) {
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    if (!emailAccountId) return;
+    if (!emailAccountId || isImapProvider(provider)) return;
     const mode = selectMailEngineRuntimeMode({
       desktopIpc: hasDesktopMailEngineIpc(),
       opfs: browserMailEngineCapabilities().opfs,

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAction } from "next-safe-action/hooks";
@@ -21,7 +20,6 @@ import {
 } from "@/utils/actions/imap-smtp.validation";
 
 export default function AddImapAccountPage() {
-  const router = useRouter();
   const {
     register,
     handleSubmit,
@@ -59,13 +57,13 @@ export default function AddImapAccountPage() {
   const { execute: saveAccount, isExecuting: isSaving } = useAction(
     upsertImapSmtpAccountAction,
     {
-      onSuccess: () => {
+      onSuccess: ({ data }) => {
         toastSuccess({
           title: "IMAP account saved",
           description: "Your IMAP/SMTP mailbox is now connected.",
         });
-        router.push("/accounts");
-        router.refresh();
+        if (!data?.emailAccountId) return;
+        window.location.assign(`/${data.emailAccountId}/automation`);
       },
       onError: (error) => {
         toastError({
@@ -185,12 +183,12 @@ export default function AddImapAccountPage() {
                   testConnection({
                     imapHost: values.imapHost,
                     imapPort: values.imapPort,
-                    imapSecure: true,
+                    imapSecure: values.imapSecure,
                     imapUsername: values.imapUsername,
                     imapPassword: values.imapPassword,
                     smtpHost: values.smtpHost,
                     smtpPort: values.smtpPort,
-                    smtpSecure: true,
+                    smtpSecure: values.smtpSecure,
                     smtpUsername: values.smtpUsername,
                     smtpPassword: values.smtpPassword,
                     syncFolder: values.syncFolder,

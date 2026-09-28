@@ -414,7 +414,7 @@ export function createImapProvider(
         property === "catch" ||
         property === "finally"
       ) {
-        return undefined;
+        return;
       }
       const value = Reflect.get(target, property, receiver);
       if (value !== undefined) return value;
@@ -438,6 +438,8 @@ function createImapClient(config: ImapConfig) {
       pass: config.imapPassword,
     },
     logger: false,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
   });
 }
 

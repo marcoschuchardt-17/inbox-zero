@@ -6,9 +6,13 @@ import { actionClientUser } from "@/utils/actions/safe-action";
 import {
   testImapSmtpConnectionBody,
   upsertImapSmtpAccountBody,
+  type UpsertImapSmtpAccountBody,
 } from "@/utils/actions/imap-smtp.validation";
+import { setLastEmailAccountCookie } from "@/utils/cookies.server";
 import { SafeError } from "@/utils/error";
 import prisma from "@/utils/prisma";
+
+const IMAP_CONNECT_TIMEOUT_MS = 10_000;
 
 export const testImapSmtpConnectionAction = actionClientUser
   .metadata({ name: "testImapSmtpConnection" })
@@ -23,6 +27,9 @@ export const testImapSmtpConnectionAction = actionClientUser
         pass: parsedInput.imapPassword,
       },
       logger: false,
+      connectionTimeout: IMAP_CONNECT_TIMEOUT_MS,
+      greetingTimeout: IMAP_CONNECT_TIMEOUT_MS,
+      socketTimeout: IMAP_CONNECT_TIMEOUT_MS,
     });
 
     try {
@@ -81,6 +88,8 @@ export const upsertImapSmtpAccountAction = actionClientUser
       throw new SafeError("This email is already linked to another user.");
     }
 
+    const imapConfig = imapConfigFromInput(parsedInput);
+
     if (existingEmailAccount?.userId === userId) {
       await prisma.account.update({
         where: { id: existingEmailAccount.accountId, userId },
@@ -89,46 +98,23 @@ export const upsertImapSmtpAccountAction = actionClientUser
           providerAccountId,
           type: "credentials",
           disconnectedAt: null,
+          emailAccount: {
+            update: {
+              name: parsedInput.name || null,
+              imapSmtpConfig: {
+                upsert: {
+                  update: { ...imapConfig, lastConnectionError: null },
+                  create: imapConfig,
+                },
+              },
+            },
+          },
         },
       });
 
-      await prisma.imapSmtpConfig.upsert({
-        where: { emailAccountId: existingEmailAccount.id },
-        update: {
-          imapHost: parsedInput.imapHost,
-          imapPort: parsedInput.imapPort,
-          imapSecure: parsedInput.imapSecure,
-          imapUsername: parsedInput.imapUsername,
-          imapPassword: parsedInput.imapPassword,
-          smtpHost: parsedInput.smtpHost,
-          smtpPort: parsedInput.smtpPort,
-          smtpSecure: parsedInput.smtpSecure,
-          smtpUsername: parsedInput.smtpUsername,
-          smtpPassword: parsedInput.smtpPassword,
-          syncFolder: parsedInput.syncFolder,
-          lastConnectionError: null,
-        },
-        create: {
-          emailAccountId: existingEmailAccount.id,
-          imapHost: parsedInput.imapHost,
-          imapPort: parsedInput.imapPort,
-          imapSecure: parsedInput.imapSecure,
-          imapUsername: parsedInput.imapUsername,
-          imapPassword: parsedInput.imapPassword,
-          smtpHost: parsedInput.smtpHost,
-          smtpPort: parsedInput.smtpPort,
-          smtpSecure: parsedInput.smtpSecure,
-          smtpUsername: parsedInput.smtpUsername,
-          smtpPassword: parsedInput.smtpPassword,
-          syncFolder: parsedInput.syncFolder,
-        },
-      });
-
-      await prisma.emailAccount.update({
-        where: { id: existingEmailAccount.id },
-        data: {
-          name: parsedInput.name || null,
-        },
+      await setLastEmailAccountCookie({
+        userId,
+        emailAccountId: existingEmailAccount.id,
       });
 
       return { emailAccountId: existingEmailAccount.id, updated: true };
@@ -145,6 +131,7 @@ export const upsertImapSmtpAccountAction = actionClientUser
             userId,
             email: normalizedEmail,
             name: parsedInput.name || null,
+            imapSmtpConfig: { create: imapConfig },
           },
         },
       },
@@ -161,22 +148,26 @@ export const upsertImapSmtpAccountAction = actionClientUser
     if (!createdEmailAccountId)
       throw new SafeError("Failed to create IMAP account");
 
-    await prisma.imapSmtpConfig.create({
-      data: {
-        emailAccountId: createdEmailAccountId,
-        imapHost: parsedInput.imapHost,
-        imapPort: parsedInput.imapPort,
-        imapSecure: parsedInput.imapSecure,
-        imapUsername: parsedInput.imapUsername,
-        imapPassword: parsedInput.imapPassword,
-        smtpHost: parsedInput.smtpHost,
-        smtpPort: parsedInput.smtpPort,
-        smtpSecure: parsedInput.smtpSecure,
-        smtpUsername: parsedInput.smtpUsername,
-        smtpPassword: parsedInput.smtpPassword,
-        syncFolder: parsedInput.syncFolder,
-      },
+    await setLastEmailAccountCookie({
+      userId,
+      emailAccountId: createdEmailAccountId,
     });
 
     return { emailAccountId: createdEmailAccountId, created: true };
   });
+
+function imapConfigFromInput(parsedInput: UpsertImapSmtpAccountBody) {
+  return {
+    imapHost: parsedInput.imapHost,
+    imapPort: parsedInput.imapPort,
+    imapSecure: parsedInput.imapSecure,
+    imapUsername: parsedInput.imapUsername,
+    imapPassword: parsedInput.imapPassword,
+    smtpHost: parsedInput.smtpHost,
+    smtpPort: parsedInput.smtpPort,
+    smtpSecure: parsedInput.smtpSecure,
+    smtpUsername: parsedInput.smtpUsername,
+    smtpPassword: parsedInput.smtpPassword,
+    syncFolder: parsedInput.syncFolder,
+  };
+}
