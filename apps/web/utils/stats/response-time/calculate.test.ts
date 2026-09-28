@@ -69,6 +69,33 @@ describe("Response Time Stats", () => {
       expect(result.processedThreadsCount).toBe(1);
     });
 
+    it("reads provider timestamps stored as epoch milliseconds", async () => {
+      const threadId = "t-epoch";
+      const receivedTime = new Date("2026-09-28T12:00:00Z");
+      const sentTime = new Date("2026-09-28T12:20:00Z");
+
+      mockEmailProvider.getThreadMessages.mockResolvedValue([
+        {
+          ...getMockMessageHelper({ id: "r1", threadId }),
+          internalDate: String(receivedTime.getTime()),
+        },
+        {
+          ...getMockMessageHelper({ id: "s1", threadId }),
+          internalDate: String(sentTime.getTime()),
+          labelIds: ["SENT"],
+        },
+      ]);
+
+      const result = await calculateResponseTimes(
+        [getMockMessageHelper({ threadId, id: "s1" })],
+        mockEmailProvider,
+        logger,
+      );
+
+      expect(result.responseTimes).toHaveLength(1);
+      expect(result.responseTimes[0]?.responseTimeMins).toBe(20);
+    });
+
     it("should handle sequence: Received -> Sent -> Received -> Sent", async () => {
       const threadId = "t1";
       const sentMsg = getMockMessageHelper({ threadId, id: "s1" });
