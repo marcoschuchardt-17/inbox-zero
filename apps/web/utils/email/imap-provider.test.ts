@@ -30,6 +30,7 @@ const {
   flagsRemoved,
   flagsAdded,
   deleted,
+  created,
   mailboxState,
 } = vi.hoisted(() => ({
   movedTo: [] as string[],
@@ -38,6 +39,7 @@ const {
   flagsRemoved: [] as string[],
   flagsAdded: [] as { uid: number; flags: string[] }[],
   deleted: [] as { mailbox: string; uid: number }[],
+  created: [] as string[],
   mailboxState: {
     exists: 1,
     unseen: [] as number[],
@@ -137,7 +139,9 @@ vi.mock("imapflow", () => ({
     async list() {
       return [{ path: "INBOX", name: "INBOX" }];
     }
-    async mailboxCreate() {}
+    async mailboxCreate(mailbox: string) {
+      created.push(mailbox);
+    }
     async messageMove(_uid: number, mailbox: string) {
       movedFrom.push(mailboxState.opened);
       movedTo.push(mailbox);
@@ -366,6 +370,43 @@ describe("createImapProvider", () => {
     await provider.archiveThread(message?.threadId || "", "owner@example.com");
 
     expect(movedTo).toEqual(["Archive"]);
+  });
+
+  it("stars a message and moves spam into Junk", async () => {
+    flagsAdded.length = 0;
+    movedTo.length = 0;
+    created.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.starMessage("1");
+    const [message] = await provider.getInboxMessages(5);
+    await provider.markSpam(message?.threadId || "");
+
+    expect(flagsAdded).toEqual([{ uid: 1, flags: ["\\Flagged"] }]);
+    expect(movedTo).toEqual(["Junk"]);
+    expect(created).toContain("Junk");
+    expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      data: { inbox: false },
+    });
+  });
+
+  it("creates a mailbox and moves a thread into it", async () => {
+    movedTo.length = 0;
+    created.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const folderId = await provider.getOrCreateFolderIdByName("Receipts");
+    const [message] = await provider.getInboxMessages(5);
+    await provider.moveThreadToFolder(
+      message?.threadId || "",
+      "owner@example.com",
+      folderId,
+    );
+
+    expect(folderId).toBe("Receipts");
+    expect(created).toContain("Receipts");
+    expect(movedTo).toEqual(["Receipts"]);
   });
 
   it("saves a reply draft in the Drafts mailbox", async () => {

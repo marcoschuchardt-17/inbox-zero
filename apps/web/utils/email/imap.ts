@@ -518,6 +518,115 @@ export function createImapProvider(
       });
     },
     markRead: async (threadId: string) => core.markReadThread(threadId, true),
+    starMessage: async (messageId: string) => {
+      await setSystemFlag({
+        config,
+        messageId,
+        flag: "\\Flagged",
+        enabled: true,
+      });
+    },
+    markMessagesStarredState: async (
+      messageIds: string[],
+      starred: boolean,
+    ) => {
+      await Promise.all(
+        messageIds.map((messageId) =>
+          setSystemFlag({
+            config,
+            messageId,
+            flag: "\\Flagged",
+            enabled: starred,
+          }),
+        ),
+      );
+    },
+    markSpam: async (threadId: string) => {
+      const messages = await core.getThreadMessages(threadId);
+      if (!messages.length) throw new SafeError("Thread not found");
+      const messageIds = messages.map((message) => message.id);
+      await Promise.all(
+        messageIds.map((messageId) =>
+          moveMessageToMailbox({
+            config,
+            logger,
+            messageId,
+            mailbox: "Junk",
+          }),
+        ),
+      );
+      await markMessagesLeftInbox({
+        emailAccountId: config.emailAccountId,
+        messageIds,
+        action: "spam",
+      });
+    },
+    markNotSpam: async (threadId: string) => {
+      const messages = await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox: "Junk",
+        maxResults: 100,
+      });
+      const matches = messages.filter(
+        (message) => message.threadId === threadId,
+      );
+      if (!matches.length) throw new SafeError("Thread not found");
+      await Promise.all(
+        matches.map((message) =>
+          moveMessageToMailbox({
+            config,
+            logger,
+            messageId: message.id,
+            mailbox: config.syncFolder || "INBOX",
+            sourceMailbox: "Junk",
+          }),
+        ),
+      );
+      await prisma.emailMessage.updateMany({
+        where: {
+          emailAccountId: config.emailAccountId,
+          messageId: { in: matches.map((message) => message.id) },
+        },
+        data: { inbox: true },
+      });
+    },
+    getOrCreateFolderIdByName: async (folderName: string) => {
+      const name = folderName.trim();
+      if (!name) throw new SafeError("Folder name is required");
+      const client = createImapClient(config);
+      await client.connect();
+      try {
+        await ensureMailbox(client, name);
+        return name;
+      } finally {
+        await client.logout().catch(() => undefined);
+      }
+    },
+    moveThreadToFolder: async (
+      threadId: string,
+      _ownerEmail: string,
+      folderName: string,
+    ) => {
+      const messages = await core.getThreadMessages(threadId);
+      if (!messages.length) throw new SafeError("Thread not found");
+      const messageIds = messages.map((message) => message.id);
+      await Promise.all(
+        messageIds.map((messageId) =>
+          moveMessageToMailbox({
+            config,
+            logger,
+            messageId,
+            mailbox: folderName,
+          }),
+        ),
+      );
+      await markMessagesLeftInbox({
+        emailAccountId: config.emailAccountId,
+        messageIds,
+        action: "archive",
+      });
+    },
     markMessagesReadState: async (messageIds: string[], read: boolean) => {
       const messages = await core.getMessagesBatch(messageIds);
       await Promise.all(
@@ -1131,7 +1240,7 @@ async function markMessagesLeftInbox({
 }: {
   emailAccountId: string;
   messageIds: string[];
-  action: "archive" | "trash";
+  action: "archive" | "trash" | "spam";
 }) {
   const ids = messageIds.filter(Boolean);
   if (!ids.length) return;
@@ -1282,6 +1391,34 @@ async function addKeywordFlag({
   }
 }
 
+async function setSystemFlag({
+  config,
+  messageId,
+  flag,
+  enabled,
+}: {
+  config: ImapConfig;
+  messageId: string;
+  flag: "\\Flagged" | "\\Seen";
+  enabled: boolean;
+}) {
+  const uid = Number(messageId);
+  if (!Number.isFinite(uid)) return;
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    try {
+      if (enabled) await client.messageFlagsAdd(uid, [flag], { uid: true });
+      else await client.messageFlagsRemove(uid, [flag], { uid: true });
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
 async function setSeenFlag({
   config,
   message,
@@ -1291,21 +1428,12 @@ async function setSeenFlag({
   message: ParsedMessage;
   read: boolean;
 }) {
-  const uid = Number(message.id);
-  if (!Number.isFinite(uid)) return;
-  const client = createImapClient(config);
-  await client.connect();
-  try {
-    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
-    try {
-      if (read) await client.messageFlagsAdd(uid, ["\\Seen"], { uid: true });
-      else await client.messageFlagsRemove(uid, ["\\Seen"], { uid: true });
-    } finally {
-      lock.release();
-    }
-  } finally {
-    await client.logout().catch(() => undefined);
-  }
+  await setSystemFlag({
+    config,
+    messageId: message.id,
+    flag: "\\Seen",
+    enabled: read,
+  });
 }
 
 async function findDraftMessages({
