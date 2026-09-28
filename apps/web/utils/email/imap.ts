@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import { ImapFlow } from "imapflow";
 import PostalMime from "postal-mime";
 import nodemailer from "nodemailer";
+import { ActionType } from "@/generated/prisma/enums";
 import { shouldSkipAutoDraft } from "@/utils/auto-draft";
 import {
   extractDomainFromEmail,
@@ -914,7 +915,15 @@ export function createImapProvider(
       }
     },
     getFolderCounts: async () => [],
-    getFiltersList: async () => [],
+    getFiltersList: async () => listSenderLabelFilters(config.emailAccountId),
+    createFilter: async ({ from, addLabelIds }) => {
+      await saveSenderLabelFilters({
+        emailAccountId: config.emailAccountId,
+        from,
+        labelIds: addLabelIds,
+      });
+      return { status: 200 };
+    },
     createAutoArchiveFilter: async ({ from }) => {
       await moveMessagesFromSenders({
         config,
@@ -924,7 +933,13 @@ export function createImapProvider(
       });
       return { status: 200 };
     },
-    deleteFilter: async () => ({ status: 200 }),
+    deleteFilter: async (id: string) => {
+      await deleteSenderLabelFilter({
+        emailAccountId: config.emailAccountId,
+        id,
+      });
+      return { status: 200 };
+    },
     getInboxStats: () => readInboxStats(config),
     getLabels: async () => {
       const rows = await prisma.label.findMany({
@@ -2318,4 +2333,102 @@ function addressesMatchSearchTerm(headers: string[], searchTerm: string) {
       return extractDomainFromEmail(normalized).toLowerCase() === term;
     }),
   );
+}
+
+const SENDER_LABEL_RULE_PREFIX = "Sender label:";
+
+async function listSenderLabelFilters(emailAccountId: string) {
+  const rules = await prisma.rule.findMany({
+    where: {
+      emailAccountId,
+      enabled: true,
+      name: { startsWith: SENDER_LABEL_RULE_PREFIX },
+    },
+    select: {
+      id: true,
+      from: true,
+      actions: {
+        where: { type: ActionType.LABEL },
+        select: { labelId: true },
+      },
+    },
+  });
+  return rules.flatMap((rule) => {
+    const labelIds = rule.actions.flatMap((action) =>
+      action.labelId ? [action.labelId] : [],
+    );
+    if (!rule.from || !labelIds.length) return [];
+    return [
+      {
+        id: rule.id,
+        criteria: { from: rule.from },
+        action: { addLabelIds: labelIds },
+      },
+    ];
+  });
+}
+
+async function saveSenderLabelFilters({
+  emailAccountId,
+  from,
+  labelIds,
+}: {
+  emailAccountId: string;
+  from: string;
+  labelIds?: string[];
+}) {
+  const sender = extractEmailAddress(from) || from.trim();
+  if (!sender || !labelIds?.length) return;
+
+  for (const labelId of labelIds) {
+    const keyword = senderLabelKeyword(labelId);
+    const name = `${SENDER_LABEL_RULE_PREFIX} ${sender} ${keyword}`;
+    await prisma.rule.upsert({
+      where: {
+        name_emailAccountId: { name, emailAccountId },
+      },
+      create: {
+        name,
+        emailAccountId,
+        enabled: true,
+        from: sender,
+        actions: {
+          create: {
+            type: ActionType.LABEL,
+            label: keyword,
+            labelId: keyword,
+            emailAccountId,
+          },
+        },
+      },
+      update: { enabled: true, from: sender },
+    });
+  }
+}
+
+async function deleteSenderLabelFilter({
+  emailAccountId,
+  id,
+}: {
+  emailAccountId: string;
+  id: string;
+}) {
+  const rule = await prisma.rule.findFirst({
+    where: {
+      id,
+      emailAccountId,
+      name: { startsWith: SENDER_LABEL_RULE_PREFIX },
+    },
+    select: { id: true },
+  });
+  if (!rule) return;
+  await prisma.rule.delete({ where: { id: rule.id } });
+}
+
+function senderLabelKeyword(labelId: string) {
+  try {
+    return imapKeyword(labelId);
+  } catch {
+    throw new SafeError("Invalid label");
+  }
 }

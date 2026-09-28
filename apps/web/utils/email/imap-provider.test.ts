@@ -629,9 +629,59 @@ describe("createImapProvider", () => {
     expect(flagsRemoved).toEqual(["Rechnungen"]);
   });
 
-  it("has no server-side filters", async () => {
+  it("lists no sender labels when none are saved", async () => {
+    prisma.rule.findMany.mockResolvedValue([]);
     const provider = createImapProvider(imapConfig(), logger);
     await expect(provider.getFiltersList()).resolves.toEqual([]);
+  });
+
+  it("saves a sender label and can remove it again", async () => {
+    prisma.rule.upsert.mockResolvedValue({ id: "rule-1" } as never);
+    prisma.rule.findMany.mockResolvedValue([
+      {
+        id: "rule-1",
+        from: "ads@example.com",
+        actions: [{ labelId: "Receipt" }],
+      },
+    ] as never);
+    prisma.rule.findFirst.mockResolvedValue({ id: "rule-1" } as never);
+    prisma.rule.delete.mockResolvedValue({ id: "rule-1" } as never);
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await expect(
+      provider.createFilter({
+        from: "Ads <ads@example.com>",
+        addLabelIds: ["Receipt"],
+      }),
+    ).resolves.toEqual({ status: 200 });
+    await expect(provider.getFiltersList()).resolves.toEqual([
+      {
+        id: "rule-1",
+        criteria: { from: "ads@example.com" },
+        action: { addLabelIds: ["Receipt"] },
+      },
+    ]);
+    await expect(provider.deleteFilter("rule-1")).resolves.toEqual({
+      status: 200,
+    });
+
+    expect(prisma.rule.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          emailAccountId: "account-1",
+          from: "ads@example.com",
+          actions: {
+            create: expect.objectContaining({
+              labelId: "Receipt",
+              emailAccountId: "account-1",
+            }),
+          },
+        }),
+      }),
+    );
+    expect(prisma.rule.delete).toHaveBeenCalledWith({
+      where: { id: "rule-1" },
+    });
   });
 
   it("archives the sender when a block filter is created", async () => {
