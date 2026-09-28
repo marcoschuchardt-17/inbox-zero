@@ -678,6 +678,31 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("includes a sent reply in the thread and archives only the inbox copy", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <reply-1@example.com>",
+      "In-Reply-To: <parent@example.com>",
+      "References: <parent@example.com>",
+      "",
+      "Replying from Sent.",
+    ].join("\r\n");
+    movedTo.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const messages = await provider.getThreadMessages("<parent@example.com>");
+
+    expect(messages.map((message) => message.id).sort()).toEqual(["1", "11"]);
+
+    await provider.archiveThread("<parent@example.com>", "owner@example.com");
+
+    expect(movedTo).toEqual(["Archive"]);
+    mailboxState.sentSource = "";
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",

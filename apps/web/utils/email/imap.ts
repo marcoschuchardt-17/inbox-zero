@@ -199,15 +199,16 @@ export function createImapProvider(
       return toThread(threadMessages);
     },
     getThreadMessages: async (threadId: string) => {
-      const messages = await fetchMailboxMessages({
-        config,
-        logger,
-        maxResults: 100,
-      });
-      return messages.filter((message) => message.threadId === threadId);
+      try {
+        const thread = await core.getThread(threadId);
+        return thread.messages;
+      } catch (error) {
+        if (isMissingThread(error)) return [];
+        throw error;
+      }
     },
     getThreadMessagesInInbox: async (threadId: string) =>
-      core.getThreadMessages(threadId),
+      inboxCopies(await core.getThreadMessages(threadId)),
     getLatestMessageInThread: async (threadId: string) => {
       const messages = await core.getThreadMessages(threadId);
       return messages.at(-1) ?? null;
@@ -528,7 +529,7 @@ export function createImapProvider(
         messageText: `${args.content || ""}\n\n${email.textPlain || email.snippet}`,
       }),
     markReadThread: async (threadId: string, read: boolean) => {
-      const messages = await core.getThreadMessages(threadId);
+      const messages = inboxCopies(await core.getThreadMessages(threadId));
       await Promise.all(
         messages.map((message) => setSeenFlag({ config, message, read })),
       );
@@ -563,7 +564,7 @@ export function createImapProvider(
       );
     },
     markSpam: async (threadId: string) => {
-      const messages = await core.getThreadMessages(threadId);
+      const messages = inboxCopies(await core.getThreadMessages(threadId));
       if (!messages.length) throw new SafeError("Thread not found");
       const messageIds = messages.map((message) => message.id);
       await Promise.all(
@@ -629,7 +630,7 @@ export function createImapProvider(
       _ownerEmail: string,
       folderName: string,
     ) => {
-      const messages = await core.getThreadMessages(threadId);
+      const messages = inboxCopies(await core.getThreadMessages(threadId));
       if (!messages.length) throw new SafeError("Thread not found");
       const messageIds = messages.map((message) => message.id);
       await Promise.all(
@@ -715,7 +716,7 @@ export function createImapProvider(
         messageIds.map((messageId) => core.archiveMessage(messageId)),
       ).then(() => undefined),
     archiveThread: async (threadId: string, _ownerEmail: string) => {
-      const messages = await core.getThreadMessages(threadId);
+      const messages = inboxCopies(await core.getThreadMessages(threadId));
       await Promise.all(
         messages.map((message) => core.archiveMessage(message.id)),
       );
@@ -761,11 +762,11 @@ export function createImapProvider(
       return { succeededThreadIds, failedThreadIds };
     },
     trashThread: async (threadId: string) => {
-      const messages = await core.getThreadMessages(threadId);
+      const messages = inboxCopies(await core.getThreadMessages(threadId));
       await core.trashMessages(messages.map((message) => message.id));
     },
     removeThreadLabel: async (threadId: string, labelId: string) => {
-      const messages = await core.getThreadMessages(threadId);
+      const messages = inboxCopies(await core.getThreadMessages(threadId));
       const keyword = imapKeyword(labelId);
       await Promise.all(
         messages.map((message) =>
@@ -1873,4 +1874,12 @@ function messagesForOpenThread(messages: ParsedImapMessage[]) {
   return unique.sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
+}
+
+function inboxCopies<T extends { labelIds?: string[] | null }>(messages: T[]) {
+  return messages.filter((message) => message.labelIds?.includes("INBOX"));
+}
+
+function isMissingThread(error: unknown) {
+  return error instanceof SafeError && error.message === "Thread not found";
 }
