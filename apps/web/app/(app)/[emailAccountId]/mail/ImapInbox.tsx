@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { LoadingContent } from "@/components/LoadingContent";
 import { PageHeading } from "@/components/Typography";
@@ -10,6 +11,7 @@ import { useAccount } from "@/providers/EmailAccountProvider";
 import { useComposeModal } from "@/providers/ComposeModalProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
 import { fetchWithAccount } from "@/utils/fetch";
+import { prefixPath } from "@/utils/path";
 
 const folders = [
   { id: "inbox", label: "Inbox", query: "/api/threads?limit=30&view=list" },
@@ -62,7 +64,15 @@ export function ImapInbox() {
     <LoadingContent loading={isLoading} error={error}>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
         <div className="flex items-center justify-between gap-3">
-          <PageHeading>{selected.label}</PageHeading>
+          <div className="min-w-0">
+            <Link
+              href={prefixPath(emailAccountId, "/automation")}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Inbox Zero
+            </Link>
+            <PageHeading>{selected.label}</PageHeading>
+          </div>
           <Button type="button" size="sm" onClick={openCompose}>
             Compose
           </Button>
