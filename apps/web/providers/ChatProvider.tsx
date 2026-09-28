@@ -406,10 +406,18 @@ function reportChatRequestError({
   });
   logger.flush().catch(() => undefined);
   toastError({
-    description: "We couldn't send your message. Please try again.",
+    description: chatRequestErrorDescription(error),
   });
   console.error(error);
   captureException(error);
+}
+
+function chatRequestErrorDescription(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("Add an API key for a chat model")) {
+    return "Add an API key for a chat model before sending a message.";
+  }
+  return "We couldn't send your message. Please try again.";
 }
 
 function getErrorStatusCode(error: unknown) {
