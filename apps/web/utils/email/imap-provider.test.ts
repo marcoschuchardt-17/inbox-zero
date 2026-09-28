@@ -45,6 +45,7 @@ const {
     unseen: [] as number[],
     fromUids: [] as number[],
     allUids: [] as number[],
+    missingMailboxes: [] as string[],
     inboxSearchUids: [] as number[],
     sentSearchUids: [] as number[],
     listed: [{ path: "INBOX", name: "INBOX" }] as {
@@ -95,6 +96,13 @@ vi.mock("imapflow", () => ({
     }
     async connect() {}
     async getMailboxLock(mailbox = "INBOX") {
+      if (mailboxState.missingMailboxes.includes(mailbox)) {
+        const error = new Error("Command failed") as Error & {
+          mailboxMissing?: boolean;
+        };
+        error.mailboxMissing = true;
+        throw error;
+      }
       mailboxState.opened = mailbox;
       return { release() {} };
     }
@@ -639,6 +647,42 @@ describe("createImapProvider", () => {
       },
     });
     mailboxState.allUids = [];
+  });
+
+  it("loads inbox stats when the account has no Sent folder", async () => {
+    const errors: unknown[] = [];
+    const warnings: unknown[] = [];
+    const recordingLogger = {
+      info: () => undefined,
+      warn: (message: unknown) => {
+        warnings.push(message);
+      },
+      error: (message: unknown) => {
+        errors.push(message);
+      },
+      trace: () => undefined,
+      child: () => recordingLogger,
+    } as unknown as Logger;
+    mailboxState.missingMailboxes = [
+      "Sent",
+      "Sent Items",
+      "[Gmail]/Sent Mail",
+      "Archive",
+      "Trash",
+      "Drafts",
+    ];
+    const provider = createImapProvider(imapConfig(), recordingLogger);
+
+    const page = await provider.getMessagesWithPagination({ maxResults: 20 });
+    const [inboxMessage] = await provider.getInboxMessages(5);
+    if (!inboxMessage) throw new Error("Missing message");
+    const thread = await provider.getThread(inboxMessage.threadId);
+
+    expect(page.messages.map((message) => message.id)).toEqual(["1"]);
+    expect(thread.messages.map((message) => message.id)).toEqual(["1"]);
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+    mailboxState.missingMailboxes = [];
   });
 
   it("stores sent mail so analytics can count it", async () => {

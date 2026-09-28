@@ -77,20 +77,8 @@ export function createImapProvider(
       });
       return messages;
     },
-    getSentMessages: async (maxResults = DEFAULT_PAGE_SIZE) => {
-      const sentFolders = ["Sent", "Sent Items", "[Gmail]/Sent Mail"];
-      for (const folder of sentFolders) {
-        try {
-          return await fetchMailboxMessages({
-            config,
-            logger,
-            mailbox: folder,
-            maxResults,
-          });
-        } catch {}
-      }
-      return [];
-    },
+    getSentMessages: async (maxResults = DEFAULT_PAGE_SIZE) =>
+      fetchSentMessages({ config, logger, maxResults }),
     getSentMessageIds: async ({ maxResults, after, before }) => {
       const messages = await core.getSentMessages(maxResults);
       const inRange = messages.filter((message) => {
@@ -198,6 +186,7 @@ export function createImapProvider(
           });
         } catch (error) {
           if (index === 0) throw error;
+          if (isMissingImapMailbox(error)) continue;
           logger.warn("Skipped IMAP folder while opening a thread", {
             error,
             mailbox,
@@ -1048,6 +1037,9 @@ async function fetchMailboxMessages({
       lock.release();
     }
   } catch (error) {
+    if (isMissingImapMailbox(error)) {
+      throw new SafeError("IMAP mailbox not found");
+    }
     logger.error("Failed fetching IMAP messages", {
       error,
       emailAccountId: config.emailAccountId,
@@ -1757,10 +1749,9 @@ async function storeSentMailbox({
   logger: Logger;
 }) {
   try {
-    const messages = await fetchMailboxMessages({
+    const messages = await fetchSentMessages({
       config,
       logger,
-      mailbox: "Sent",
       maxResults: 100,
     });
     await storeSentMessages({ config, messages });
@@ -1903,6 +1894,48 @@ function inboxCopies<T extends { labelIds?: string[] | null }>(messages: T[]) {
 
 function isMissingThread(error: unknown) {
   return error instanceof SafeError && error.message === "Thread not found";
+}
+
+const SENT_MAILBOXES = ["Sent", "Sent Items", "[Gmail]/Sent Mail"];
+
+async function fetchSentMessages({
+  config,
+  logger,
+  maxResults,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  maxResults: number;
+}) {
+  for (const mailbox of SENT_MAILBOXES) {
+    try {
+      return await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox,
+        maxResults,
+      });
+    } catch (error) {
+      if (isMissingImapMailbox(error)) continue;
+      throw error;
+    }
+  }
+  return [];
+}
+
+function isMissingImapMailbox(error: unknown) {
+  if (
+    error instanceof SafeError &&
+    error.message === "IMAP mailbox not found"
+  ) {
+    return true;
+  }
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "mailboxMissing" in error &&
+    error.mailboxMissing === true
+  );
 }
 
 async function hasEarlierImapCorrespondence({
