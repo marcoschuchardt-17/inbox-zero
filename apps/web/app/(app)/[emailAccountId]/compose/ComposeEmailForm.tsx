@@ -482,7 +482,11 @@ function ComposeEmailFormContent({
     getContent: getDraftContent,
   });
   const providerAutosave = useProviderDraftAutosave({
-    enabled: Boolean(providerDraftMessageId) || isNewCompose,
+    // IMAP sends through SMTP and stores the copy in Sent. This autosave only
+    // knows how to update a Gmail or Outlook draft.
+    enabled:
+      !isImapProvider(accountProvider) &&
+      (Boolean(providerDraftMessageId) || isNewCompose),
     sessionKey: isNewCompose
       ? `${selectedEmailAccountId}:${requestId}`
       : undefined,

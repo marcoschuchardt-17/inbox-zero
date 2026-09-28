@@ -7,6 +7,7 @@ import { PageHeading } from "@/components/Typography";
 import { Button } from "@/components/ui/button";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { useAccount } from "@/providers/EmailAccountProvider";
+import { useComposeModal } from "@/providers/ComposeModalProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
 import { fetchWithAccount } from "@/utils/fetch";
 
@@ -31,6 +32,7 @@ const folders = [
 
 export function ImapInbox() {
   const { emailAccountId } = useAccount();
+  const { onOpen: openCompose } = useComposeModal();
   const [folder, setFolder] = useState<(typeof folders)[number]["id"]>("inbox");
   const selected = folders.find((item) => item.id === folder) ?? folders[0];
   const { data, error, isLoading, mutate } = useSWR<ThreadsListResponse>(
@@ -59,7 +61,12 @@ export function ImapInbox() {
   return (
     <LoadingContent loading={isLoading} error={error}>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-        <PageHeading>{selected.label}</PageHeading>
+        <div className="flex items-center justify-between gap-3">
+          <PageHeading>{selected.label}</PageHeading>
+          <Button type="button" size="sm" onClick={openCompose}>
+            Compose
+          </Button>
+        </div>
         <div className="mt-3 flex gap-2">
           {folders.map((item) => (
             <Button
