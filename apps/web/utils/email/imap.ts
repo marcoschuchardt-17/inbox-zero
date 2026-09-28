@@ -549,6 +549,15 @@ export function createImapProvider(
       );
       return { messageId: savedId, threadId: draft.threadId };
     },
+    getDraft: async (draftId: string) => {
+      const drafts = await listDrafts({ config, logger, draftId });
+      return drafts.at(-1) ?? null;
+    },
+    getDraftReferenceForMessage: async (messageId: string) => {
+      const drafts = await listDrafts({ config, logger, draftId: messageId });
+      const draft = drafts.at(-1);
+      return draft ? { id: draft.id } : null;
+    },
     deleteDraft: async (draftId: string) => {
       const drafts = await findDraftMessages({ config, logger, draftId });
       if (!drafts.length) throw new SafeError("Draft not found");
@@ -1574,6 +1583,23 @@ async function setSeenFlag({
     flag: "\\Seen",
     enabled: read,
   });
+}
+
+async function listDrafts({
+  config,
+  logger,
+  draftId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  draftId: string;
+}) {
+  try {
+    return await findDraftMessages({ config, logger, draftId });
+  } catch (error) {
+    if (isMissingImapMailbox(error)) return [];
+    throw error;
+  }
 }
 
 async function findDraftMessages({

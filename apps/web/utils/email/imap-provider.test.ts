@@ -1042,6 +1042,34 @@ describe("createImapProvider", () => {
     mailboxState.draftSource = "";
   });
 
+  it("finds a saved draft by its message so the view can discard it", async () => {
+    mailboxState.draftSource = savedDraft();
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const listed = await provider.getThreadsWithQuery({
+      query: { type: "drafts" },
+    });
+    const message = listed.threads[0]?.messages[0];
+    if (!message) throw new Error("Missing draft");
+
+    const byMessage = await provider.getDraft(message.id);
+    const byThread = await provider.getDraft(message.threadId);
+    const reference = await provider.getDraftReferenceForMessage(message.id);
+
+    expect(byMessage?.id).toBe(message.id);
+    expect(byThread?.textPlain).toContain("Draft reply.");
+    expect(reference).toEqual({ id: message.id });
+    await expect(provider.getDraft("missing-draft")).resolves.toBeNull();
+    await expect(
+      provider.getDraftReferenceForMessage("missing-draft"),
+    ).resolves.toBeNull();
+
+    mailboxState.missingMailboxes = ["Drafts"];
+    await expect(provider.getDraft(message.id)).resolves.toBeNull();
+    mailboxState.missingMailboxes = [];
+    mailboxState.draftSource = "";
+  });
+
   it("discards a saved draft without sending it", async () => {
     sentMail.length = 0;
     deleted.length = 0;
