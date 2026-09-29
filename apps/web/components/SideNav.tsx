@@ -62,7 +62,7 @@ import {
 import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { prefixPath } from "@/utils/path";
-import { isGoogleProvider } from "@/utils/email/provider-types";
+import { isGoogleProvider, isImapProvider } from "@/utils/email/provider-types";
 import { NavUser } from "@/components/NavUser";
 import { PremiumCard } from "@/components/PremiumCard";
 import { FeedbackDialog } from "@/components/FeedbackDialog";
@@ -96,7 +96,7 @@ export const useNavigation = () => {
 
   const manageItems: NavItem[] = useMemo(
     () => [
-      ...(isDesktopApp
+      ...(isDesktopApp || isImapProvider(provider)
         ? [
             {
               name: "Inbox",
@@ -130,7 +130,7 @@ export const useNavigation = () => {
           ]
         : []),
     ],
-    [currentEmailAccountId, isDesktopApp, showMeetingRecorder],
+    [currentEmailAccountId, isDesktopApp, provider, showMeetingRecorder],
   );
 
   const cleanupItems: NavItem[] = useMemo(
