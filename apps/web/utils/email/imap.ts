@@ -2340,12 +2340,19 @@ async function storeSentMailbox({
   logger: Logger;
 }) {
   try {
-    const messages = await fetchSentMessages({
+    const page = await fetchSentMessagePage({
       config,
       logger,
       maxResults: 100,
     });
-    await storeSentMessages({ config, messages });
+    await storeSentMessages({ config, messages: page.messages });
+    // A partial page cannot tell a deleted uid from mail that is simply older.
+    if (page.foundMailbox && !page.nextPageToken) {
+      await dropSentMessagesMissingFromMailbox({
+        config,
+        messages: page.messages,
+      });
+    }
   } catch (error) {
     logger.warn("Skipped storing sent IMAP mail", {
       error,
@@ -2751,19 +2758,40 @@ async function fetchSentMessagePage({
 }) {
   for (const mailbox of SENT_MAILBOXES) {
     try {
-      return await fetchMailboxMessagePage({
+      const page = await fetchMailboxMessagePage({
         config,
         logger,
         mailbox,
         maxResults,
         beforeSequence,
       });
+      return { ...page, foundMailbox: true };
     } catch (error) {
       if (isMissingImapMailbox(error)) continue;
       throw error;
     }
   }
-  return { messages: [], nextPageToken: undefined };
+  return { messages: [], nextPageToken: undefined, foundMailbox: false };
+}
+
+async function dropSentMessagesMissingFromMailbox({
+  config,
+  messages,
+}: {
+  config: ImapConfig;
+  messages: ParsedImapMessage[];
+}) {
+  const ids = messages.map((message) => sentMessageId(message.id));
+  await prisma.emailMessage.deleteMany({
+    where: {
+      emailAccountId: config.emailAccountId,
+      sent: true,
+      messageId: {
+        startsWith: "sent:",
+        ...(ids.length ? { notIn: ids } : {}),
+      },
+    },
+  });
 }
 
 async function findImapMessagesFromSender({

@@ -1567,6 +1567,44 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("drops stored sent mail that is no longer in the Sent folder", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: A new IMAP message",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <sent-1@example.com>",
+      "",
+      "Sent from the mailbox.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getMessagesWithPagination({ maxResults: 20 });
+
+    expect(prisma.emailMessage.deleteMany).toHaveBeenCalledWith({
+      where: {
+        emailAccountId: "account-1",
+        sent: true,
+        messageId: { startsWith: "sent:", notIn: ["sent:11"] },
+      },
+    });
+    mailboxState.sentSource = "";
+  });
+
+  it("keeps stored sent mail when the account has no Sent folder", async () => {
+    mailboxState.missingMailboxes = ["Sent", "Sent Items", "[Gmail]/Sent Mail"];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getMessagesWithPagination({ maxResults: 20 });
+
+    expect(prisma.emailMessage.deleteMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ sent: true }),
+      }),
+    );
+    mailboxState.missingMailboxes = [];
+  });
+
   it("lists sent message ids for response-time stats", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
