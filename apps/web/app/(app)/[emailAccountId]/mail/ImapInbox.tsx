@@ -47,6 +47,9 @@ export function ImapInbox() {
     (item) =>
       !isStandardMailbox(item.id) && !isStandardMailbox(item.displayName),
   );
+  const filingFolders = extraFolders.filter(
+    (item) => !isJunkMailbox(item.id) && !isJunkMailbox(item.displayName),
+  );
   const selected = folders.find((item) => item.id === folder);
   const extra = extraFolders.find(
     (item) => mailboxFolderId(item.id) === folder,
@@ -75,6 +78,7 @@ export function ImapInbox() {
       | "archive"
       | "trash"
       | "spam"
+      | "move"
       | "unarchive"
       | "untrash"
       | "send-draft"
@@ -83,13 +87,22 @@ export function ImapInbox() {
     sourceFolder?: string,
   ) {
     setArchiveError("");
-    const folderQuery = sourceFolder
-      ? `?folder=${encodeURIComponent(sourceFolder)}`
-      : "";
+    const folderQuery =
+      action === "move" || !sourceFolder
+        ? ""
+        : `?folder=${encodeURIComponent(sourceFolder)}`;
     const response = await fetchWithAccount({
       url: `/api/threads/${encodeURIComponent(threadId)}/${action}${folderQuery}`,
       emailAccountId,
-      init: { method: "POST" },
+      init: {
+        method: "POST",
+        ...(action === "move"
+          ? {
+              body: JSON.stringify({ folder: sourceFolder }),
+              headers: { "Content-Type": "application/json" },
+            }
+          : {}),
+      },
     });
     if (!response.ok) {
       setArchiveError(moveError(action));
@@ -229,6 +242,18 @@ export function ImapInbox() {
                       >
                         Spam
                       </Button>
+                      {filingFolders.map((item) => (
+                        <Button
+                          key={item.id}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => moveThread(thread.id, "move", item.id)}
+                        >
+                          {`Move to ${item.displayName}`}
+                        </Button>
+                      ))}
                     </>
                   ) : null}
                   {folder === "drafts" ? (
@@ -306,11 +331,16 @@ function isStandardMailbox(name: string) {
   );
 }
 
+function isJunkMailbox(name: string) {
+  return name.toLowerCase() === "junk" || name.toLowerCase() === "spam";
+}
+
 function moveError(
   action:
     | "archive"
     | "trash"
     | "spam"
+    | "move"
     | "unarchive"
     | "untrash"
     | "send-draft"
@@ -319,6 +349,7 @@ function moveError(
 ) {
   if (action === "trash") return "Could not move this email to Trash.";
   if (action === "spam") return "Could not mark this email as spam.";
+  if (action === "move") return "Could not move this email.";
   if (action === "unarchive" || action === "untrash")
     return "Could not move this email to the inbox.";
   if (action === "send-draft") return "Could not send this draft.";
