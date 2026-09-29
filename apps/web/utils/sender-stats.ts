@@ -73,6 +73,10 @@ export async function getSenderEmailStats(
   whereConditions.push(
     Prisma.sql`"emailAccountId" = ${options.emailAccountId}`,
   );
+  // Sent and draft rows are mail this account wrote. These stats list people
+  // who wrote to the account, for bulk unsubscribe and inbox health.
+  whereConditions.push(Prisma.sql`sent = false`);
+  whereConditions.push(Prisma.sql`draft = false`);
 
   // Add search filter if provided - search both from (email) and fromName fields
   if (options.search) {
