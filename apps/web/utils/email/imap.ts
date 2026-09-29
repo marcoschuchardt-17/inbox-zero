@@ -545,10 +545,11 @@ export function createImapProvider(
             params.messageHtml ?? current.textHtml ?? current.textPlain ?? "",
         }),
       });
-      const newUid = appended?.uid == null ? "" : String(appended.uid);
       await Promise.all(
         drafts
-          .filter((message) => message.id !== newUid)
+          .filter(
+            (message) => parseImapMessageRef(message.id)?.uid !== appended?.uid,
+          )
           .map((message) =>
             deleteDraftMessage({
               config,
@@ -1149,6 +1150,7 @@ async function fetchMailboxMessages({
           message.source,
           message.flags,
           message.internalDate,
+          selectedMailbox,
         );
         if (
           isInboxMailbox(selectedMailbox, config.syncFolder || "INBOX") &&
@@ -1189,9 +1191,11 @@ async function fetchMessageById({
   messageId: string;
   includeAttachmentBodies?: boolean;
 }): Promise<ParsedImapMessage | null> {
-  const uid = Number(messageId);
-  if (!Number.isFinite(uid)) return null;
-  const mailboxes = await mailboxNamesForRead({ config, logger });
+  const ref = parseImapMessageRef(messageId);
+  if (!ref) return null;
+  const mailboxes = ref.mailbox
+    ? [ref.mailbox]
+    : await mailboxNamesForRead({ config, logger });
   const client = createImapClient(config);
   await client.connect();
   try {
@@ -1200,7 +1204,7 @@ async function fetchMessageById({
         const lock = await client.getMailboxLock(mailbox);
         try {
           const message = await client.fetchOne(
-            uid,
+            ref.uid,
             { uid: true, source: true, flags: true, internalDate: true },
             { uid: true },
           );
@@ -1210,6 +1214,7 @@ async function fetchMessageById({
             message.source,
             message.flags,
             message.internalDate,
+            mailbox,
             includeAttachmentBodies,
           );
         } finally {
@@ -1234,7 +1239,8 @@ async function parseImapMessage(
   uid: number,
   source: Buffer,
   flags: Set<string>,
-  internalDate?: Date,
+  internalDate: Date | undefined,
+  mailbox: string,
   includeAttachmentBodies = false,
 ): Promise<ParsedImapMessage> {
   const parsed = await new PostalMime().parse(source);
@@ -1278,7 +1284,7 @@ async function parseImapMessage(
   const threadKey = imapThreadKey(parsed, subject, uid);
 
   return {
-    id: String(uid),
+    id: imapMessageId(mailbox, uid),
     threadId: threadKey,
     historyId,
     date: (internalDate || new Date()).toISOString(),
@@ -1389,7 +1395,10 @@ async function reconcileStoredInbox(config: ImapConfig) {
     const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
     try {
       const found = await client.search({ all: true }, { uid: true });
-      ids = Array.isArray(found) ? found.map((uid) => String(uid)) : [];
+      const mailbox = config.syncFolder || "INBOX";
+      ids = Array.isArray(found)
+        ? found.map((uid) => imapMessageId(mailbox, uid))
+        : [];
     } finally {
       lock.release();
     }
@@ -1564,14 +1573,16 @@ async function removeKeywordFlag({
   messageId: string;
   keyword: string;
 }) {
-  const uid = Number(messageId);
-  if (!Number.isFinite(uid)) return;
+  const ref = parseImapMessageRef(messageId);
+  if (!ref) return;
   const client = createImapClient(config);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    const lock = await client.getMailboxLock(
+      ref.mailbox || config.syncFolder || "INBOX",
+    );
     try {
-      await client.messageFlagsRemove(uid, [keyword], { uid: true });
+      await client.messageFlagsRemove(ref.uid, [keyword], { uid: true });
     } finally {
       lock.release();
     }
@@ -1591,14 +1602,16 @@ async function addKeywordFlag({
   messageId: string;
   keyword: string;
 }) {
-  const uid = Number(messageId);
-  if (!Number.isFinite(uid)) return;
+  const ref = parseImapMessageRef(messageId);
+  if (!ref) return;
   const client = createImapClient(config);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    const lock = await client.getMailboxLock(
+      ref.mailbox || config.syncFolder || "INBOX",
+    );
     try {
-      await client.messageFlagsAdd(uid, [keyword], { uid: true });
+      await client.messageFlagsAdd(ref.uid, [keyword], { uid: true });
     } finally {
       lock.release();
     }
@@ -1625,15 +1638,17 @@ async function setSystemFlag({
   flag: "\\Flagged" | "\\Seen";
   enabled: boolean;
 }) {
-  const uid = Number(messageId);
-  if (!Number.isFinite(uid)) return;
+  const ref = parseImapMessageRef(messageId);
+  if (!ref) return;
   const client = createImapClient(config);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    const lock = await client.getMailboxLock(
+      ref.mailbox || config.syncFolder || "INBOX",
+    );
     try {
-      if (enabled) await client.messageFlagsAdd(uid, [flag], { uid: true });
-      else await client.messageFlagsRemove(uid, [flag], { uid: true });
+      if (enabled) await client.messageFlagsAdd(ref.uid, [flag], { uid: true });
+      else await client.messageFlagsRemove(ref.uid, [flag], { uid: true });
     } finally {
       lock.release();
     }
@@ -1733,14 +1748,14 @@ async function deleteDraftMessage({
   logger: Logger;
   messageId: string;
 }) {
-  const uid = Number(messageId);
-  if (!Number.isFinite(uid)) throw new SafeError("Draft not found");
+  const ref = parseImapMessageRef(messageId);
+  if (!ref) throw new SafeError("Draft not found");
   const client = createImapClient(config);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock("Drafts");
+    const lock = await client.getMailboxLock(ref.mailbox || "Drafts");
     try {
-      await client.messageDelete(uid, { uid: true });
+      await client.messageDelete(ref.uid, { uid: true });
     } finally {
       lock.release();
     }
@@ -1834,17 +1849,17 @@ async function moveMessageToMailbox({
   mailbox: string;
   sourceMailbox?: string;
 }) {
-  const uid = Number(messageId);
-  if (!Number.isFinite(uid)) return;
+  const ref = parseImapMessageRef(messageId);
+  if (!ref) return;
   const client = createImapClient(config);
   await client.connect();
   try {
     await ensureMailbox(client, mailbox);
     const lock = await client.getMailboxLock(
-      sourceMailbox || config.syncFolder || "INBOX",
+      sourceMailbox || ref.mailbox || config.syncFolder || "INBOX",
     );
     try {
-      await client.messageMove(uid, mailbox, { uid: true });
+      await client.messageMove(ref.uid, mailbox, { uid: true });
     } finally {
       lock.release();
     }
@@ -1975,13 +1990,13 @@ async function storeSentMessages({
         emailAccountId_threadId_messageId: {
           emailAccountId: config.emailAccountId,
           threadId: message.threadId,
-          messageId: `sent:${message.id}`,
+          messageId: sentMessageId(message.id),
         },
       },
       create: {
         emailAccountId: config.emailAccountId,
         threadId: message.threadId,
-        messageId: `sent:${message.id}`,
+        messageId: sentMessageId(message.id),
         date,
         from,
         fromName: extractNameFromEmail(message.headers.from || "") || null,
@@ -2023,6 +2038,8 @@ async function saveSentCopy({
         appended.uid,
         Buffer.from(raw),
         new Set(["\\Seen"]),
+        undefined,
+        "Sent",
       );
       await storeSentMessages({ config, messages: [message] });
     }
@@ -2139,6 +2156,7 @@ async function hasSentMailTo({
             message.source,
             message.flags ?? new Set(),
             messageInternalDate(message.internalDate),
+            mailbox,
           );
           const recipients = extractEmailAddresses(parsed.headers.to);
           if (recipients.some((address) => address.toLowerCase() === sender)) {
@@ -2235,6 +2253,7 @@ async function findImapMessagesFromSender({
             message.source,
             message.flags ?? new Set(),
             messageInternalDate(message.internalDate),
+            folder,
           );
           if (
             extractEmailAddress(parsed.headers.from).toLowerCase() !== sender
@@ -2332,7 +2351,10 @@ async function hasEarlierImapCorrespondence({
           { uid: true },
         )) {
           if (!wanted.has(String(message.uid)) || !message.source) continue;
-          if (folder === syncFolder && String(message.uid) === messageId) {
+          if (
+            folder === syncFolder &&
+            message.uid === parseImapMessageRef(messageId)?.uid
+          ) {
             continue;
           }
           const parsed = await parseImapMessage(
@@ -2340,6 +2362,7 @@ async function hasEarlierImapCorrespondence({
             message.source,
             message.flags ?? new Set(),
             messageInternalDate(message.internalDate),
+            folder,
           );
           const sentAt = new Date(parsed.date);
           if (Number.isNaN(sentAt.getTime()) || sentAt >= date) continue;
@@ -2396,8 +2419,11 @@ function isSentFolder(name: string, path: string) {
 
 // Search hits can be old mail with low UIDs or mail that was moved and got a new UID.
 function uidsToCheck(uids: number[], currentMessageId?: string) {
+  const currentUid = currentMessageId
+    ? parseImapMessageRef(currentMessageId)?.uid
+    : undefined;
   const remaining = uids.filter(
-    (uid) => Number.isFinite(uid) && String(uid) !== currentMessageId,
+    (uid) => Number.isFinite(uid) && uid !== currentUid,
   );
   if (remaining.length <= 8) return remaining;
   const sorted = [...remaining].sort((a, b) => a - b);
@@ -2517,6 +2543,27 @@ function senderLabelKeyword(labelId: string) {
   } catch {
     throw new SafeError("Invalid label");
   }
+}
+
+function sentMessageId(messageId: string) {
+  const uid = parseImapMessageRef(messageId)?.uid;
+  return `sent:${uid ?? messageId}`;
+}
+
+function imapMessageId(mailbox: string, uid: number) {
+  return `${mailbox}/${uid}`;
+}
+
+function parseImapMessageRef(messageId: string) {
+  const separator = messageId.lastIndexOf("/");
+  if (separator > 0) {
+    const uid = Number(messageId.slice(separator + 1));
+    const mailbox = messageId.slice(0, separator);
+    if (mailbox && Number.isInteger(uid) && uid > 0) return { mailbox, uid };
+  }
+  const uid = Number(messageId);
+  if (Number.isInteger(uid) && uid > 0) return { uid };
+  return null;
 }
 
 async function mailboxNamesForRead({

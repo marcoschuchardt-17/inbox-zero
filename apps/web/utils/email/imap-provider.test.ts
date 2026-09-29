@@ -59,7 +59,10 @@ const {
     sentSource: "" as string,
     trashSource: "" as string,
     draftSource: "" as string,
-    folderSources: {} as Record<string, string>,
+    folderSources: {} as Record<
+      string,
+      string | { uid: number; source: string }
+    >,
   },
   rawMessage: [
     "From: Sam <sam@example.com>",
@@ -161,9 +164,12 @@ vi.mock("imapflow", () => ({
       }
       const folderSource = mailboxState.folderSources[mailboxState.opened];
       if (folderSource) {
+        const source =
+          typeof folderSource === "string" ? folderSource : folderSource.source;
+        const uid = typeof folderSource === "string" ? 14 : folderSource.uid;
         yield {
-          uid: 14,
-          source: Buffer.from(folderSource),
+          uid,
+          source: Buffer.from(source),
           flags: new Set(["\\Seen"]),
           internalDate: new Date("2026-09-28T17:00:00.000Z"),
         };
@@ -352,6 +358,25 @@ describe("createImapProvider", () => {
     mailboxState.archiveSource = "";
   });
 
+  it("downloads the attachment from the folder named in the message id", async () => {
+    mailboxState.archiveSource = archivedAttachment();
+    mailboxState.folderSources.Junk = {
+      uid: 9,
+      source: archivedAttachment()
+        .replace("Subject: File", "Subject: Junk file")
+        .replace("Tm90ZQ==", "SnVuaw=="),
+    };
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const junk = await provider.getAttachment("Junk/9", "9:0");
+    const archived = await provider.getAttachment("Archive/9", "9:0");
+
+    expect(Buffer.from(junk.data, "base64").toString("utf8")).toBe("Junk");
+    expect(Buffer.from(archived.data, "base64").toString("utf8")).toBe("Note");
+    mailboxState.archiveSource = "";
+    mailboxState.folderSources = {};
+  });
+
   it("downloads an attachment stored in Archive", async () => {
     mailboxState.archiveSource = archivedAttachment();
     const provider = createImapProvider(imapConfig(), logger);
@@ -468,7 +493,7 @@ describe("createImapProvider", () => {
     expect(flagsAdded).toEqual([{ uid: 1, flags: ["\\Seen"] }]);
     expect(mailboxState.opened).toBe("INBOX");
     expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
-      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      where: { emailAccountId: "account-1", messageId: { in: ["INBOX/1"] } },
       data: { read: true },
     });
   });
@@ -514,7 +539,7 @@ describe("createImapProvider", () => {
     expect(movedTo).toEqual(["Junk"]);
     expect(created).toContain("Junk");
     expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
-      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      where: { emailAccountId: "account-1", messageId: { in: ["INBOX/1"] } },
       data: { inbox: false },
     });
   });
@@ -780,7 +805,7 @@ describe("createImapProvider", () => {
       where: {
         emailAccountId: "account-1",
         inbox: true,
-        messageId: { notIn: ["4"] },
+        messageId: { notIn: ["INBOX/4"] },
       },
       data: { inbox: false },
     });
@@ -798,7 +823,7 @@ describe("createImapProvider", () => {
         emailAccountId: "account-1",
         OR: [
           {
-            messageId: "1",
+            messageId: "INBOX/1",
             threadId: { not: "<parent@example.com>" },
           },
         ],
@@ -836,8 +861,8 @@ describe("createImapProvider", () => {
     if (!inboxMessage) throw new Error("Missing message");
     const thread = await provider.getThread(inboxMessage.threadId);
 
-    expect(page.messages.map((message) => message.id)).toEqual(["1"]);
-    expect(thread.messages.map((message) => message.id)).toEqual(["1"]);
+    expect(page.messages.map((message) => message.id)).toEqual(["INBOX/1"]);
+    expect(thread.messages.map((message) => message.id)).toEqual(["INBOX/1"]);
     expect(errors).toEqual([]);
     expect(warnings).toEqual([]);
     mailboxState.missingMailboxes = [];
@@ -900,7 +925,7 @@ describe("createImapProvider", () => {
 
     expect(mailboxState.opened).toBe("Sent");
     expect(result.messages).toEqual([
-      { id: "11", threadId: "<reply-1@example.com>" },
+      { id: "Sent/11", threadId: "<reply-1@example.com>" },
     ]);
     expect(result.nextPageToken).toBeUndefined();
 
@@ -1006,7 +1031,10 @@ describe("createImapProvider", () => {
 
     const messages = await provider.getThreadMessages("<parent@example.com>");
 
-    expect(messages.map((message) => message.id).sort()).toEqual(["1", "11"]);
+    expect(messages.map((message) => message.id).sort()).toEqual([
+      "INBOX/1",
+      "Sent/11",
+    ]);
 
     await provider.archiveThread("<parent@example.com>", "owner@example.com");
 
@@ -1231,7 +1259,7 @@ describe("createImapProvider", () => {
     await expect(
       provider.getDraft("<draft-1@example.com>"),
     ).resolves.toMatchObject({
-      id: "13",
+      id: "Drafts/13",
     });
     mailboxState.draftSource = "";
   });
@@ -1339,7 +1367,7 @@ describe("createImapProvider", () => {
       before: new Date("2026-09-01T00:00:00.000Z"),
     });
 
-    expect(matched.messages.map((message) => message.id)).toEqual(["1"]);
+    expect(matched.messages.map((message) => message.id)).toEqual(["INBOX/1"]);
     expect(matched.messages[0]?.headers.from).toContain("sam@example.com");
     expect(differentSender.messages).toEqual([]);
     expect(olderThanTheMessage.messages).toEqual([]);
