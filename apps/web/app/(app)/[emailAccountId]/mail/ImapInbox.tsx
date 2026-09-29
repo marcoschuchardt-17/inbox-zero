@@ -57,9 +57,9 @@ export function ImapInbox() {
   const { emailAccountId, userEmail } = useAccount();
   const { onOpen: openCompose } = useComposeModal();
   const [folder, setFolder] = useState("inbox");
-  const [queryParam] = useQueryState("q");
+  const [queryParam, setQueryParam] = useQueryState("q");
   const [search, setSearch] = useState(queryParam ?? "");
-  const [submittedSearch, setSubmittedSearch] = useState(queryParam ?? "");
+  const submittedSearch = queryParam?.trim() ?? "";
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
   const { data: labelList } = useSWR<LabelsResponse>("/api/labels");
   const labelNames = new Map(
@@ -266,7 +266,9 @@ export function ImapInbox() {
           onSubmit={(event) => {
             event.preventDefault();
             setArchiveError("");
-            setSubmittedSearch(search.trim());
+            const next = search.trim();
+            setSearch(next);
+            setQueryParam(next || null).catch(() => undefined);
           }}
         >
           <input
@@ -286,8 +288,8 @@ export function ImapInbox() {
               size="sm"
               onClick={() => {
                 setSearch("");
-                setSubmittedSearch("");
                 setArchiveError("");
+                setQueryParam(null).catch(() => undefined);
               }}
             >
               Clear
@@ -303,7 +305,8 @@ export function ImapInbox() {
               size="sm"
               onClick={() => {
                 setArchiveError("");
-                setSubmittedSearch("");
+                setSearch("");
+                setQueryParam(null).catch(() => undefined);
                 setFolder(item.id);
               }}
             >
@@ -320,7 +323,8 @@ export function ImapInbox() {
               size="sm"
               onClick={() => {
                 setArchiveError("");
-                setSubmittedSearch("");
+                setSearch("");
+                setQueryParam(null).catch(() => undefined);
                 setFolder(mailboxFolderId(item.id));
               }}
             >
