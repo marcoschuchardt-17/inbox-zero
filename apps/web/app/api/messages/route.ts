@@ -44,7 +44,7 @@ async function getMessages({
   try {
     const { messages, nextPageToken } =
       await emailProvider.getMessagesWithPagination({
-        query: query?.trim(),
+        query: query?.trim() ?? "",
         maxResults: 20,
         pageToken: pageToken ?? undefined,
       });

@@ -821,12 +821,20 @@ describe("createImapProvider", () => {
     const provider = createImapProvider(imapConfig(), logger);
 
     const inbox = await provider.getMessagesWithPagination({ maxResults: 20 });
+    const listed = await provider.getMessagesWithPagination({
+      query: "",
+      maxResults: 20,
+    });
     const found = await provider.getMessagesWithPagination({
       query: "Please trash",
       maxResults: 20,
     });
 
     expect(inbox.messages.map((message) => message.id)).toEqual(["INBOX/1"]);
+    expect(listed.messages.map((message) => message.subject)).toEqual([
+      "Please trash this",
+      "Welcome to the mailbox",
+    ]);
     expect(found.messages.map((message) => message.subject)).toEqual([
       "Please trash this",
     ]);

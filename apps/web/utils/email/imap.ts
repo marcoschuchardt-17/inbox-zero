@@ -125,17 +125,20 @@ export function createImapProvider(
       }
       const offset = Number(pageToken || "0");
       const fetchLimit = maxResults + offset;
-      const messages = query
-        ? await fetchSearchableMailboxMessages({
-            config,
-            logger,
-            maxResults: fetchLimit,
-          })
-        : await fetchMailboxMessages({
-            config,
-            logger,
-            maxResults: fetchLimit,
-          });
+      // An empty query still means "previous mail", including mail that left
+      // the inbox. Omitting query keeps the inbox read used by stats.
+      const messages =
+        query !== undefined
+          ? await fetchSearchableMailboxMessages({
+              config,
+              logger,
+              maxResults: fetchLimit,
+            })
+          : await fetchMailboxMessages({
+              config,
+              logger,
+              maxResults: fetchLimit,
+            });
       await dropStaleThreadCopies({
         emailAccountId: config.emailAccountId,
         messages,
