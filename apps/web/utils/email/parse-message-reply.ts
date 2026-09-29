@@ -4,10 +4,13 @@ import { convertEmailHtmlToText, parseReply } from "@/utils/mail";
 
 export function parseMessageReply(message: ParsedMessage): ParsedMessage {
   const parsedTextPlain = parseReply(message.textPlain || "").trim();
-  const parsedTextHtml = message.textHtml
+  const strippedHtml = message.textHtml
+    ? stripQuotedHtmlContent(message.textHtml).trim()
+    : "";
+  const parsedHtmlText = strippedHtml
     ? parseReply(
         convertEmailHtmlToText({
-          htmlText: stripQuotedHtmlContent(message.textHtml),
+          htmlText: strippedHtml,
           includeLinks: false,
         }),
       ).trim()
@@ -15,8 +18,8 @@ export function parseMessageReply(message: ParsedMessage): ParsedMessage {
 
   return {
     ...message,
-    textPlain: parsedTextPlain || parsedTextHtml,
-    textHtml: parsedTextHtml,
+    textPlain: parsedTextPlain || parsedHtmlText,
+    textHtml: strippedHtml,
   };
 }
 

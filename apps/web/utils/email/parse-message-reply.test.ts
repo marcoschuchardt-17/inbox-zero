@@ -23,8 +23,22 @@ describe("parseMessageReply", () => {
 
     expect(parseMessageReply(message)).toMatchObject({
       textPlain: "Fresh reply",
-      textHtml: "Fresh reply",
+      textHtml: "<div>Fresh reply</div>",
     });
+  });
+
+  it("keeps an inline image in the opened reply", () => {
+    const message = createMessage({
+      textPlain: "Inline photo check",
+      textHtml:
+        '<p>Inline photo check</p><img src="cid:photo@inboxzero.local" alt="red block"><div class="gmail_quote">Older quoted line</div>',
+    });
+
+    const parsed = parseMessageReply(message);
+
+    expect(parsed.textPlain).toBe("Inline photo check");
+    expect(parsed.textHtml).toContain('src="cid:photo@inboxzero.local"');
+    expect(parsed.textHtml).not.toContain("Older quoted line");
   });
 });
 
