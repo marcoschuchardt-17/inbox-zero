@@ -258,3 +258,7 @@ export function isSameOrganization(left: string, right: string): boolean {
 
   return leftDomain === extractDomainFromEmail(right).toLowerCase();
 }
+
+export function legacySubjectThreadKey(subject: string) {
+  return subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
+}

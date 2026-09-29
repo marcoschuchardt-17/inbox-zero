@@ -12,6 +12,7 @@ import {
   extractNameFromEmail,
   formatEmailWithName,
   getSearchTermForSender,
+  legacySubjectThreadKey,
 } from "@/utils/email";
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
@@ -2460,10 +2461,6 @@ function messageMatchesThreadId(
   // Older rule history stored the subject when the message had no id yet.
   if (threadId.includes("<")) return false;
   return legacySubjectThreadKey(message.subject) === threadId;
-}
-
-function legacySubjectThreadKey(subject: string) {
-  return subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
 }
 
 function messageIdsIn(value?: string) {

@@ -9,6 +9,7 @@ import {
   extractDomainFromEmail,
   extractEmailAddress,
   extractNameFromEmail,
+  legacySubjectThreadKey,
 } from "@/utils/email";
 import type { EmailProvider } from "@/utils/email/types";
 import { internalDateToDate } from "@/utils/date";
@@ -196,6 +197,7 @@ export async function saveBatch({
       return {
         threadId: m.threadId,
         messageId: m.id,
+        subject: m.subject || "",
         from: extractEmailAddress(m.headers.from),
         fromName: extractNameFromEmail(m.headers.from),
         fromDomain: extractDomainFromEmail(m.headers.from),
@@ -227,6 +229,7 @@ async function saveEmailMessages(
   emails: {
     threadId: string;
     messageId: string;
+    subject: string;
     from: string;
     fromName: string;
     fromDomain: string;
@@ -296,6 +299,45 @@ async function saveEmailMessages(
       "inbox" = EXCLUDED."inbox",
       "updatedAt" = NOW()
   `;
+
+  await dropMovedMessageCopies(emails);
+}
+
+async function dropMovedMessageCopies(
+  emails: {
+    threadId: string;
+    messageId: string;
+    subject: string;
+    from: string;
+    date: Date;
+    sent: boolean;
+    draft: boolean;
+    emailAccountId: string;
+  }[],
+) {
+  const savedIds = emails.map((email) => email.messageId);
+  const copies = emails.flatMap((email) => {
+    if (email.sent || email.draft || !email.from) return [];
+    const threadIds = [email.threadId];
+    const legacyThreadId = legacySubjectThreadKey(email.subject);
+    if (legacyThreadId && legacyThreadId !== email.threadId) {
+      threadIds.push(legacyThreadId);
+    }
+    return [
+      {
+        emailAccountId: email.emailAccountId,
+        sent: false,
+        draft: false,
+        from: email.from,
+        date: email.date,
+        messageId: { notIn: savedIds },
+        threadId: { in: threadIds },
+      },
+    ];
+  });
+  if (!copies.length) return;
+
+  await prisma.emailMessage.deleteMany({ where: { OR: copies } });
 }
 
 function mergeUnsubscribeSources({
