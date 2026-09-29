@@ -559,6 +559,7 @@ export function createImapProvider(
           references,
           contentType: "text/html; charset=utf-8",
           body: body.messageHtml,
+          attachments: body.attachments,
         }),
       });
       return {
@@ -640,6 +641,7 @@ export function createImapProvider(
           contentType: "text/html; charset=utf-8",
           body:
             params.messageHtml ?? current.textHtml ?? current.textPlain ?? "",
+          attachments: params.attachments,
         }),
       });
       await Promise.all(
@@ -665,6 +667,17 @@ export function createImapProvider(
       const inReplyTo = draft.headers["in-reply-to"];
       const references = draft.headers.references || inReplyTo;
       const text = draft.textPlain || draft.snippet;
+      const withFiles = await fetchMessageById({
+        config,
+        logger,
+        messageId: draft.id,
+        includeAttachmentBodies: true,
+      });
+      const attachments = (withFiles?._attachments ?? []).map((attachment) => ({
+        filename: attachment.filename,
+        content: Buffer.from(attachment.content).toString("base64"),
+        contentType: attachment.mimeType,
+      }));
       const result = await transport.sendMail({
         from: mailboxFrom(config),
         to: draft.headers.to,
@@ -675,6 +688,12 @@ export function createImapProvider(
         messageId,
         inReplyTo,
         references,
+        attachments: attachments?.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.content,
+          encoding: "base64" as const,
+          contentType: attachment.contentType,
+        })),
       });
       const savedId = result.messageId || messageId;
       await saveSentCopy({
@@ -692,6 +711,7 @@ export function createImapProvider(
             ? "text/html; charset=utf-8"
             : "text/plain; charset=utf-8",
           body: draft.textHtml || text,
+          attachments,
         }),
       });
       await Promise.all(
@@ -2304,6 +2324,7 @@ function buildOutgoingMessage({
   references,
   contentType,
   body,
+  attachments,
 }: {
   from: string;
   to: string;
@@ -2315,6 +2336,7 @@ function buildOutgoingMessage({
   references?: string;
   contentType: string;
   body: string;
+  attachments?: SendEmailBody["attachments"];
 }) {
   const headers = [
     `From: ${from}`,
@@ -2327,9 +2349,53 @@ function buildOutgoingMessage({
     references ? `References: ${references}` : undefined,
     `Date: ${new Date().toUTCString()}`,
     "MIME-Version: 1.0",
-    `Content-Type: ${contentType}`,
   ].filter((line): line is string => Boolean(line));
-  return `${headers.join("\r\n")}\r\n\r\n${body}`;
+  const files = attachments ?? [];
+  if (!files.length) {
+    headers.push(`Content-Type: ${contentType}`);
+    return `${headers.join("\r\n")}\r\n\r\n${body}`;
+  }
+  const boundary = `inboxzero-${crypto.randomUUID()}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  const parts = [
+    [
+      `Content-Type: ${contentType}`,
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      body,
+    ].join("\r\n"),
+    ...files.map((attachment) => attachmentMimePart(attachment)),
+  ];
+  return `${headers.join("\r\n")}\r\n\r\n${parts
+    .map((part) => `--${boundary}\r\n${part}`)
+    .join("\r\n")}\r\n--${boundary}--`;
+}
+
+function attachmentMimePart(
+  attachment: NonNullable<SendEmailBody["attachments"]>[number],
+) {
+  const filename = attachment.filename.replace(/[\r\n"]/g, "");
+  const contentType = attachment.contentType || "application/octet-stream";
+  const inline = attachment.disposition === "inline" && attachment.contentId;
+  const lines = [
+    `Content-Type: ${contentType}; name="${filename}"`,
+    `Content-Disposition: ${inline ? "inline" : "attachment"}; filename="${filename}"`,
+    "Content-Transfer-Encoding: base64",
+  ];
+  if (inline && attachment.contentId) {
+    lines.push(
+      `Content-ID: <${attachment.contentId.replace(/[<>\r\n]/g, "")}>`,
+    );
+  }
+  lines.push("", wrapBase64(attachment.content));
+  return lines.join("\r\n");
+}
+
+function wrapBase64(value: string) {
+  return value
+    .replace(/\s/g, "")
+    .replace(/.{1,76}/g, "$&\r\n")
+    .trimEnd();
 }
 
 async function storeSentMailbox({

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import PostalMime from "postal-mime";
 import prisma from "@/utils/__mocks__/prisma";
 import { imapFlagsToLabelIds, imapKeyword } from "./imap-flags";
 import { createImapProvider } from "./imap";
@@ -416,6 +417,36 @@ describe("createImapProvider", () => {
 
     expect(sentMail[0]?.from).toBe("Starttls <owner@example.com>");
     expect(appended[0]?.raw).toContain("From: Starttls <owner@example.com>");
+  });
+
+  it("keeps an attachment on the sent IMAP copy", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const content = Buffer.from("hello file").toString("base64");
+
+    await provider.sendEmailWithHtml({
+      to: "sam@example.com",
+      subject: "Notes",
+      messageHtml: "<p>See attached</p>",
+      attachments: [
+        { filename: "note.txt", content, contentType: "text/plain" },
+      ],
+    });
+
+    expect(sentMail[0]?.attachments).toEqual([
+      expect.objectContaining({
+        filename: "note.txt",
+        content,
+        contentType: "text/plain",
+      }),
+    ]);
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.html).toContain("See attached");
+    expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
+    expect(Buffer.from(parsed.attachments?.[0]?.content || []).toString()).toBe(
+      "hello file",
+    );
   });
 
   it("opens a message stored only in Junk", async () => {
@@ -2238,6 +2269,28 @@ describe("createImapProvider", () => {
     ).resolves.toMatchObject({
       id: "Drafts/13",
     });
+    mailboxState.draftSource = "";
+  });
+
+  it("keeps an attachment on a saved IMAP draft", async () => {
+    appended.length = 0;
+    mailboxState.draftSource = savedDraft();
+    const provider = createImapProvider(imapConfig(), logger);
+    const content = Buffer.from("hello file").toString("base64");
+
+    await provider.updateDraft("<draft-1@example.com>", {
+      messageHtml: "<p>Changed</p>",
+      attachments: [
+        { filename: "note.txt", content, contentType: "text/plain" },
+      ],
+    });
+
+    const parsed = await new PostalMime().parse(String(appended.at(-1)?.raw));
+    expect(parsed.html).toContain("Changed");
+    expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
+    expect(Buffer.from(parsed.attachments?.[0]?.content || []).toString()).toBe(
+      "hello file",
+    );
     mailboxState.draftSource = "";
   });
 
