@@ -63,6 +63,12 @@ const {
       string,
       string | { uid: number; source: string }
     >,
+    inboxMessages: [] as {
+      uid: number;
+      source: string;
+      flags: string[];
+      internalDate: string;
+    }[],
   },
   rawMessage: [
     "From: Sam <sam@example.com>",
@@ -88,6 +94,9 @@ vi.mock("imapflow", () => ({
       to?: string;
       all?: boolean;
       or?: unknown;
+      since?: Date;
+      before?: Date;
+      seen?: boolean;
     }) {
       if (query?.from) return mailboxState.fromUids;
       if (query?.to) {
@@ -100,6 +109,11 @@ vi.mock("imapflow", () => ({
         return mailboxState.opened === "Sent"
           ? mailboxState.sentSearchUids
           : mailboxState.inboxSearchUids;
+      }
+      if (query?.since || query?.before) {
+        return inboxMessagesForSearch()
+          .filter((message) => imapDateMatches(message, query))
+          .map((message) => message.uid);
       }
       return mailboxState.unseen;
     }
@@ -121,7 +135,31 @@ vi.mock("imapflow", () => ({
       mailboxState.opened = mailbox;
       return { release() {} };
     }
-    async *fetch() {
+    async *fetch(
+      range?: string,
+      _query?: unknown,
+      options?: { uid?: boolean },
+    ) {
+      if (
+        mailboxState.opened === "INBOX" &&
+        mailboxState.inboxMessages.length
+      ) {
+        const wanted = fetchTargets(
+          range,
+          mailboxState.inboxMessages,
+          options?.uid === true,
+        );
+        for (const message of mailboxState.inboxMessages) {
+          if (!wanted.has(message.uid)) continue;
+          yield {
+            uid: message.uid,
+            source: Buffer.from(message.source),
+            flags: new Set(message.flags),
+            internalDate: new Date(message.internalDate),
+          };
+        }
+        return;
+      }
       if (mailboxState.opened === "Archive") {
         if (!mailboxState.archiveSource) return;
         yield {
@@ -1185,6 +1223,80 @@ describe("createImapProvider", () => {
     expect(tooEarly.threads).toEqual([]);
   });
 
+  it("reaches inbox mail inside the dates when newer mail fills the page", async () => {
+    mailboxState.exists = 4;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: [],
+        internalDate: "2026-09-02T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Early September",
+          "<early-september@example.com>",
+          "Wed, 02 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: [],
+        internalDate: "2026-09-15T12:00:00.000Z",
+        source: datedInboxMessage(
+          "September invoice",
+          "<september-invoice@example.com>",
+          "Tue, 15 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 3,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Read September",
+          "<read-september@example.com>",
+          "Sun, 20 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 40,
+        flags: ["\\Seen"],
+        internalDate: "2026-10-02T12:00:00.000Z",
+        source: datedInboxMessage(
+          "October note",
+          "<october-note@example.com>",
+          "Fri, 02 Oct 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+    const query = {
+      type: "inbox" as const,
+      isUnread: true,
+      after: new Date("2026-09-01T00:00:00.000Z"),
+      before: new Date("2026-10-01T00:00:00.000Z"),
+    };
+
+    const first = await provider.getThreadsWithQuery({
+      maxResults: 1,
+      query,
+    });
+    const second = await provider.getThreadsWithQuery({
+      maxResults: 1,
+      pageToken: first.nextPageToken,
+      query,
+    });
+
+    expect(first.threads.map((thread) => thread.messages[0]?.subject)).toEqual([
+      "September invoice",
+    ]);
+    expect(first.nextPageToken).toBe("1");
+    expect(second.threads.map((thread) => thread.messages[0]?.subject)).toEqual(
+      ["Early September"],
+    );
+    expect(second.nextPageToken).toBeUndefined();
+    mailboxState.inboxMessages = [];
+    mailboxState.exists = 1;
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
@@ -1601,6 +1713,70 @@ function savedDraft() {
     "",
     "Draft reply.",
   ].join("\r\n");
+}
+
+function datedInboxMessage(subject: string, messageId: string, date: string) {
+  return [
+    "From: Sam <sam@example.com>",
+    "To: inbox.imap@example.com",
+    `Subject: ${subject}`,
+    `Date: ${date}`,
+    `Message-ID: ${messageId}`,
+    "",
+    subject,
+  ].join("\r\n");
+}
+
+function inboxMessagesForSearch() {
+  if (mailboxState.inboxMessages.length) return mailboxState.inboxMessages;
+  return [
+    {
+      uid: 1,
+      source: mailboxState.inboxSource || rawMessage,
+      flags: ["\\Seen"],
+      internalDate: "2026-09-28T12:00:00.000Z",
+    },
+  ];
+}
+
+function imapDateMatches(
+  message: { flags: string[]; internalDate: string },
+  query: { since?: Date; before?: Date; seen?: boolean },
+) {
+  const sentAt = new Date(message.internalDate).getTime();
+  if (query.since && sentAt < utcDay(query.since)) return false;
+  if (query.before && sentAt >= utcDay(query.before)) return false;
+  if (query.seen === false && message.flags.includes("\\Seen")) return false;
+  return true;
+}
+
+function utcDay(value: Date) {
+  return Date.UTC(
+    value.getUTCFullYear(),
+    value.getUTCMonth(),
+    value.getUTCDate(),
+  );
+}
+
+function fetchTargets(
+  range: string | undefined,
+  messages: { uid: number }[],
+  byUid: boolean,
+) {
+  if (!range) return new Set(messages.map((message) => message.uid));
+  if (byUid) {
+    return new Set(
+      range
+        .split(",")
+        .map((uid) => Number(uid))
+        .filter((uid) => Number.isFinite(uid)),
+    );
+  }
+  const [startRaw, endRaw] = range.split(":");
+  const start = Number(startRaw);
+  const end = endRaw === undefined ? start : Number(endRaw);
+  const uids = messages.slice(start - 1, end).map((message) => message.uid);
+  return new Set(uids);
 }
 
 function imapConfig() {

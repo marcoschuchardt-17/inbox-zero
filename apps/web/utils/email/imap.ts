@@ -224,22 +224,47 @@ export function createImapProvider(
       maxResults = DEFAULT_PAGE_SIZE,
       pageToken,
     }) => core.getMessagesWithPagination({ query, maxResults, pageToken }),
-    getThreadsWithQuery: async ({ query, maxResults = DEFAULT_PAGE_SIZE }) => {
+    getThreadsWithQuery: async ({
+      query,
+      maxResults = DEFAULT_PAGE_SIZE,
+      pageToken,
+    }) => {
       let messages: ParsedMessage[] = [];
+      let nextPageToken: string | undefined;
       const mailbox =
         (query?.type ? mailboxForListType(query.type) : undefined) ||
         query?.folderId ||
         undefined;
-      if (query?.type === "sent") {
-        messages = await core.getSentMessages(maxResults);
-      } else if (mailbox) {
-        try {
-          messages = await fetchMailboxMessages({
+      const loadMailbox = async () => {
+        if (query?.after || query?.before) {
+          return fetchMailboxMessagesByDate({
             config,
             logger,
             mailbox,
             maxResults,
+            pageToken,
+            after: query.after,
+            before: query.before,
+            isUnread: query.isUnread,
           });
+        }
+        return {
+          messages: await fetchMailboxMessages({
+            config,
+            logger,
+            mailbox,
+            maxResults,
+          }),
+          nextPageToken: undefined,
+        };
+      };
+      if (query?.type === "sent") {
+        messages = await core.getSentMessages(maxResults);
+      } else if (mailbox) {
+        try {
+          const page = await loadMailbox();
+          messages = page.messages;
+          nextPageToken = page.nextPageToken;
         } catch (error) {
           logger.warn("Skipped IMAP folder", {
             error,
@@ -248,11 +273,9 @@ export function createImapProvider(
           });
         }
       } else {
-        messages = await fetchMailboxMessages({
-          config,
-          logger,
-          maxResults,
-        });
+        const page = await loadMailbox();
+        messages = page.messages;
+        nextPageToken = page.nextPageToken;
       }
       const fromEmail = query?.fromEmail?.trim().toLowerCase();
       const filtered = messages.filter((message) => {
@@ -277,7 +300,10 @@ export function createImapProvider(
         }
         return true;
       });
-      return { threads: groupToThreads(filtered).slice(0, maxResults) };
+      return {
+        threads: groupToThreads(filtered).slice(0, maxResults),
+        nextPageToken,
+      };
     },
     getThreadsFromSenderWithSubject: async (sender: string, limit: number) => {
       const { threads } = await core.getThreadsWithQuery({
@@ -1170,6 +1196,105 @@ async function fetchMailboxMessages({
       return messages.sort(
         (a, b) => Number(a.internalDate || "0") - Number(b.internalDate || "0"),
       );
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    if (isMissingImapMailbox(error)) {
+      throw new SafeError("IMAP mailbox not found");
+    }
+    logger.error("Failed fetching IMAP messages", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to read IMAP mailbox");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+async function fetchMailboxMessagesByDate({
+  config,
+  logger,
+  mailbox,
+  maxResults,
+  pageToken,
+  after,
+  before,
+  isUnread,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  mailbox?: string;
+  maxResults: number;
+  pageToken?: string;
+  after?: Date;
+  before?: Date;
+  isUnread?: boolean;
+}): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const selectedMailbox = mailbox || config.syncFolder || "INBOX";
+    const lock = await client.getMailboxLock(selectedMailbox);
+    try {
+      const window = imapSearchWindow(after, before);
+      const searched = await client.search(
+        {
+          ...(window.since ? { since: window.since } : {}),
+          ...(window.before ? { before: window.before } : {}),
+          ...(isUnread ? { seen: false } : {}),
+        },
+        { uid: true },
+      );
+      const uids = (Array.isArray(searched) ? searched : [])
+        .filter((uid): uid is number => typeof uid === "number")
+        .sort((left, right) => right - left);
+      const offset = pageOffset(pageToken);
+      const pageUids = uids.slice(offset, offset + maxResults);
+      const nextPageToken =
+        offset + maxResults < uids.length
+          ? String(offset + maxResults)
+          : undefined;
+      if (!pageUids.length) return { messages: [], nextPageToken };
+
+      const wanted = new Set(pageUids.map(String));
+      const messages: ParsedImapMessage[] = [];
+      for await (const message of client.fetch(
+        pageUids.join(","),
+        {
+          uid: true,
+          envelope: true,
+          source: true,
+          flags: true,
+          internalDate: true,
+        },
+        { uid: true },
+      )) {
+        if (!wanted.has(String(message.uid)) || !message.source) continue;
+        const parsed = await parseImapMessage(
+          message.uid,
+          message.source,
+          message.flags,
+          message.internalDate,
+          selectedMailbox,
+        );
+        if (
+          isInboxMailbox(selectedMailbox, config.syncFolder || "INBOX") &&
+          !parsed.labelIds?.includes("INBOX")
+        ) {
+          parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+        }
+        messages.push(parsed);
+      }
+      return {
+        messages: messages.sort(
+          (left, right) =>
+            Number(left.internalDate || "0") -
+            Number(right.internalDate || "0"),
+        ),
+        nextPageToken,
+      };
     } finally {
       lock.release();
     }
@@ -2484,6 +2609,31 @@ function uidsToCheck(uids: number[], currentMessageId?: string) {
   if (remaining.length <= 8) return remaining;
   const sorted = [...remaining].sort((a, b) => a - b);
   return [...new Set([...sorted.slice(0, 4), ...sorted.slice(-4)])];
+}
+
+function pageOffset(pageToken: string | undefined) {
+  const offset = Number(pageToken);
+  if (!Number.isFinite(offset) || offset <= 0) return 0;
+  return Math.floor(offset);
+}
+
+function imapSearchWindow(after?: Date, before?: Date) {
+  // SEARCH dates are whole UTC days. One extra day on each side keeps a
+  // message the server dates differently from the selected range; the exact
+  // timestamps are still applied after the fetch.
+  const day = 24 * 60 * 60 * 1000;
+  return {
+    since: after ? new Date(utcDay(after) - day) : undefined,
+    before: before ? new Date(utcDay(before) + day) : undefined,
+  };
+}
+
+function utcDay(value: Date) {
+  return Date.UTC(
+    value.getUTCFullYear(),
+    value.getUTCMonth(),
+    value.getUTCDate(),
+  );
 }
 
 function messageInternalDate(value: Date | string | undefined) {
