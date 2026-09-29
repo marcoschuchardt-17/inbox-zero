@@ -62,6 +62,26 @@ describe("GET /api/threads/basic", () => {
     expect(await response.json()).toMatchObject({ isKnownError: true });
   });
 
+  it("returns a mailbox connection failure the reader can act on", async () => {
+    mockGetThreadsWithQuery.mockRejectedValue(
+      new SafeError(
+        "IMAP connection failed. Check host, port, TLS, and credentials.",
+      ),
+    );
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost:3000/api/threads/basic?fromEmail=sender%40example.com",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "IMAP connection failed. Check host, port, TLS, and credentials.",
+      isKnownError: true,
+    });
+  });
+
   it("keeps unrelated provider failures as generic server errors", async () => {
     mockGetThreadsWithQuery.mockRejectedValue(new Error("Provider failed"));
 

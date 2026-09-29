@@ -55,6 +55,7 @@ const {
     opened: "INBOX",
     inboxSource: "",
     connectOptions: null as null | Record<string, unknown>,
+    connectError: null as string | null,
     archiveSource: "" as string,
     sentSource: "" as string,
     trashSource: "" as string,
@@ -147,7 +148,11 @@ vi.mock("imapflow", () => ({
     async messageFlagsAdd(uid: number, flags: string[]) {
       flagsAdded.push({ uid, flags: [...flags] });
     }
-    async connect() {}
+    async connect() {
+      if (mailboxState.connectError) {
+        throw new Error(mailboxState.connectError);
+      }
+    }
     async getMailboxLock(mailbox = "INBOX") {
       if (mailboxState.missingMailboxes.includes(mailbox)) {
         const error = new Error("Command failed") as Error & {
@@ -298,6 +303,18 @@ const logger = {
 } as unknown as Logger;
 
 describe("createImapProvider", () => {
+  it("reports a failed connection instead of the raw network error", async () => {
+    mailboxState.connectError = "getaddrinfo ENOTFOUND mail.example.com";
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      await expect(provider.getInboxMessages()).rejects.toThrow(
+        "IMAP connection failed. Check host, port, TLS, and credentials.",
+      );
+    } finally {
+      mailboxState.connectError = null;
+    }
+  });
+
   it("is not a thenable, so async callers return the provider itself", async () => {
     const provider = createImapProvider(
       {

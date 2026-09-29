@@ -537,7 +537,7 @@ export function createImapProvider(
       }
 
       const client = createImapClient(config);
-      await client.connect();
+      await connectImapClient(client);
       try {
         await ensureMailbox(client, "Drafts");
         const appended = await client.append(
@@ -794,7 +794,7 @@ export function createImapProvider(
       const name = folderName.trim();
       if (!name) throw new SafeError("Folder name is required");
       const client = createImapClient(config);
-      await client.connect();
+      await connectImapClient(client);
       try {
         await ensureMailbox(client, name);
         return name;
@@ -1010,7 +1010,7 @@ export function createImapProvider(
     },
     getFolders: async () => {
       const client = createImapClient(config);
-      await client.connect();
+      await connectImapClient(client);
       try {
         const boxes = await client.list();
         return boxes.map((box) => ({
@@ -1204,7 +1204,7 @@ async function fetchMailboxMessagePage({
   beforeSequence?: number;
 }): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const selectedMailbox = mailbox || config.syncFolder || "INBOX";
     const lock = await client.getMailboxLock(selectedMailbox);
@@ -1285,7 +1285,7 @@ async function fetchMailboxMessagesByDate({
   isUnread?: boolean;
 }): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const selectedMailbox = mailbox || config.syncFolder || "INBOX";
     const lock = await client.getMailboxLock(selectedMailbox);
@@ -1408,7 +1408,7 @@ async function fetchMessageById({
     ? [ref.mailbox]
     : await mailboxNamesForRead({ config, logger });
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     for (const mailbox of mailboxes) {
       try {
@@ -1600,7 +1600,7 @@ function toThread(messages: ParsedMessage[]): EmailThread {
 
 async function reconcileStoredInbox(config: ImapConfig) {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   let ids: string[] = [];
   try {
     const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
@@ -1706,7 +1706,7 @@ function isInboxMailbox(mailbox: string, syncFolder: string) {
 
 async function readInboxStats(config: ImapConfig) {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
     try {
@@ -1739,7 +1739,7 @@ async function moveMessagesFromSenders({
   const senders = fromEmails.map((email) => email.trim()).filter(Boolean);
   if (!senders.length) return;
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     await ensureMailbox(client, mailbox);
     const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
@@ -1787,7 +1787,7 @@ async function removeKeywordFlag({
   const ref = parseImapMessageRef(messageId);
   if (!ref) return;
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(
       ref.mailbox || config.syncFolder || "INBOX",
@@ -1816,7 +1816,7 @@ async function addKeywordFlag({
   const ref = parseImapMessageRef(messageId);
   if (!ref) return;
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(
       ref.mailbox || config.syncFolder || "INBOX",
@@ -1852,7 +1852,7 @@ async function setSystemFlag({
   const ref = parseImapMessageRef(messageId);
   if (!ref) return;
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(
       ref.mailbox || config.syncFolder || "INBOX",
@@ -1952,7 +1952,7 @@ async function appendDraftRaw({
   raw: string;
 }) {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     await ensureMailbox(client, "Drafts");
     return await client.append("Drafts", raw, ["\\Draft"]);
@@ -1979,7 +1979,7 @@ async function deleteDraftMessage({
   const ref = parseImapMessageRef(messageId);
   if (!ref) throw new SafeError("Draft not found");
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(ref.mailbox || "Drafts");
     try {
@@ -2079,7 +2079,7 @@ async function moveMessageToMailbox({
   const ref = parseImapMessageRef(messageId);
   if (!ref) return;
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     await ensureMailbox(client, mailbox);
     const lock = await client.getMailboxLock(
@@ -2257,7 +2257,7 @@ async function saveSentCopy({
 }) {
   const client = createImapClient(config);
   try {
-    await client.connect();
+    await connectImapClient(client);
     await ensureMailbox(client, "Sent");
     const appended = await client.append("Sent", raw, ["\\Seen"]);
     if (appended?.uid) {
@@ -2362,7 +2362,7 @@ async function fetchMailboxThreadMatches({
   needle: string;
 }): Promise<ParsedImapMessage[]> {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
@@ -2488,6 +2488,20 @@ function inboxCopies<T extends { labelIds?: string[] | null }>(messages: T[]) {
   return messages.filter((message) => message.labelIds?.includes("INBOX"));
 }
 
+const IMAP_CONNECTION_ERROR =
+  "IMAP connection failed. Check host, port, TLS, and credentials.";
+
+async function connectImapClient(client: ImapFlow) {
+  try {
+    await client.connect();
+  } catch (error) {
+    if (error instanceof SafeError) throw error;
+    const wrapped = new SafeError(IMAP_CONNECTION_ERROR);
+    wrapped.cause = error;
+    throw wrapped;
+  }
+}
+
 function isMissingThread(error: unknown) {
   return error instanceof SafeError && error.message === "Thread not found";
 }
@@ -2505,7 +2519,7 @@ async function hasSentMailTo({
   if (!sender) return true;
 
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     for (const mailbox of SENT_MAILBOXES) {
       const lock = await client
@@ -2615,7 +2629,7 @@ async function findImapMessagesFromSender({
   if (!sender) return [];
 
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   const found: ParsedImapMessage[] = [];
   try {
     const syncFolder = config.syncFolder || "INBOX";
@@ -2722,7 +2736,7 @@ async function hasEarlierImapCorrespondence({
   if (!searchTerm) return false;
 
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const boxes = await client.list();
     const syncFolder = config.syncFolder || "INBOX";
@@ -3058,7 +3072,7 @@ async function fetchMailboxHeaderMatch({
   value: string;
 }): Promise<ParsedImapMessage | null> {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
@@ -3223,7 +3237,7 @@ async function fetchMailboxParticipantMatches({
   participant: string;
 }): Promise<ParsedImapMessage[]> {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
@@ -3359,7 +3373,7 @@ async function fetchMailboxTextMatches({
   needle: string;
 }): Promise<ParsedImapMessage[]> {
   const client = createImapClient(config);
-  await client.connect();
+  await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
@@ -3480,7 +3494,7 @@ async function mailboxNamesForRead({
   ];
   const client = createImapClient(config);
   try {
-    await client.connect();
+    await connectImapClient(client);
     try {
       const boxes = await client.list();
       for (const box of boxes) {
