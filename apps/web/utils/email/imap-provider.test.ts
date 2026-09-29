@@ -98,6 +98,7 @@ vi.mock("imapflow", () => ({
       before?: Date;
       seen?: boolean;
       text?: string;
+      header?: Record<string, string>;
     }) {
       if (query?.from) return mailboxState.fromUids;
       if (query?.to) {
@@ -118,6 +119,16 @@ vi.mock("imapflow", () => ({
       }
       if (query?.text) {
         const needle = query.text.toLowerCase();
+        return sourcesForOpenedMailbox()
+          .filter((message) => message.source.toLowerCase().includes(needle))
+          .map((message) => message.uid);
+      }
+      if (query?.header && typeof query.header === "object") {
+        const value = Object.values(query.header).find(
+          (item) => typeof item === "string",
+        );
+        if (typeof value !== "string") return [];
+        const needle = value.toLowerCase().replace(/^<|>$/g, "");
         return sourcesForOpenedMailbox()
           .filter((message) => message.source.toLowerCase().includes(needle))
           .map((message) => message.uid);
@@ -1007,6 +1018,32 @@ describe("createImapProvider", () => {
       "Old billing note",
     ]);
     expect(second.nextPageToken).toBeUndefined();
+    mailboxState.inboxMessages = [];
+    mailboxState.exists = 1;
+  });
+
+  it("finds a message id that is older than the newest page", async () => {
+    mailboxState.exists = 101;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Old parent",
+          "<old-parent@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const found = await provider.getMessageByRfc822MessageId(
+      "<old-parent@example.com>",
+    );
+
+    expect(found?.subject).toBe("Old parent");
+    expect(found?.id).toBe("INBOX/1");
     mailboxState.inboxMessages = [];
     mailboxState.exists = 1;
   });

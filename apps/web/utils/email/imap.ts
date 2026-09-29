@@ -208,18 +208,12 @@ export function createImapProvider(
     },
     getLatestMessageFromThreadSnapshot: async (thread: EmailThread) =>
       thread.messages.at(-1) ?? null,
-    getMessageByRfc822MessageId: async (rfc822MessageId: string) => {
-      const messages = await fetchMailboxMessages({
+    getMessageByRfc822MessageId: async (rfc822MessageId: string) =>
+      findImapMessageByRfc822Id({
         config,
         logger,
-        maxResults: 100,
-      });
-      return (
-        messages.find(
-          (message) => message.headers["message-id"] === rfc822MessageId,
-        ) ?? null
-      );
-    },
+        rfc822MessageId,
+      }),
     searchMessages: async ({
       query,
       maxResults = DEFAULT_PAGE_SIZE,
@@ -2819,6 +2813,114 @@ function parseImapMessageRef(messageId: string) {
   const uid = Number(messageId);
   if (Number.isInteger(uid) && uid > 0) return { uid };
   return null;
+}
+
+async function findImapMessageByRfc822Id({
+  config,
+  logger,
+  rfc822MessageId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  rfc822MessageId: string;
+}): Promise<ParsedImapMessage | null> {
+  const needle = rfc822MessageId.trim().replace(/^<|>$/g, "");
+  if (!needle) return null;
+  const mailboxes = await mailboxNamesForRead({ config, logger });
+  for (const [index, mailbox] of mailboxes.entries()) {
+    if (!isSearchableMailbox(mailbox)) continue;
+    try {
+      const message = await fetchMailboxHeaderMatch({
+        config,
+        logger,
+        mailbox,
+        header: "Message-ID",
+        value: needle,
+      });
+      if (
+        message &&
+        normalizeMessageId(message.headers["message-id"]) ===
+          needle.toLowerCase()
+      ) {
+        return message;
+      }
+    } catch (error) {
+      if (index === 0) throw error;
+      if (isMissingImapMailbox(error)) continue;
+      logger.warn("Skipped IMAP folder while looking up a message", {
+        error,
+        mailbox,
+      });
+    }
+  }
+  return null;
+}
+
+async function fetchMailboxHeaderMatch({
+  config,
+  logger,
+  mailbox,
+  header,
+  value,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  mailbox: string;
+  header: string;
+  value: string;
+}): Promise<ParsedImapMessage | null> {
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const searched = await client.search(
+        { header: { [header]: value } },
+        { uid: true },
+      );
+      const uid = (Array.isArray(searched) ? searched : [])
+        .filter((item): item is number => typeof item === "number")
+        .sort((left, right) => right - left)[0];
+      if (!uid) return null;
+      const message = await client.fetchOne(
+        uid,
+        { uid: true, source: true, flags: true, internalDate: true },
+        { uid: true },
+      );
+      if (!message?.source) return null;
+      const parsed = await parseImapMessage(
+        message.uid,
+        message.source,
+        message.flags,
+        message.internalDate,
+        mailbox,
+      );
+      if (
+        isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
+        !parsed.labelIds?.includes("INBOX")
+      ) {
+        parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+      }
+      return parsed;
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    if (isMissingImapMailbox(error)) {
+      throw new SafeError("IMAP mailbox not found");
+    }
+    logger.error("Failed fetching IMAP messages", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to read IMAP mailbox");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+function normalizeMessageId(value: string | undefined) {
+  return (value || "").trim().replace(/^<|>$/g, "").toLowerCase();
 }
 
 const SEARCH_SKIPPED_MAILBOXES = new Set(["trash", "drafts", "junk", "spam"]);
