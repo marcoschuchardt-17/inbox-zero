@@ -1,9 +1,7 @@
 import { auth } from "@/utils/auth";
 import prisma from "@/utils/prisma";
-import {
-  ImapAccountForm,
-  type ImapAccountFormDefaults,
-} from "@/app/(app)/accounts/imap/ImapAccountForm";
+import { ImapAccountForm } from "@/app/(app)/accounts/imap/ImapAccountForm";
+import { imapAccountFormDefaults } from "@/app/(app)/accounts/imap/imap-account-defaults";
 
 export default async function AddImapAccountPage(props: {
   searchParams: Promise<{ emailAccountId?: string | string[] }>;
@@ -17,9 +15,7 @@ export default async function AddImapAccountPage(props: {
   return <ImapAccountForm defaults={defaults} />;
 }
 
-async function loadImapAccountDefaults(
-  emailAccountId: string,
-): Promise<ImapAccountFormDefaults | null> {
+async function loadImapAccountDefaults(emailAccountId: string) {
   const session = await auth();
   const userId = session?.user.id;
   if (!userId) return null;
@@ -53,12 +49,21 @@ async function loadImapAccountDefaults(
     return null;
   }
 
-  return {
+  const config = emailAccount.imapSmtpConfig;
+  return imapAccountFormDefaults({
     emailAccountId,
     email: emailAccount.email,
-    name: emailAccount.name ?? "",
-    ...emailAccount.imapSmtpConfig,
-  };
+    name: emailAccount.name,
+    imapHost: config.imapHost,
+    imapPort: config.imapPort,
+    imapSecure: config.imapSecure,
+    imapUsername: config.imapUsername,
+    smtpHost: config.smtpHost,
+    smtpPort: config.smtpPort,
+    smtpSecure: config.smtpSecure,
+    smtpUsername: config.smtpUsername,
+    syncFolder: config.syncFolder,
+  });
 }
 
 function firstParam(value: string | string[] | undefined) {
