@@ -497,6 +497,7 @@ export function createImapProvider(
     sendEmail: async ({ to, cc, bcc, subject, messageText, attachments }) => {
       const transport = createSmtpTransport(config);
       const messageId = `smtp-${Date.now()}`;
+      const files = mimeAttachments(attachments);
       const result = await transport.sendMail({
         from: mailboxFrom(config),
         to,
@@ -504,7 +505,14 @@ export function createImapProvider(
         bcc,
         subject,
         text: messageText,
-        attachments,
+        attachments: files.length
+          ? files.map((file) => ({
+              filename: file.filename,
+              content: file.content,
+              encoding: "base64" as const,
+              contentType: file.contentType,
+            }))
+          : undefined,
         messageId,
       });
       const savedId = result.messageId || messageId;
@@ -520,6 +528,7 @@ export function createImapProvider(
           messageId: savedId,
           contentType: "text/plain; charset=utf-8",
           body: messageText,
+          attachments: files,
         }),
       });
       return { messageId: savedId };
@@ -2324,6 +2333,7 @@ function buildDraftMessage({
     content: string;
     cc?: string;
     bcc?: string;
+    attachments?: Parameters<typeof mimeAttachments>[0];
   };
   from: string;
 }) {
@@ -2332,7 +2342,7 @@ function buildDraftMessage({
     args.subject ||
     (email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject}`);
   const messageId = email.headers["message-id"];
-  return [
+  const headers = [
     `From: ${from}`,
     `To: ${to}`,
     ...(args.cc ? [`Cc: ${args.cc}`] : []),
@@ -2342,10 +2352,26 @@ function buildDraftMessage({
       ? [`In-Reply-To: ${messageId}`, `References: ${messageId}`]
       : []),
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=utf-8",
-    "",
-    args.content,
-  ].join("\r\n");
+  ];
+  const files = mimeAttachments(args.attachments);
+  if (!files.length) {
+    headers.push("Content-Type: text/plain; charset=utf-8");
+    return `${headers.join("\r\n")}\r\n\r\n${args.content}`;
+  }
+  const boundary = `inboxzero-${crypto.randomUUID()}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  const parts = [
+    [
+      "Content-Type: text/plain; charset=utf-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      args.content,
+    ].join("\r\n"),
+    ...files.map((file) => attachmentMimePart(file)),
+  ];
+  return `${headers.join("\r\n")}\r\n\r\n${parts
+    .map((part) => `--${boundary}\r\n${part}`)
+    .join("\r\n")}\r\n--${boundary}--`;
 }
 
 function buildOutgoingMessage({
@@ -2404,6 +2430,52 @@ function buildOutgoingMessage({
   return `${headers.join("\r\n")}\r\n\r\n${parts
     .map((part) => `--${boundary}\r\n${part}`)
     .join("\r\n")}\r\n--${boundary}--`;
+}
+
+function mimeAttachments(
+  attachments:
+    | {
+        filename?: string | false | null;
+        content?: unknown;
+        encoding?: string | false | null;
+        contentType?: string | false | null;
+      }[]
+    | undefined,
+) {
+  return (attachments ?? []).flatMap((attachment) => {
+    if (typeof attachment.filename !== "string" || !attachment.filename) {
+      return [];
+    }
+    const content = attachmentContentBase64(
+      attachment.content,
+      attachment.encoding,
+    );
+    if (!content) return [];
+    return [
+      {
+        filename: attachment.filename,
+        content,
+        contentType:
+          typeof attachment.contentType === "string"
+            ? attachment.contentType
+            : undefined,
+      },
+    ];
+  });
+}
+
+function attachmentContentBase64(
+  content: unknown,
+  encoding: string | false | null | undefined,
+) {
+  if (typeof content === "string") {
+    if (encoding === "base64") return content;
+    return Buffer.from(content).toString("base64");
+  }
+  if (Buffer.isBuffer(content) || content instanceof Uint8Array) {
+    return Buffer.from(content).toString("base64");
+  }
+  return null;
 }
 
 function attachmentMimePart(

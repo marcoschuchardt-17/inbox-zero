@@ -587,6 +587,64 @@ describe("createImapProvider", () => {
     );
   });
 
+  it("keeps a file on the sent copy when a rule sends mail", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.sendEmail({
+      to: "sam@example.com",
+      subject: "Notes",
+      messageText: "See attached",
+      attachments: [
+        {
+          filename: "note.txt",
+          content: Buffer.from("hello file"),
+          contentType: "text/plain",
+        },
+      ],
+    });
+
+    expect(sentMail[0]?.attachments).toEqual([
+      expect.objectContaining({ filename: "note.txt" }),
+    ]);
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.text).toContain("See attached");
+    expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
+    expect(Buffer.from(parsed.attachments?.[0]?.content || []).toString()).toBe(
+      "hello file",
+    );
+  });
+
+  it("keeps a file on a rule draft", async () => {
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+
+    await provider.draftEmail(
+      message,
+      {
+        content: "Thanks, I will reply.",
+        attachments: [
+          {
+            filename: "note.txt",
+            content: Buffer.from("hello file"),
+            contentType: "text/plain",
+          },
+        ],
+      },
+      "owner@example.com",
+    );
+
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.text).toContain("Thanks, I will reply.");
+    expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
+    expect(Buffer.from(parsed.attachments?.[0]?.content || []).toString()).toBe(
+      "hello file",
+    );
+  });
+
   it("opens a message stored only in Junk", async () => {
     mailboxState.folderSources.Junk = [
       "From: Ads <ads@example.com>",
