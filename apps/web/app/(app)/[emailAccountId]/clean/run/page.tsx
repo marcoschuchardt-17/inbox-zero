@@ -28,7 +28,6 @@ export default async function CleanRunPage(props: {
   const emailAccount = await prisma.emailAccount.findUnique({
     where: { id: emailAccountId },
     select: {
-      email: true,
       account: { select: { provider: true } },
     },
   });
