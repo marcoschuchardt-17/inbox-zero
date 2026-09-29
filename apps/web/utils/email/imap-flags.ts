@@ -19,6 +19,16 @@ export function imapRowLabelIds(
   );
 }
 
+export function imapThreadLabelIds(
+  messages: readonly { labelIds?: readonly string[] | null }[],
+) {
+  return [
+    ...new Set(
+      imapRowLabelIds(messages.flatMap((message) => message.labelIds ?? [])),
+    ),
+  ];
+}
+
 export function imapFlagsToLabelIds(flags: Iterable<string>): string[] {
   const flagSet = new Set(flags);
   const labels = [...flagSet].filter((flag) => !flag.startsWith(SYSTEM_FLAG));

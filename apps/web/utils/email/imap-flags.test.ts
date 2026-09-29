@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { imapRowLabelIds } from "./imap-flags";
+import { imapRowLabelIds, imapThreadLabelIds } from "./imap-flags";
 
 describe("imapRowLabelIds", () => {
   it("keeps mailbox labels and drops read-state flags", () => {
@@ -10,5 +10,16 @@ describe("imapRowLabelIds", () => {
 
   it("returns nothing when the message has no user label", () => {
     expect(imapRowLabelIds(undefined)).toEqual([]);
+  });
+});
+
+describe("imapThreadLabelIds", () => {
+  it("keeps a label stored on an older copy in the thread", () => {
+    expect(
+      imapThreadLabelIds([
+        { labelIds: ["Rechnungen"] },
+        { labelIds: ["UNREAD"] },
+      ]),
+    ).toEqual(["Rechnungen"]);
   });
 });

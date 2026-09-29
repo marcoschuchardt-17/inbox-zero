@@ -12,7 +12,7 @@ import { useComposeModal } from "@/providers/ComposeModalProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
 import type { GetFoldersResponse } from "@/app/api/user/folders/route";
 import { fetchWithAccount } from "@/utils/fetch";
-import { imapRowLabelIds } from "@/utils/email/imap-flags";
+import { imapThreadLabelIds } from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
 
@@ -205,7 +205,7 @@ export function ImapInbox() {
               const message = thread.messages.at(-1);
               const unread =
                 folder === "inbox" && message?.labelIds?.includes("UNREAD");
-              const rowLabels = imapRowLabelIds(message?.labelIds).map(
+              const rowLabels = imapThreadLabelIds(thread.messages).map(
                 (labelId) => labelNames.get(labelId) ?? labelId,
               );
               return (
