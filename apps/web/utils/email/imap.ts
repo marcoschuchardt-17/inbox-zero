@@ -2681,7 +2681,32 @@ async function findImapMessagesFromSender({
   const found: ParsedImapMessage[] = [];
   try {
     const syncFolder = config.syncFolder || "INBOX";
-    for (const folder of [syncFolder, "Archive"]) {
+    const folderNames = [
+      syncFolder,
+      "Sent",
+      "Archive",
+      "Trash",
+      "Drafts",
+      "Junk",
+    ];
+    try {
+      const boxes = await client.list();
+      for (const box of boxes) {
+        if (box.path) folderNames.push(box.path);
+      }
+    } catch (error) {
+      logger.warn("Skipped IMAP folder list while reading a sender", {
+        error,
+        emailAccountId: config.emailAccountId,
+      });
+    }
+    const folders = folderNames.filter(
+      (mailbox, index, all) =>
+        all.findIndex(
+          (item) => item.toLowerCase() === mailbox.toLowerCase(),
+        ) === index && isSearchableMailbox(mailbox),
+    );
+    for (const folder of folders) {
       const lock = await client
         .getMailboxLock(folder)
         .catch((error: unknown) => {

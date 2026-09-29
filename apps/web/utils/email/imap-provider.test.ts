@@ -2301,6 +2301,40 @@ describe("createImapProvider", () => {
     mailboxState.fromUids = [];
     mailboxState.archiveSource = "";
   });
+
+  it("returns a sender's mail that lives in another folder", async () => {
+    mailboxState.inboxMessages = [];
+    mailboxState.fromUids = [14];
+    mailboxState.archiveSource = "";
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Receipts", name: "Receipts" },
+    ];
+    mailboxState.folderSources = {
+      Receipts: [
+        "From: Billing <billing@example.com>",
+        "To: owner@example.com",
+        "Subject: Receipt folder check",
+        "Date: Mon, 28 Sep 2026 23:51:00 +0000",
+        "Message-ID: <receipt-folder-a0b4@example.com>",
+        "",
+        "This message is in Receipts.",
+      ].join("\r\n"),
+    };
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { fromEmail: "billing@example.com", type: "all" },
+      maxResults: 5,
+    });
+
+    expect(result.threads.map((thread) => thread.messages[0]?.id)).toEqual([
+      "Receipts/14",
+    ]);
+    mailboxState.fromUids = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+    mailboxState.folderSources = {};
+  });
 });
 
 describe("imap flags", () => {
