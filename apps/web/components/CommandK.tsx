@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useSWRConfig, type ScopedMutator } from "swr";
 import { buildMailCommandPalette } from "@/app/(app)/[emailAccountId]/mail/mail-command-palette";
 import { buildSnoozeCommandPalette } from "@/app/(app)/[emailAccountId]/mail/snooze-command-palette";
 import { ShortcutsDialog } from "@/app/(app)/[emailAccountId]/mail/ShortcutsDialog";
@@ -49,9 +50,15 @@ import {
 } from "@/lib/shortcuts/registry";
 import { useThread } from "@/hooks/useThread";
 import { useOptionalMailClient } from "@inboxzero/mail-react/MailEngineProvider";
-import { mutationPayloadToChange } from "@/utils/mail-engine/mutation-change";
+import type { MailClient } from "@inboxzero/mail-core/engine";
+import {
+  mutationPayloadToChange,
+  type ThreadMutationPayload,
+} from "@/utils/mail-engine/mutation-change";
+import { enqueueThreadMailMutationBatch } from "@/utils/mail-engine/thread-mail-mutations";
 import { submitConversationChange } from "@/utils/mail-engine/submit-conversations";
 import { admissionRejectionCopy } from "@/utils/mail-engine/admission-notice";
+import { isImapProvider } from "@/utils/email/provider-types";
 import { AccountCommandList } from "@/components/AccountCommandList";
 import { toastError } from "@/components/Toast";
 
@@ -133,7 +140,8 @@ function CommandPaletteContent({
       : activePage;
   const { setTheme } = useTheme();
 
-  const { emailAccountId } = useAccount();
+  const { emailAccountId, provider } = useAccount();
+  const { mutate } = useSWRConfig();
   const client = useOptionalMailClient();
   const { threadId, showEmail } = displayedEmail;
   const { data: displayedThread, isLoading: isDisplayedThreadLoading } =
@@ -162,17 +170,15 @@ function CommandPaletteContent({
             return;
           }
           try {
-            const change = mutationPayloadToChange({ kind: "archive" });
-            if (!client || !change) {
-              throw new Error("Mail engine is unavailable");
-            }
-            const { admission } = await submitConversationChange({
-              accountId: emailAccountId,
-              change,
+            const admission = await queueDisplayedThread({
               client,
-              conversationId: threadId,
+              emailAccountId,
+              messages: displayedThread.thread.messages,
+              payload: { kind: "archive" },
+              provider,
+              threadId,
             });
-            if (admission.status === "rejected") {
+            if (admission?.status === "rejected") {
               toastError({
                 description:
                   admissionRejectionCopy(admission.code) ??
@@ -180,6 +186,7 @@ function CommandPaletteContent({
               });
               return;
             }
+            if (!admission) await refreshImapThreads(mutate);
             showEmail(null);
           } catch {
             toastError({
@@ -199,26 +206,26 @@ function CommandPaletteContent({
             return;
           }
           try {
-            const change = mutationPayloadToChange({
-              kind: "set_starred_state",
-              starred: !isThreadStarred(displayedThread.thread.messages),
-            });
-            if (!client || !change) {
-              throw new Error("Mail engine is unavailable");
-            }
-            const { admission } = await submitConversationChange({
-              accountId: emailAccountId,
-              change,
+            const admission = await queueDisplayedThread({
               client,
-              conversationId: threadId,
+              emailAccountId,
+              messages: displayedThread.thread.messages,
+              payload: {
+                kind: "set_starred_state",
+                starred: !isThreadStarred(displayedThread.thread.messages),
+              },
+              provider,
+              threadId,
             });
-            if (admission.status === "rejected") {
+            if (admission?.status === "rejected") {
               toastError({
                 description:
                   admissionRejectionCopy(admission.code) ??
                   "Couldn’t update the star for this email",
               });
+              return;
             }
+            if (!admission) await refreshImapThreads(mutate);
           } catch {
             toastError({
               description: "Couldn’t update the star for this email",
@@ -452,6 +459,48 @@ function CommandPaletteContent({
       </CommandList>
     </CommandDialog>
   );
+}
+
+async function queueDisplayedThread({
+  client,
+  emailAccountId,
+  messages,
+  payload,
+  provider,
+  threadId,
+}: {
+  client: MailClient | null;
+  emailAccountId: string;
+  messages: { id: string }[];
+  payload: ThreadMutationPayload;
+  provider: string;
+  threadId: string;
+}) {
+  if (isImapProvider(provider)) {
+    await enqueueThreadMailMutationBatch({
+      emailAccountId,
+      provider,
+      payload,
+      threads: [{ id: threadId, messages }],
+    });
+    return null;
+  }
+
+  const change = mutationPayloadToChange(payload);
+  if (!client || !change) throw new Error("Mail engine is unavailable");
+  const { admission } = await submitConversationChange({
+    accountId: emailAccountId,
+    change,
+    client,
+    conversationId: threadId,
+  });
+  return admission;
+}
+
+async function refreshImapThreads(mutate: ScopedMutator) {
+  await mutate(
+    (key) => typeof key === "string" && key.startsWith("/api/threads"),
+  ).catch(() => undefined);
 }
 
 function groupCommands(commands: Command[]) {

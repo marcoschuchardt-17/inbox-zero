@@ -19,11 +19,19 @@ const thread = vi.hoisted(() => ({
   } as { thread: { id: string; messages: { id: string }[] } } | undefined,
   isLoading: false,
 }));
+const engine = vi.hoisted(() => ({
+  getDiagnostics: vi.fn(),
+  submitConversations: vi.fn(),
+}));
 const mail = vi.hoisted(() => ({
-  client: {
-    getDiagnostics: vi.fn(),
-    submitConversations: vi.fn(),
-  },
+  client: engine as null | typeof engine,
+}));
+const account = vi.hoisted(() => ({
+  emailAccountId: "account-1",
+  provider: "google",
+}));
+const http = vi.hoisted(() => ({
+  fetchWithAccount: vi.fn(),
 }));
 vi.mock("@inboxzero/mail-react/MailEngineProvider", () => ({
   useOptionalMailClient: () => mail.client,
@@ -46,7 +54,10 @@ vi.mock("@/hooks/useThread", () => ({
   useThread: () => ({ data: thread.data, isLoading: thread.isLoading }),
 }));
 vi.mock("@/providers/EmailAccountProvider", () => ({
-  useAccount: () => ({ emailAccountId: "account-1" }),
+  useAccount: () => account,
+}));
+vi.mock("@/utils/fetch", () => ({
+  fetchWithAccount: (...args: unknown[]) => http.fetchWithAccount(...args),
 }));
 vi.mock("@/providers/ComposeModalProvider", () => ({
   useComposeModal: () => ({ onOpen: vi.fn() }),
@@ -99,8 +110,11 @@ describe("CommandK side-panel actions", () => {
       },
     };
     thread.isLoading = false;
-    mail.client.getDiagnostics.mockResolvedValue({ revision: 1 });
-    mail.client.submitConversations.mockResolvedValue({ status: "queued" });
+    account.provider = "google";
+    mail.client = engine;
+    engine.getDiagnostics.mockResolvedValue({ revision: 1 });
+    engine.submitConversations.mockResolvedValue({ status: "queued" });
+    http.fetchWithAccount.mockResolvedValue({ ok: true });
     shortcuts.handlers = undefined;
   });
 
@@ -198,6 +212,42 @@ describe("CommandK side-panel actions", () => {
     expect(notifications.error).toHaveBeenCalledWith({
       description: "Email is still loading",
     });
+  });
+
+  it("archives an IMAP conversation through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.archive?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/archive",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith(null);
+  });
+
+  it("stars an IMAP conversation through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.star?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/star",
+      emailAccountId: "account-1",
+      init: {
+        method: "POST",
+        body: JSON.stringify({ starred: true }),
+        headers: { "Content-Type": "application/json" },
+      },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).not.toHaveBeenCalled();
   });
 
   it("opens a forward composer for the latest side-panel message", () => {

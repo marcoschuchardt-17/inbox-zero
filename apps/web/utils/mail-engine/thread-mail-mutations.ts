@@ -128,13 +128,19 @@ async function submitImapHttpBatch({
 }) {
   const action = httpActionForPayload(payload);
   if (!action) throw new Error("Unsupported mail mutation");
+  const body = httpBodyForPayload(payload);
 
   const mutations: ThreadMailMutation[] = [];
   for (const target of targets) {
     const response = await fetchWithAccount({
       url: `/api/threads/${encodeURIComponent(target.threadId)}/${action}`,
       emailAccountId,
-      init: { method: "POST" },
+      init: {
+        method: "POST",
+        ...(body
+          ? { body, headers: { "Content-Type": "application/json" } }
+          : {}),
+      },
     });
     if (!response.ok) throw new Error(httpFailureCopy(action));
     mutations.push({
@@ -167,14 +173,23 @@ function httpActionForPayload(payload: ThreadMutationPayload) {
       return "untrash";
     case "set_read_state":
       return payload.read ? "read" : null;
+    case "set_starred_state":
+      return "star";
     default:
       return null;
+  }
+}
+
+function httpBodyForPayload(payload: ThreadMutationPayload) {
+  if (payload.kind === "set_starred_state") {
+    return JSON.stringify({ starred: payload.starred });
   }
 }
 
 function httpFailureCopy(action: string) {
   if (action === "archive") return "Failed to archive email";
   if (action === "trash") return "Failed to trash email";
+  if (action === "star") return "Failed to star email";
   return "Failed to update email";
 }
 

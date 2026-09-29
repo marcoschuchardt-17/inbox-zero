@@ -525,6 +525,19 @@ describe("createImapProvider", () => {
     expect(movedTo).toEqual(["Archive"]);
   });
 
+  it("sets the flagged state on the mailbox named in the message id", async () => {
+    flagsAdded.length = 0;
+    flagsRemoved.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.markMessagesStarredState(["INBOX/1"], true);
+    await provider.markMessagesStarredState(["Junk/3"], false);
+
+    expect(flagsAdded).toEqual([{ uid: 1, flags: ["\\Flagged"] }]);
+    expect(flagsRemoved).toEqual(["\\Flagged"]);
+    expect(mailboxState.opened).toBe("Junk");
+  });
+
   it("stars a message and moves spam into Junk", async () => {
     flagsAdded.length = 0;
     movedTo.length = 0;
