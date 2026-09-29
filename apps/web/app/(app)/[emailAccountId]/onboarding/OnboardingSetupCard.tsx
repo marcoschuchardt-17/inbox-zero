@@ -21,8 +21,8 @@ import type {
   OnboardingRuleAction,
   OnboardingSetup,
 } from "@/app/api/chat/onboarding/validation";
+import { chatOnboardingRuleActions } from "@/app/(app)/[emailAccountId]/onboarding/onboarding-category-actions";
 import { categoryConfig } from "@/utils/category-config";
-import { isMicrosoftProvider } from "@/utils/email/provider-types";
 import { cn } from "@/utils";
 
 const ACTION_LABELS: Record<OnboardingRuleAction, string> = {
@@ -186,8 +186,6 @@ function actionOptions(
   provider: string,
   current: OnboardingRuleAction,
 ): OnboardingRuleAction[] {
-  const options: OnboardingRuleAction[] = isMicrosoftProvider(provider)
-    ? ["move_folder", "label", "label_archive"]
-    : ["label", "label_archive"];
+  const options = chatOnboardingRuleActions(provider);
   return options.includes(current) ? options : [current, ...options];
 }
