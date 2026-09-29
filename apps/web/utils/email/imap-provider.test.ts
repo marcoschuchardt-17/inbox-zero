@@ -358,6 +358,27 @@ describe("createImapProvider", () => {
     mailboxState.archiveSource = "";
   });
 
+  it("opens a thread that was saved under its subject", async () => {
+    mailboxState.archiveSource = [
+      "From: Billing <billing@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Rechnung 2026-09",
+      "Date: Mon, 28 Sep 2026 13:00:00 +0000",
+      "Message-ID: <rechnung-2026-09@example.com>",
+      "",
+      "Bitte begleiche die Rechnung.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("rechnung 2026-09");
+
+    expect(thread.messages.map((message) => message.subject)).toEqual([
+      "Rechnung 2026-09",
+    ]);
+    expect(thread.messages[0]?.id).toBe("Archive/9");
+    mailboxState.archiveSource = "";
+  });
+
   it("downloads the attachment from the folder named in the message id", async () => {
     mailboxState.archiveSource = archivedAttachment();
     mailboxState.folderSources.Junk = {

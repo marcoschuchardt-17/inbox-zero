@@ -193,7 +193,7 @@ export function createImapProvider(
           });
         }
         for (const message of messages) {
-          if (message.threadId !== threadId) continue;
+          if (!messageMatchesThreadId(message, threadId)) continue;
           collected.push({ ...message, _mailbox: mailbox });
         }
       }
@@ -2079,8 +2079,21 @@ function imapThreadKey(
   const referenced = messageIdsIn(parsed.references);
   const root = referenced[0] || parsed.inReplyTo || parsed.messageId;
   if (root) return root;
-  const normalizedSubject = subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
-  return normalizedSubject || String(uid);
+  return legacySubjectThreadKey(subject) || String(uid);
+}
+
+function messageMatchesThreadId(
+  message: { threadId: string; subject: string },
+  threadId: string,
+) {
+  if (message.threadId === threadId) return true;
+  // Older rule history stored the subject when the message had no id yet.
+  if (threadId.includes("<")) return false;
+  return legacySubjectThreadKey(message.subject) === threadId;
+}
+
+function legacySubjectThreadKey(subject: string) {
+  return subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
 }
 
 function messageIdsIn(value?: string) {
