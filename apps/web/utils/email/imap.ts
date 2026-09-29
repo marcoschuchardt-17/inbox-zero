@@ -2891,8 +2891,7 @@ function messagesForOpenThread(
   const seen = new Set<string>();
   const unique: ParsedImapMessage[] = [];
   for (const message of chosen) {
-    const key =
-      message.headers["message-id"] || `${message._mailbox}:${message.id}`;
+    const key = openThreadCopyKey(message);
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(message);
@@ -2900,6 +2899,15 @@ function messagesForOpenThread(
   return unique.sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
+}
+
+function openThreadCopyKey(message: ParsedImapMessage) {
+  const messageId = message.headers["message-id"];
+  if (!messageId) return `${message._mailbox}:${message.id}`;
+  // Copies of one message share its id and text. A later message can reuse
+  // that id and still be a different email.
+  const text = message.textPlain || message.textHtml || "";
+  return `${messageId}\n${message.headers.date}\n${text}`;
 }
 
 function inboxCopies<T extends { labelIds?: string[] | null }>(messages: T[]) {

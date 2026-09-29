@@ -59,6 +59,12 @@ const {
     connectOptions: null as null | Record<string, unknown>,
     connectError: null as string | null,
     archiveSource: "" as string,
+    archiveMessages: [] as {
+      uid: number;
+      source: string;
+      flags: string[];
+      internalDate: string;
+    }[],
     sentSource: "" as string,
     trashSource: "" as string,
     draftSource: "" as string,
@@ -198,6 +204,23 @@ vi.mock("imapflow", () => ({
         return;
       }
       if (mailboxState.opened === "Archive") {
+        if (mailboxState.archiveMessages.length) {
+          const wanted = fetchTargets(
+            range,
+            mailboxState.archiveMessages,
+            options?.uid === true,
+          );
+          for (const message of mailboxState.archiveMessages) {
+            if (!wanted.has(message.uid)) continue;
+            yield {
+              uid: message.uid,
+              source: Buffer.from(message.source),
+              flags: new Set(message.flags),
+              internalDate: new Date(message.internalDate),
+            };
+          }
+          return;
+        }
         if (!mailboxState.archiveSource) return;
         yield {
           uid: 9,
@@ -787,6 +810,69 @@ describe("createImapProvider", () => {
       "Rechnung 2026-09",
     ]);
     expect(thread.messages[0]?.id).toBe("Archive/9");
+    mailboxState.archiveSource = "";
+  });
+
+  it("keeps two different emails that reuse one message id", async () => {
+    mailboxState.archiveMessages = [
+      {
+        uid: 3,
+        flags: [],
+        internalDate: "2026-09-28T16:30:00.000Z",
+        source: [
+          "From: billing@example.com",
+          "To: owner@example.com",
+          "Subject: Rechnung 2026-09",
+          "Date: Mon, 28 Sep 2026 16:30:00 +0000",
+          "Message-ID: <rechnung-2026-09@example.com>",
+          "",
+          "Bitte die Rechnung begleichen.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 7,
+        flags: ["\\Seen", "FYI"],
+        internalDate: "2026-09-28T19:40:00.000Z",
+        source: [
+          "From: Billing <billing@example.com>",
+          "To: owner@example.com",
+          "Subject: Rechnung 2026-09",
+          "Date: Mon, 28 Sep 2026 19:40:00 +0000",
+          "Message-ID: <rechnung-2026-09@example.com>",
+          "",
+          "Bitte begleiche die Rechnung.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("<rechnung-2026-09@example.com>");
+
+    expect(thread.messages.map((message) => message.textPlain?.trim())).toEqual(
+      ["Bitte die Rechnung begleichen.", "Bitte begleiche die Rechnung."],
+    );
+    mailboxState.archiveMessages = [];
+  });
+
+  it("shows one copy when the same email is stored in two folders", async () => {
+    const source = [
+      "From: Sam <sam@example.com>",
+      "To: owner@example.com",
+      "Subject: Please keep this",
+      "Date: Mon, 01 Sep 2026 12:05:00 +0000",
+      "Message-ID: <please-keep@example.com>",
+      "",
+      "Please keep this note.",
+    ].join("\r\n");
+    mailboxState.inboxSource = source;
+    mailboxState.archiveSource = source;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("<please-keep@example.com>");
+
+    expect(thread.messages).toHaveLength(1);
+    expect(thread.messages[0]?.textPlain).toContain("Please keep this note.");
+    mailboxState.inboxSource = "";
     mailboxState.archiveSource = "";
   });
 
@@ -3119,6 +3205,12 @@ function datedInboxMessage(subject: string, messageId: string, date: string) {
 
 function sourcesForOpenedMailbox() {
   if (mailboxState.opened === "INBOX") return inboxMessagesForSearch();
+  if (
+    mailboxState.opened === "Archive" &&
+    mailboxState.archiveMessages.length
+  ) {
+    return mailboxState.archiveMessages;
+  }
   if (mailboxState.opened === "Archive" && mailboxState.archiveSource) {
     return [
       {
