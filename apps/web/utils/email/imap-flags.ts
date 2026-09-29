@@ -1,4 +1,23 @@
 const SYSTEM_FLAG = "\\";
+const ROW_SYSTEM_LABELS = new Set([
+  "UNREAD",
+  "STARRED",
+  "INBOX",
+  "SENT",
+  "DRAFT",
+  "TRASH",
+  "SPAM",
+  "IMPORTANT",
+]);
+
+export function imapRowLabelIds(
+  labelIds: readonly string[] | null | undefined,
+) {
+  return (labelIds ?? []).filter(
+    (labelId) =>
+      !ROW_SYSTEM_LABELS.has(labelId) && !labelId.startsWith("CATEGORY_"),
+  );
+}
 
 export function imapFlagsToLabelIds(flags: Iterable<string>): string[] {
   const flagSet = new Set(flags);

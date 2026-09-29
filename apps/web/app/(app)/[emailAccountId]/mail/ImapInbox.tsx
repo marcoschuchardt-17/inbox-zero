@@ -12,7 +12,9 @@ import { useComposeModal } from "@/providers/ComposeModalProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
 import type { GetFoldersResponse } from "@/app/api/user/folders/route";
 import { fetchWithAccount } from "@/utils/fetch";
+import { imapRowLabelIds } from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
+import type { LabelsResponse } from "@/app/api/labels/route";
 
 const folders = [
   { id: "inbox", label: "Inbox", query: "/api/threads?limit=30&view=list" },
@@ -43,6 +45,10 @@ export function ImapInbox() {
   const { onOpen: openCompose } = useComposeModal();
   const [folder, setFolder] = useState("inbox");
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
+  const { data: labelList } = useSWR<LabelsResponse>("/api/labels");
+  const labelNames = new Map(
+    (labelList?.labels ?? []).map((label) => [label.id, label.name]),
+  );
   const extraFolders = (mailboxList ?? []).filter(
     (item) =>
       !isStandardMailbox(item.id) && !isStandardMailbox(item.displayName),
@@ -117,6 +123,28 @@ export function ImapInbox() {
     await mutate();
   }
 
+  async function addLabel(
+    threadId: string,
+    messageId: string,
+    labelId: string,
+  ) {
+    setArchiveError("");
+    const response = await fetchWithAccount({
+      url: `/api/threads/${encodeURIComponent(threadId)}/label`,
+      emailAccountId,
+      init: {
+        method: "POST",
+        body: JSON.stringify({ labelId, messageId }),
+        headers: { "Content-Type": "application/json" },
+      },
+    });
+    if (!response.ok) {
+      setArchiveError("Could not label this email.");
+      return;
+    }
+    await mutate();
+  }
+
   return (
     <LoadingContent loading={isLoading} error={error}>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
@@ -177,6 +205,9 @@ export function ImapInbox() {
               const message = thread.messages.at(-1);
               const unread =
                 folder === "inbox" && message?.labelIds?.includes("UNREAD");
+              const rowLabels = imapRowLabelIds(message?.labelIds).map(
+                (labelId) => labelNames.get(labelId) ?? labelId,
+              );
               return (
                 <li key={thread.id} className="flex items-start gap-2">
                   <button
@@ -209,10 +240,44 @@ export function ImapInbox() {
                     <div className="truncate text-sm">
                       {message?.subject || "(No subject)"}
                     </div>
+                    {rowLabels.length ? (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {rowLabels.map((name) => (
+                          <span
+                            key={name}
+                            className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                          >
+                            {name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="truncate text-sm text-muted-foreground">
                       {message?.snippet}
                     </div>
                   </button>
+                  {message && labelList?.labels.length ? (
+                    <select
+                      aria-label={`Add label to ${message.subject || "email"}`}
+                      className="mt-3 h-8 rounded-md border bg-background px-2 text-sm"
+                      defaultValue=""
+                      onChange={(event) => {
+                        const labelId = event.target.value;
+                        event.currentTarget.value = "";
+                        if (!labelId) return;
+                        addLabel(thread.id, message.id, labelId).catch(
+                          () => undefined,
+                        );
+                      }}
+                    >
+                      <option value="">Label</option>
+                      {labelList.labels.map((label) => (
+                        <option key={label.id} value={label.id}>
+                          {label.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                   {folder === "inbox" ? (
                     <>
                       <Button
