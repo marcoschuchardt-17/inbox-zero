@@ -13,7 +13,7 @@ import type { ThreadsListResponse } from "@/app/api/threads/route";
 import type { GetFoldersResponse } from "@/app/api/user/folders/route";
 import { fetchWithAccount } from "@/utils/fetch";
 import { formatShortDate } from "@/utils/date";
-import { extractNameFromEmail } from "@/utils/email";
+import { extractNameFromEmail, participant } from "@/utils/email";
 import { imapThreadLabelIds } from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
@@ -44,7 +44,7 @@ const folders = [
 ] as const;
 
 export function ImapInbox() {
-  const { emailAccountId } = useAccount();
+  const { emailAccountId, userEmail } = useAccount();
   const { onOpen: openCompose } = useComposeModal();
   const [folder, setFolder] = useState("inbox");
   const [search, setSearch] = useState("");
@@ -312,8 +312,17 @@ export function ImapInbox() {
             {visibleThreads.map((thread) => {
               const message = thread.messages.at(-1);
               const sender =
-                extractNameFromEmail(message?.headers.from || "") ||
-                "Unknown sender";
+                extractNameFromEmail(
+                  participant(
+                    {
+                      headers: {
+                        from: message?.headers.from || "",
+                        to: message?.headers.to || "",
+                      },
+                    },
+                    userEmail,
+                  ),
+                ) || "Unknown sender";
               const sentAt = message?.headers.date
                 ? new Date(message.headers.date)
                 : null;
