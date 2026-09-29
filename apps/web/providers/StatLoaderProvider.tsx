@@ -10,6 +10,7 @@ import {
 import { toastError, toastSuccess } from "@/components/Toast";
 import { isError } from "@/utils/error";
 import { loadEmailStatsAction } from "@/utils/actions/stats";
+import { statsLoadHasMore } from "@/utils/stats/load-progress";
 import { useAccount } from "@/providers/EmailAccountProvider";
 
 type Context = {
@@ -53,7 +54,7 @@ class StatLoader {
     const res = await loadEmailStatsAction(emailAccountId, { loadBefore });
 
     if (showToast) {
-      if (isError(res)) {
+      if (isError(res) || res?.serverError) {
         toastError({ description: "Error loading stats." });
       } else {
         toastSuccess({ description: "Stats loaded!" });
@@ -61,6 +62,7 @@ class StatLoader {
     }
 
     this.#isLoading = false;
+    return res;
   }
 }
 
@@ -86,18 +88,34 @@ export function StatLoaderProvider(props: { children: React.ReactNode }) {
 
   const onLoadBatch = useCallback(
     async (options: { loadBefore: boolean; showToast: boolean }) => {
-      const batchSize = 50;
-      for (let i = 0; i < batchSize; i++) {
-        if (stopLoading) break;
-        console.log("Loading batch", i);
-        await onLoad({
-          ...options,
-          showToast: options.showToast && i === batchSize - 1,
-        });
+      setIsLoading(true);
+      let failed = false;
+      try {
+        for (let i = 0; i < 50; i++) {
+          if (stopLoading) break;
+          const res = await statLoader.loadStats({
+            emailAccountId,
+            loadBefore: options.loadBefore,
+            showToast: false,
+          });
+          if (res?.serverError) {
+            failed = true;
+            break;
+          }
+          if (!statsLoadHasMore(options.loadBefore, res?.data)) break;
+        }
+      } finally {
+        setIsLoading(false);
+        setStopLoading(false);
       }
-      setStopLoading(false);
+      if (!options.showToast) return;
+      if (failed) {
+        toastError({ description: "Error loading stats." });
+      } else {
+        toastSuccess({ description: "Stats loaded!" });
+      }
     },
-    [onLoad, stopLoading],
+    [emailAccountId, stopLoading],
   );
 
   const onCancelLoadBatch = useCallback(() => {
