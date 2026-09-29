@@ -24,7 +24,12 @@ import type { GetFoldersResponse } from "@/app/api/user/folders/route";
 import { fetchWithAccount } from "@/utils/fetch";
 import { formatShortDate } from "@/utils/date";
 import { extractNameFromEmail, participant } from "@/utils/email";
-import { imapThreadLabelIds } from "@/utils/email/imap-flags";
+import {
+  imapListLocation,
+  imapMessageMailbox,
+  imapSearchRestoreAction,
+  imapThreadLabelIds,
+} from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
 import { syncImapMailboxAction } from "@/utils/actions/imap-sync";
@@ -301,7 +306,9 @@ export function ImapInbox() {
             <Button
               key={item.id}
               type="button"
-              variant={item.id === folder ? "default" : "outline"}
+              variant={
+                !submittedSearch && item.id === folder ? "default" : "outline"
+              }
               size="sm"
               onClick={() => {
                 setArchiveError("");
@@ -318,7 +325,9 @@ export function ImapInbox() {
               key={item.id}
               type="button"
               variant={
-                mailboxFolderId(item.id) === folder ? "default" : "outline"
+                !submittedSearch && mailboxFolderId(item.id) === folder
+                  ? "default"
+                  : "outline"
               }
               size="sm"
               onClick={() => {
@@ -358,8 +367,16 @@ export function ImapInbox() {
                 sentAt && !Number.isNaN(sentAt.getTime())
                   ? formatShortDate(sentAt)
                   : "";
+              const mailbox = imapMessageMailbox(message?.id);
+              const location = imapListLocation(mailbox);
+              const messageInInbox = submittedSearch
+                ? location === "inbox"
+                : folder === "inbox";
               const unread =
-                folder === "inbox" && message?.labelIds?.includes("UNREAD");
+                messageInInbox && message?.labelIds?.includes("UNREAD");
+              const searchRestore = submittedSearch
+                ? imapSearchRestoreAction(message?.id)
+                : null;
               const rowLabels = imapThreadLabelIds(thread.messages).map(
                 (labelId) => ({
                   id: labelId,
@@ -376,7 +393,7 @@ export function ImapInbox() {
                         threadId: thread.id,
                         messageId: message?.id,
                       });
-                      if (folder === "inbox") {
+                      if (messageInInbox) {
                         markOpenedThreadRead(thread.id).catch(() => undefined);
                       }
                     }}
@@ -390,6 +407,11 @@ export function ImapInbox() {
                         }
                       >
                         {sender}
+                        {submittedSearch && location !== "inbox" && mailbox ? (
+                          <span className="ml-2 font-normal text-xs text-muted-foreground">
+                            {mailbox}
+                          </span>
+                        ) : null}
                         {unread ? (
                           <span className="ml-2 font-normal text-xs text-muted-foreground">
                             Unread
@@ -450,7 +472,7 @@ export function ImapInbox() {
                       ))}
                     </select>
                   ) : null}
-                  {folder === "inbox" && !submittedSearch ? (
+                  {messageInInbox ? (
                     <>
                       <Button
                         type="button"
@@ -493,7 +515,11 @@ export function ImapInbox() {
                       ))}
                     </>
                   ) : null}
-                  {folder === "drafts" && !submittedSearch ? (
+                  {(
+                    submittedSearch
+                      ? location === "drafts"
+                      : folder === "drafts"
+                  ) ? (
                     <>
                       <Button
                         type="button"
@@ -526,6 +552,25 @@ export function ImapInbox() {
                         moveThread(
                           thread.id,
                           folder === "trash" ? "untrash" : "unarchive",
+                        )
+                      }
+                    >
+                      Move to inbox
+                    </Button>
+                  ) : null}
+                  {searchRestore ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() =>
+                        moveThread(
+                          thread.id,
+                          searchRestore,
+                          searchRestore === "restore-folder"
+                            ? mailbox
+                            : undefined,
                         )
                       }
                     >

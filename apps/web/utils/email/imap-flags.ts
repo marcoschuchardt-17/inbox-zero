@@ -37,6 +37,61 @@ export function imapFlagsToLabelIds(flags: Iterable<string>): string[] {
   return labels;
 }
 
+export function imapMessageMailbox(messageId: string | null | undefined) {
+  if (!messageId) return "";
+  const slash = messageId.lastIndexOf("/");
+  if (slash <= 0) return "";
+  const uid = messageId.slice(slash + 1);
+  if (!/^\d+$/.test(uid)) return "";
+  return messageId.slice(0, slash);
+}
+
+export function imapListLocation(mailbox: string) {
+  const name = mailbox.trim().toLowerCase();
+  const leaf = name.split("/").at(-1) || name;
+  if (name === "inbox" || leaf === "inbox") return "inbox";
+  if (
+    name === "sent" ||
+    leaf === "sent" ||
+    name === "sent items" ||
+    leaf === "sent items" ||
+    name === "[gmail]/sent mail"
+  ) {
+    return "sent";
+  }
+  if (name === "drafts" || leaf === "drafts" || leaf === "draft") {
+    return "drafts";
+  }
+  if (name === "archive" || leaf === "archive") return "archive";
+  if (
+    name === "trash" ||
+    leaf === "trash" ||
+    leaf === "deleted" ||
+    leaf === "deleted items"
+  ) {
+    return "trash";
+  }
+  if (
+    name === "junk" ||
+    leaf === "junk" ||
+    leaf === "spam" ||
+    leaf === "junk e-mail"
+  ) {
+    return "junk";
+  }
+  return "folder";
+}
+
+export function imapSearchRestoreAction(messageId: string | null | undefined) {
+  const mailbox = imapMessageMailbox(messageId);
+  if (!mailbox) return null;
+  const location = imapListLocation(mailbox);
+  if (location === "archive") return "unarchive";
+  if (location === "trash") return "untrash";
+  if (location === "junk" || location === "folder") return "restore-folder";
+  return null;
+}
+
 export function imapKeyword(name: string): string {
   const keyword = name
     .trim()
