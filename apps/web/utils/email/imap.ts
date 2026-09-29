@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { ImapFlow } from "imapflow";
+import he from "he";
 import PostalMime from "postal-mime";
 import nodemailer from "nodemailer";
 import { ActionType } from "@/generated/prisma/enums";
@@ -1560,8 +1561,14 @@ function headerValue(
 }
 
 function messageSnippet(textBody: string, htmlBody: string) {
-  const source = textBody || htmlBody.replace(/<[^>]+>/g, " ");
+  const source = textBody || htmlSnippet(htmlBody);
   return source.replace(/\s+/g, " ").trim().slice(0, 280);
+}
+
+function htmlSnippet(htmlBody: string) {
+  return he
+    .decode(htmlBody.replace(/<[^>]+>/g, " "))
+    .replace(/\u200C|\u200D|\uFEFF/g, "");
 }
 
 function groupToThreads(messages: ParsedMessage[]): EmailThread[] {

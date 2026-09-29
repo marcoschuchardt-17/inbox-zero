@@ -1822,6 +1822,61 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("shows the readable address in an HTML-only sent snippet", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Please keep this",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <html-snippet@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Thanks, I kept this.</p>",
+      "<div>On Tue, 1 Sep 2026 at 12:05, Sam &lt;sam@example.com&gt; wrote:</div>",
+      "<p>Tom &amp; Jerry&nbsp;sent this.</p>",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+    const snippet = result.threads[0]?.messages[0]?.snippet || "";
+
+    expect(snippet).toContain("Thanks, I kept this.");
+    expect(snippet).toContain("Sam <sam@example.com> wrote:");
+    expect(snippet).toContain("Tom & Jerry sent this.");
+    expect(snippet).not.toContain("&lt;");
+    expect(snippet).not.toContain("&amp;");
+    expect(snippet).not.toContain("&nbsp;");
+    expect(snippet).not.toContain("<p>");
+    mailboxState.sentSource = "";
+  });
+
+  it("keeps a plain-text snippet exactly as written", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Plain note",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <plain-snippet@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "Use &amp; when you mean the characters.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+
+    expect(result.threads[0]?.messages[0]?.snippet).toContain(
+      "Use &amp; when you mean the characters.",
+    );
+    mailboxState.sentSource = "";
+  });
+
   it("moves archived mail back from Archive", async () => {
     movedTo.length = 0;
     movedFrom.length = 0;
