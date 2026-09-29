@@ -1123,6 +1123,92 @@ describe("createImapProvider", () => {
     expect(movedTo).toEqual(["Trash"]);
   });
 
+  it("moves archived mail to Trash", async () => {
+    movedTo.length = 0;
+    movedFrom.length = 0;
+    mailboxState.archiveSource = [
+      "From: News <news@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Todays newsletter",
+      "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+      "Message-ID: <today-newsletter@example.com>",
+      "",
+      "This newsletter arrived today.",
+    ].join("\r\n");
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+
+      await provider.trashThread(
+        "<today-newsletter@example.com>",
+        "owner@example.com",
+        "user",
+      );
+
+      expect(movedFrom).toEqual(["Archive"]);
+      expect(movedTo).toEqual(["Trash"]);
+    } finally {
+      mailboxState.archiveSource = "";
+    }
+  });
+
+  it("moves archived mail to Junk", async () => {
+    movedTo.length = 0;
+    movedFrom.length = 0;
+    created.length = 0;
+    mailboxState.archiveSource = [
+      "From: News <news@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Todays newsletter",
+      "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+      "Message-ID: <today-newsletter@example.com>",
+      "",
+      "This newsletter arrived today.",
+    ].join("\r\n");
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+
+      await provider.markSpam("<today-newsletter@example.com>");
+
+      expect(movedFrom).toEqual(["Archive"]);
+      expect(movedTo).toEqual(["Junk"]);
+    } finally {
+      mailboxState.archiveSource = "";
+    }
+  });
+
+  it("archives mail that is stored in another folder", async () => {
+    movedTo.length = 0;
+    movedFrom.length = 0;
+    const previousListed = mailboxState.listed;
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Receipts", name: "Receipts" },
+    ];
+    mailboxState.folderSources.Receipts = [
+      "From: Billing <billing@example.com>",
+      "To: owner@example.com",
+      "Subject: Receipt",
+      "Date: Mon, 28 Sep 2026 17:00:00 +0000",
+      "Message-ID: <receipt-1@example.com>",
+      "",
+      "Amount due.",
+    ].join("\r\n");
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+
+      await provider.archiveThread(
+        "<receipt-1@example.com>",
+        "owner@example.com",
+      );
+
+      expect(movedFrom).toEqual(["Receipts"]);
+      expect(movedTo).toEqual(["Archive"]);
+    } finally {
+      mailboxState.listed = previousListed;
+      mailboxState.folderSources = {};
+    }
+  });
+
   it("removes every label keyword from a thread", async () => {
     flagsRemoved.length = 0;
     const provider = createImapProvider(imapConfig(), logger);

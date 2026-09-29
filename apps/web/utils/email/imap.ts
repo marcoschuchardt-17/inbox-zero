@@ -843,7 +843,10 @@ export function createImapProvider(
       );
     },
     markSpam: async (threadId: string) => {
-      const messages = inboxCopies(await core.getThreadMessages(threadId));
+      const messages = actionTargets(
+        await core.getThreadMessages(threadId),
+        "Junk",
+      );
       if (!messages.length) throw new SafeError("Thread not found");
       const messageIds = messages.map((message) => message.id);
       await Promise.all(
@@ -906,7 +909,10 @@ export function createImapProvider(
       _ownerEmail: string,
       folderName: string,
     ) => {
-      const messages = inboxCopies(await core.getThreadMessages(threadId));
+      const messages = actionTargets(
+        await core.getThreadMessages(threadId),
+        folderName,
+      );
       if (!messages.length) throw new SafeError("Thread not found");
       const messageIds = messages.map((message) => message.id);
       await Promise.all(
@@ -989,7 +995,10 @@ export function createImapProvider(
         messageIds.map((messageId) => core.archiveMessage(messageId)),
       ).then(() => undefined),
     archiveThread: async (threadId: string, _ownerEmail: string) => {
-      const messages = inboxCopies(await core.getThreadMessages(threadId));
+      const messages = actionTargets(
+        await core.getThreadMessages(threadId),
+        "Archive",
+      );
       await Promise.all(
         messages.map((message) => core.archiveMessage(message.id)),
       );
@@ -1035,7 +1044,10 @@ export function createImapProvider(
       return { succeededThreadIds, failedThreadIds };
     },
     trashThread: async (threadId: string) => {
-      const messages = inboxCopies(await core.getThreadMessages(threadId));
+      const messages = actionTargets(
+        await core.getThreadMessages(threadId),
+        "Trash",
+      );
       await core.trashMessages(messages.map((message) => message.id));
     },
     removeThreadLabel: async (threadId: string, labelId: string) => {
@@ -2831,6 +2843,25 @@ function readStateTargets<T extends { labelIds?: string[] | null }>(
     const labels = message.labelIds ?? [];
     return !labels.includes("SENT") && !labels.includes("DRAFT");
   });
+}
+
+function actionTargets<T extends { id: string; labelIds?: string[] | null }>(
+  messages: T[],
+  destination: string,
+) {
+  return readStateTargets(messages).filter(
+    (message) => !messageIsInMailbox(message, destination),
+  );
+}
+
+function messageIsInMailbox(
+  message: { id: string; labelIds?: string[] | null },
+  mailbox: string,
+) {
+  const stored = parseImapMessageRef(message.id)?.mailbox;
+  if (stored?.toLowerCase() === mailbox.toLowerCase()) return true;
+  const role = mailboxRoleLabel(mailbox);
+  return Boolean(role && role !== "INBOX" && message.labelIds?.includes(role));
 }
 
 const IMAP_CONNECTION_ERROR =
