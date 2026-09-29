@@ -106,6 +106,7 @@ export async function getActionItemsWithAiArgs({
         drafted: !!draft,
       });
     } catch (error) {
+      if (isMissingModelListError(error)) throw error;
       log.error("Failed to generate draft", {
         email: emailAccount.email,
         threadId: message.threadId,
@@ -504,4 +505,11 @@ export function mergeTemplateWithVars(
   }
 
   return result;
+}
+
+function isMissingModelListError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.startsWith("No configured LLM model list resolved for ")
+  );
 }

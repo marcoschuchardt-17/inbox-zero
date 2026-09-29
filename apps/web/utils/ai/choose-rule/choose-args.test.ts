@@ -1,14 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { fetchMessagesAndGenerateDraftWithConfidenceThreshold } from "@/utils/reply-tracker/generate-draft";
 import {
+  type EmailAccountForDrafting,
   combineActionsWithAiArgs,
   filterIncompleteDraftActions,
+  getActionItemsWithAiArgs,
   getParameterFieldsForAction,
   parseTemplate,
 } from "./choose-args";
-import { ActionType } from "@/generated/prisma/enums";
+import { ActionType, DraftReplyConfidence } from "@/generated/prisma/enums";
 import type { Action } from "@/generated/prisma/client";
 import type { DraftAttribution } from "@/utils/ai/reply/draft-attribution";
+import type { ParsedMessage, RuleWithActions } from "@/utils/types";
+import type { EmailProvider } from "@/utils/email/types";
+import { createScopedLogger } from "@/utils/logger";
+
+vi.mock("@/utils/reply-tracker/generate-draft", () => ({
+  fetchMessagesAndGenerateDraftWithConfidenceThreshold: vi.fn(),
+}));
+vi.mock("@/utils/ai/choose-rule/ai-choose-args", () => ({
+  aiGenerateArgs: vi.fn(),
+}));
 
 describe("getParameterFieldsForAction", () => {
   it("creates schema for simple field", () => {
@@ -496,6 +509,69 @@ describe("combineActionsWithAiArgs", () => {
 
       expect(result[0].label).toBe("Priority: High");
     });
+  });
+});
+
+describe("getActionItemsWithAiArgs", () => {
+  const logger = createScopedLogger("choose-args-test");
+  const message = {
+    id: "INBOX/22",
+    threadId: "<please-keep@example.com>",
+  } as ParsedMessage;
+  const emailAccount = {
+    email: "starttls.imap@example.com",
+    draftReplyConfidence: DraftReplyConfidence.STANDARD,
+  } as EmailAccountForDrafting;
+  const selectedRule = {
+    id: "to-reply",
+    actions: [
+      createMockAction({
+        id: "draft",
+        type: ActionType.DRAFT_EMAIL,
+        content: null,
+      }),
+      createMockAction({
+        id: "label",
+        type: ActionType.LABEL,
+        label: "To Reply",
+      }),
+    ],
+  } as RuleWithActions;
+
+  it("tells the caller when no chat model is configured", async () => {
+    vi.mocked(
+      fetchMessagesAndGenerateDraftWithConfidenceThreshold,
+    ).mockRejectedValue(
+      new Error("No configured LLM model list resolved for economy"),
+    );
+
+    await expect(
+      getActionItemsWithAiArgs({
+        message,
+        emailAccount,
+        selectedRule,
+        client: {} as EmailProvider,
+        modelType: "default",
+        logger,
+      }),
+    ).rejects.toThrow("No configured LLM model list resolved for economy");
+  });
+
+  it("keeps the other actions when draft generation fails for another reason", async () => {
+    vi.mocked(
+      fetchMessagesAndGenerateDraftWithConfidenceThreshold,
+    ).mockRejectedValue(new Error("provider timeout"));
+
+    const result = await getActionItemsWithAiArgs({
+      message,
+      emailAccount,
+      selectedRule,
+      client: {} as EmailProvider,
+      modelType: "default",
+      logger,
+    });
+
+    expect(result.map((action) => action.type)).toEqual([ActionType.LABEL]);
   });
 });
 
