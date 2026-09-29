@@ -2249,6 +2249,7 @@ describe("createImapProvider", () => {
   });
 
   it("returns recent subjects from one sender", async () => {
+    mailboxState.fromUids = [1];
     const provider = createImapProvider(imapConfig(), logger);
     const threads = await provider.getThreadsFromSenderWithSubject(
       "sam@example.com",
@@ -2261,9 +2262,11 @@ describe("createImapProvider", () => {
         snippet: expect.stringContaining("The mailbox is ready."),
       }),
     ]);
+    mailboxState.fromUids = [];
   });
 
   it("returns threads from one sender", async () => {
+    mailboxState.fromUids = [1];
     const provider = createImapProvider(imapConfig(), logger);
     const result = await provider.getThreadsWithQuery({
       query: { fromEmail: "sam@example.com" },
@@ -2278,6 +2281,25 @@ describe("createImapProvider", () => {
       query: { fromEmail: "other@example.com" },
     });
     expect(other.threads).toEqual([]);
+    mailboxState.fromUids = [];
+  });
+
+  it("returns an archived sender when that mail is not in the inbox page", async () => {
+    mailboxState.inboxMessages = [];
+    mailboxState.fromUids = [9];
+    mailboxState.archiveSource = archivedAttachment();
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { fromEmail: "ads@example.com", type: "all" },
+      maxResults: 5,
+    });
+
+    expect(result.threads.map((thread) => thread.messages[0]?.id)).toEqual([
+      "Archive/9",
+    ]);
+    mailboxState.fromUids = [];
+    mailboxState.archiveSource = "";
   });
 });
 

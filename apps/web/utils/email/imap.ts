@@ -268,6 +268,33 @@ export function createImapProvider(
         (query?.type ? mailboxForListType(query.type) : undefined) ||
         query?.folderId ||
         undefined;
+      const fromEmail = query?.fromEmail?.trim();
+      if (fromEmail && !mailbox && query?.type !== "sent") {
+        const fromSender = await findImapMessagesFromSender({
+          config,
+          logger,
+          senderEmail: fromEmail,
+          before: query?.before,
+          after: query?.after,
+        });
+        const matched = fromSender.filter((message) => {
+          if (query?.isUnread && !message.labelIds?.includes("UNREAD")) {
+            return false;
+          }
+          if (query?.labelId && !message.labelIds?.includes(query.labelId)) {
+            return false;
+          }
+          return true;
+        });
+        const offset = pageOffset(pageToken);
+        return {
+          threads: groupToThreads(matched.slice(offset, offset + maxResults)),
+          nextPageToken:
+            offset + maxResults < matched.length
+              ? String(offset + maxResults)
+              : undefined,
+        };
+      }
       const loadMailbox = async () => {
         if (query?.after || query?.before) {
           return fetchMailboxMessagesByDate({
@@ -315,11 +342,11 @@ export function createImapProvider(
         messages = page.messages;
         nextPageToken = page.nextPageToken;
       }
-      const fromEmail = query?.fromEmail?.trim().toLowerCase();
+      const senderFilter = fromEmail?.toLowerCase();
       const filtered = messages.filter((message) => {
         if (
-          fromEmail &&
-          !message.headers.from.toLowerCase().includes(fromEmail)
+          senderFilter &&
+          !message.headers.from.toLowerCase().includes(senderFilter)
         ) {
           return false;
         }
