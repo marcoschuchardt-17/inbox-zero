@@ -519,6 +519,19 @@ describe("createImapProvider", () => {
     });
   });
 
+  it("clears the seen flag when an inbox thread is marked unread", async () => {
+    flagsRemoved.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.markReadThread("<parent@example.com>", false);
+
+    expect(flagsRemoved).toEqual(["\\Seen"]);
+    expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", messageId: { in: ["INBOX/1"] } },
+      data: { read: false },
+    });
+  });
+
   it("archives a thread into the Archive mailbox", async () => {
     movedTo.length = 0;
     const provider = createImapProvider(

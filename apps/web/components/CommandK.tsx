@@ -233,6 +233,79 @@ function CommandPaletteContent({
           }
         }
       : undefined,
+    markUnread:
+      threadId && isImapProvider(provider)
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
+              toastError({
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
+              });
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "set_read_state", read: false },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn’t mark this email unread",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+            } catch {
+              toastError({
+                description: "Couldn’t mark this email unread",
+              });
+            }
+          }
+        : undefined,
+    delete:
+      threadId && isImapProvider(provider)
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
+              toastError({
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
+              });
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "trash" },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn't move this email to Trash",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+              showEmail(null);
+            } catch {
+              toastError({
+                description: "Couldn't move this email to Trash",
+              });
+            }
+          }
+        : undefined,
     forward:
       threadId && displayedThread?.thread.id === threadId
         ? () => {

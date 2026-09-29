@@ -250,6 +250,38 @@ describe("CommandK side-panel actions", () => {
     expect(displayedEmail.showEmail).not.toHaveBeenCalled();
   });
 
+  it("marks an open IMAP message unread through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.markUnread?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/unread",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).not.toHaveBeenCalled();
+  });
+
+  it("moves an open IMAP message to Trash through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.delete?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/trash",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith(null);
+  });
+
   it("opens a forward composer for the latest side-panel message", () => {
     render(<CommandK />);
 

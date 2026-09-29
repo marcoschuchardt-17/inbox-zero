@@ -172,7 +172,7 @@ function httpActionForPayload(payload: ThreadMutationPayload) {
     case "untrash":
       return "untrash";
     case "set_read_state":
-      return payload.read ? "read" : null;
+      return payload.read ? "read" : "unread";
     case "set_starred_state":
       return "star";
     default:
@@ -190,6 +190,7 @@ function httpFailureCopy(action: string) {
   if (action === "archive") return "Failed to archive email";
   if (action === "trash") return "Failed to trash email";
   if (action === "star") return "Failed to star email";
+  if (action === "unread") return "Failed to mark email unread";
   return "Failed to update email";
 }
 
