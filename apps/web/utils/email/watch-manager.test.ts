@@ -135,6 +135,31 @@ describe("ensureEmailAccountsWatched", () => {
     );
   });
 
+  it("does not report an IMAP mailbox as missing OAuth tokens", async () => {
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      {
+        ...getWatchedEmailAccount({
+          watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+        }),
+        account: {
+          provider: "imap",
+          access_token: null,
+          refresh_token: null,
+          expires_at: null,
+          disconnectedAt: null,
+        },
+      },
+    ] as any);
+
+    const results = await ensureEmailAccountsWatched({
+      userIds: null,
+      logger,
+    });
+
+    expect(results).toEqual([]);
+    expect(createEmailProvider).not.toHaveBeenCalled();
+  });
+
   it("does not touch the watch lapsed error when the watch was already healthy", async () => {
     vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
       getWatchedEmailAccount({

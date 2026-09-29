@@ -11,7 +11,10 @@ import { captureException, isInvalidGrantError } from "@/utils/error";
 import { cleanupInvalidTokens } from "@/utils/auth/cleanup-invalid-tokens";
 import type { EmailProvider } from "@/utils/email/types";
 import { createManagedOutlookSubscription } from "@/utils/outlook/subscription-manager";
-import { isMicrosoftProvider } from "@/utils/email/provider-types";
+import {
+  isImapProvider,
+  isMicrosoftProvider,
+} from "@/utils/email/provider-types";
 import { logErrorWithDedupe } from "@/utils/log-error-with-dedupe";
 import { clearWatchLapsedErrorIfResolved } from "@/utils/error-messages";
 
@@ -134,6 +137,12 @@ async function watchEmailAccount(
   logger: Logger,
 ): Promise<WatchEmailAccountResult | null> {
   const { account, user, watchEmailsExpirationDate } = emailAccount;
+
+  // IMAP has no OAuth watch. New mail is read by the IMAP poll.
+  if (isImapProvider(account?.provider)) {
+    logger.info("IMAP accounts are polled instead of watched");
+    return null;
+  }
 
   const userHasAiAccess = hasAiAccess(
     getUserTier(user.premium),
