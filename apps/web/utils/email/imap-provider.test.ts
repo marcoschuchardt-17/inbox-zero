@@ -114,7 +114,11 @@ vi.mock("imapflow", () => ({
           ? mailboxState.sentSearchUids
           : [];
       }
-      if (query?.all) return mailboxState.allUids;
+      if (query?.all) {
+        const folderUids = mailboxState.folderDateUids[mailboxState.opened];
+        if (folderUids) return folderUids;
+        return mailboxState.allUids;
+      }
       if (query?.or) {
         return mailboxState.opened === "Sent"
           ? mailboxState.sentSearchUids
@@ -1320,8 +1324,7 @@ describe("createImapProvider", () => {
     try {
       const provider = createImapProvider(imapConfig(), logger);
       const page = await provider.getMessagesWithPagination({
-        after: new Date("2026-09-01T00:00:00.000Z"),
-        before: new Date("2026-09-29T00:00:00.000Z"),
+        after: new Date("2026-09-29T00:00:00.000Z"),
         maxResults: 20,
       });
 

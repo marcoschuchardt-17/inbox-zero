@@ -1330,16 +1330,23 @@ async function fetchDatedMessagesAcrossMailboxes({
     }
     let page: { messages: ParsedImapMessage[]; nextPageToken?: string };
     try {
+      const mailbox = mailboxes[index];
+      const syncFolder = config.syncFolder || "INBOX";
       page = await fetchMailboxMessagesByDate({
         config,
         logger,
-        mailbox: mailboxes[index],
+        mailbox,
         maxResults: remaining,
         pageToken:
           index === start.mailboxIndex && start.uidIndex > 0
             ? String(start.uidIndex)
             : undefined,
-        after,
+        after: dateFloorForMailbox({
+          mailbox,
+          syncFolder,
+          after,
+          before,
+        }),
         before,
       });
     } catch (error) {
@@ -1384,6 +1391,21 @@ function datedPageToken(mailboxIndex: number, uidIndex: number) {
   return `${mailboxIndex}:${uidIndex}`;
 }
 
+function dateFloorForMailbox({
+  mailbox,
+  syncFolder,
+  after,
+  before,
+}: {
+  mailbox: string;
+  syncFolder: string;
+  after?: Date;
+  before?: Date;
+}) {
+  if (isInboxMailbox(mailbox, syncFolder) || before) return after;
+  return;
+}
+
 async function fetchMailboxMessagesByDate({
   config,
   logger,
@@ -1410,12 +1432,13 @@ async function fetchMailboxMessagesByDate({
     const lock = await client.getMailboxLock(selectedMailbox);
     try {
       const window = imapSearchWindow(after, before);
+      const criteria = {
+        ...(window.since ? { since: window.since } : {}),
+        ...(window.before ? { before: window.before } : {}),
+        ...(isUnread ? { seen: false } : {}),
+      };
       const searched = await client.search(
-        {
-          ...(window.since ? { since: window.since } : {}),
-          ...(window.before ? { before: window.before } : {}),
-          ...(isUnread ? { seen: false } : {}),
-        },
+        Object.keys(criteria).length > 0 ? criteria : { all: true },
         { uid: true },
       );
       const uids = (Array.isArray(searched) ? searched : [])
