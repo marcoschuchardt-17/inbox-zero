@@ -34,6 +34,7 @@ import { EmailDetails } from "@/components/email-list/EmailDetails";
 import { HtmlEmail, PlainEmail } from "@/components/email-list/EmailContents";
 import { EmailAttachments } from "@/components/email-list/EmailAttachments";
 import { useAccount } from "@/providers/EmailAccountProvider";
+import { shouldCloseConversationAfterDraftDiscard } from "@/utils/email/discarded-thread";
 import { formatReplySubject } from "@/utils/email/subject";
 import { env } from "@/env";
 import { isTypingTarget } from "@/lib/shortcuts/registry";
@@ -60,6 +61,8 @@ export function EmailMessage({
   showReplyButton,
   defaultComposeMode,
   draftMessages,
+  conversationMessageIds = [],
+  onConversationGone,
   expanded,
   onToggle,
   onSendSuccess,
@@ -76,6 +79,8 @@ export function EmailMessage({
   missingBodyIds?: Set<string>;
   menu?: React.ReactNode;
   draftMessages?: ThreadMessage[];
+  conversationMessageIds?: readonly string[];
+  onConversationGone?: () => void;
   refetch: () => void;
   showReplyButton: boolean;
   defaultComposeMode?: ReplyDraftMode;
@@ -277,10 +282,12 @@ export function EmailMessage({
             <ReplyPanel
               key={draft.id}
               autoScroll={!composeMode && index === visibleDrafts.length - 1}
+              conversationMessageIds={conversationMessageIds}
               draftBodyAvailable={!missingBodyIds?.has(draft.id)}
               draftMessage={draft}
               message={message}
               onCloseCompose={() => setDraftDismissed(draft.id, true)}
+              onConversationGone={onConversationGone}
               onRestoreCompose={() => setDraftDismissed(draft.id, false)}
               onRestore={() => setDraftDismissed(draft.id, false)}
               onSendSuccess={onSendSuccess}
@@ -301,8 +308,10 @@ export function EmailMessage({
               key={composerKey}
               autoScroll
               bodyAvailable={bodyAvailable}
+              conversationMessageIds={conversationMessageIds}
               message={message}
               onCloseCompose={onCloseComposeAfterSend}
+              onConversationGone={onConversationGone}
               onRestore={onRestoreComposeAfterSend}
               onRestoreCompose={onRestoreCompose}
               onSendSuccess={onSendSuccess}
@@ -546,10 +555,12 @@ function ReplyPanel({
   onSendSuccess,
   onMarkDone,
   onCloseCompose,
+  onConversationGone,
   onRestore,
   onRestoreCompose,
   onStartDiscard,
   composeMode,
+  conversationMessageIds,
   draftMessage,
   draftBodyAvailable = true,
   autoScroll = false,
@@ -560,10 +571,12 @@ function ReplyPanel({
   onSendSuccess: (messageId: string, threadId: string) => void;
   onMarkDone?: () => void;
   onCloseCompose: () => void;
+  onConversationGone?: () => void;
   onRestore?: () => void;
   onRestoreCompose: (composeSession: ComposeSession) => void;
   onStartDiscard: () => ComposeSession | undefined;
   composeMode: ReplyDraftMode;
+  conversationMessageIds: readonly string[];
   draftMessage?: ThreadMessage;
   draftBodyAvailable?: boolean;
   autoScroll?: boolean;
@@ -617,6 +630,8 @@ function ReplyPanel({
       const composeSession = onStartDiscard();
       if (!composeSession) return false;
 
+      let discarded = false;
+      let closeConversation = false;
       try {
         const result = await discardPromise;
         if (
@@ -632,20 +647,30 @@ function ReplyPanel({
           onRestoreCompose(composeSession);
           return false;
         }
+        discarded = true;
       } catch {
         toastError({ description: "Failed to discard draft" });
         onRestoreCompose(composeSession);
         return false;
       } finally {
-        refetch();
+        closeConversation = shouldCloseConversationAfterDraftDiscard({
+          discarded,
+          hasCloseHandler: Boolean(onConversationGone),
+          messageIds: conversationMessageIds,
+          discardedMessageId: draftMessage.id,
+        });
+        if (!closeConversation) refetch();
       }
+      if (closeConversation) onConversationGone?.();
       return true;
     },
     [
       composeMode,
+      conversationMessageIds,
       draftMessage,
       discardDraft,
       onCloseCompose,
+      onConversationGone,
       onRestoreCompose,
       onStartDiscard,
       refetch,

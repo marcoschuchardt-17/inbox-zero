@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { useSWRConfig } from "swr";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { EmailThread } from "@/components/email-list/EmailThread";
@@ -22,7 +23,14 @@ export function EmailViewer() {
     autoOpenReplyForMessageId,
   } = useDisplayedEmail();
 
+  const { mutate } = useSWRConfig();
   const hideEmail = useCallback(() => showEmail(null), [showEmail]);
+  const closeDiscardedConversation = useCallback(() => {
+    hideEmail();
+    mutate(
+      (key) => typeof key === "string" && key.startsWith("/api/threads?"),
+    ).catch(() => undefined);
+  }, [hideEmail, mutate]);
   const supportsViewerReplies =
     isGoogleProvider(provider) || isImapProvider(provider);
 
@@ -52,6 +60,7 @@ export function EmailViewer() {
                 : undefined
             }
             expandMessageId={messageId}
+            onConversationGone={closeDiscardedConversation}
           />
         )}
       </SheetContent>
@@ -67,6 +76,7 @@ export function ThreadContent({
   expandMessageId,
   topRightComponent,
   onSendSuccess,
+  onConversationGone,
 }: {
   threadId: string;
   showReplyButton: boolean;
@@ -75,6 +85,7 @@ export function ThreadContent({
   expandMessageId?: string | null;
   topRightComponent?: React.ReactNode;
   onSendSuccess?: (messageId: string, threadId: string) => void;
+  onConversationGone?: () => void;
 }) {
   const { data, isLoading, error, mutate } = useThread({ id: threadId });
 
@@ -92,6 +103,7 @@ export function ThreadContent({
             expandMessageId={expandMessageId}
             topRightComponent={topRightComponent}
             onSendSuccess={onSendSuccess}
+            onConversationGone={onConversationGone}
             withHeader
           />
         )}

@@ -32,6 +32,7 @@ export function EmailThread({
   onSendSuccess,
   onMarkDone,
   onOpenSenderContext,
+  onConversationGone,
   withHeader,
   renderToolbar,
   renderMessageMenu,
@@ -48,6 +49,7 @@ export function EmailThread({
   onSendSuccess?: (messageId: string, threadId: string) => void;
   onMarkDone?: () => void;
   onOpenSenderContext?: (message: ThreadMessage) => void;
+  onConversationGone?: () => void;
   withHeader?: boolean;
   enableMessageNavigation?: boolean;
   renderMessageMenu?: (message: ThreadMessage) => ReactNode;
@@ -256,8 +258,10 @@ export function EmailThread({
                     ? () => setSelectedMessageId(message.id)
                     : undefined
                 }
+                conversationMessageIds={messages.map((item) => item.id)}
                 defaultComposeMode={defaultComposeMode}
                 draftMessages={draftMessages}
+                onConversationGone={onConversationGone}
                 expanded={expanded(
                   message.id,
                   Boolean(defaultComposeMode) || draftMessages.length > 0,
