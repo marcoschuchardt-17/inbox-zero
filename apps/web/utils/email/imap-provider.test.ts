@@ -393,6 +393,24 @@ describe("createImapProvider", () => {
     expect(appended[0]?.raw).toContain("<p>Thanks</p>");
   });
 
+  it("sends mail with the account display name", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    const provider = createImapProvider(
+      { ...imapConfig(), displayName: "Starttls" },
+      logger,
+    );
+
+    await provider.sendEmailWithHtml({
+      to: "sam@example.com",
+      subject: "Hello",
+      messageHtml: "<p>Hi</p>",
+    });
+
+    expect(sentMail[0]?.from).toBe("Starttls <owner@example.com>");
+    expect(appended[0]?.raw).toContain("From: Starttls <owner@example.com>");
+  });
+
   it("opens a message stored only in Junk", async () => {
     mailboxState.folderSources.Junk = [
       "From: Ads <ads@example.com>",

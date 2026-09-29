@@ -10,6 +10,7 @@ import {
   extractEmailAddress,
   extractEmailAddresses,
   extractNameFromEmail,
+  formatEmailWithName,
   getSearchTermForSender,
 } from "@/utils/email";
 import { SafeError } from "@/utils/error";
@@ -27,6 +28,7 @@ import type { SendEmailBody } from "@/utils/types/mail";
 type ImapConfig = {
   emailAccountId: string;
   ownerEmail: string;
+  displayName?: string | null;
   imapHost: string;
   imapPort: number;
   imapSecure: boolean;
@@ -465,7 +467,7 @@ export function createImapProvider(
       const transport = createSmtpTransport(config);
       const messageId = `smtp-${Date.now()}`;
       const result = await transport.sendMail({
-        from: config.ownerEmail,
+        from: mailboxFrom(config),
         to,
         cc,
         bcc,
@@ -479,7 +481,7 @@ export function createImapProvider(
         config,
         logger,
         raw: buildOutgoingMessage({
-          from: config.ownerEmail,
+          from: mailboxFrom(config),
           to,
           cc,
           bcc,
@@ -497,7 +499,7 @@ export function createImapProvider(
       const references =
         body.replyToEmail?.references || body.replyToEmail?.headerMessageId;
       const result = await transport.sendMail({
-        from: body.from || config.ownerEmail,
+        from: body.from || mailboxFrom(config),
         to: body.to,
         cc: body.cc,
         bcc: body.bcc,
@@ -519,7 +521,7 @@ export function createImapProvider(
         config,
         logger,
         raw: buildOutgoingMessage({
-          from: body.from || config.ownerEmail,
+          from: body.from || mailboxFrom(config),
           to: body.to,
           cc: body.cc,
           bcc: body.bcc,
@@ -576,7 +578,7 @@ export function createImapProvider(
         config,
         logger,
         raw: buildOutgoingMessage({
-          from: config.ownerEmail,
+          from: mailboxFrom(config),
           to,
           subject,
           messageId,
@@ -599,7 +601,7 @@ export function createImapProvider(
         config,
         logger,
         raw: buildOutgoingMessage({
-          from: config.ownerEmail,
+          from: mailboxFrom(config),
           to: params.to ?? current.headers.to,
           cc: params.cc ?? current.headers.cc,
           bcc: params.bcc,
@@ -636,7 +638,7 @@ export function createImapProvider(
       const references = draft.headers.references || inReplyTo;
       const text = draft.textPlain || draft.snippet;
       const result = await transport.sendMail({
-        from: config.ownerEmail,
+        from: mailboxFrom(config),
         to: draft.headers.to,
         cc: draft.headers.cc,
         subject: draft.subject,
@@ -651,7 +653,7 @@ export function createImapProvider(
         config,
         logger,
         raw: buildOutgoingMessage({
-          from: config.ownerEmail,
+          from: mailboxFrom(config),
           to: draft.headers.to,
           cc: draft.headers.cc,
           subject: draft.subject,
@@ -1558,6 +1560,10 @@ function headerValue(
     .map((header) => header.value.trim())
     .filter(Boolean);
   return values.length ? values.join(", ") : undefined;
+}
+
+function mailboxFrom(config: ImapConfig) {
+  return formatEmailWithName(config.displayName, config.ownerEmail);
 }
 
 function messageSnippet(textBody: string, htmlBody: string) {

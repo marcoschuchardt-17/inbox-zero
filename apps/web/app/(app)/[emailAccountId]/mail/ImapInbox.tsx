@@ -12,6 +12,8 @@ import { useComposeModal } from "@/providers/ComposeModalProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
 import type { GetFoldersResponse } from "@/app/api/user/folders/route";
 import { fetchWithAccount } from "@/utils/fetch";
+import { formatShortDate } from "@/utils/date";
+import { extractNameFromEmail } from "@/utils/email";
 import { imapThreadLabelIds } from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
@@ -309,6 +311,16 @@ export function ImapInbox() {
           <ul className="mt-4 divide-y">
             {visibleThreads.map((thread) => {
               const message = thread.messages.at(-1);
+              const sender =
+                extractNameFromEmail(message?.headers.from || "") ||
+                "Unknown sender";
+              const sentAt = message?.headers.date
+                ? new Date(message.headers.date)
+                : null;
+              const when =
+                sentAt && !Number.isNaN(sentAt.getTime())
+                  ? formatShortDate(sentAt)
+                  : "";
               const unread =
                 folder === "inbox" && message?.labelIds?.includes("UNREAD");
               const rowLabels = imapThreadLabelIds(thread.messages).map(
@@ -332,17 +344,24 @@ export function ImapInbox() {
                       }
                     }}
                   >
-                    <div
-                      className={
-                        unread
-                          ? "truncate font-semibold"
-                          : "truncate font-medium"
-                      }
-                    >
-                      {message?.headers.from || "Unknown sender"}
-                      {unread ? (
-                        <span className="ml-2 font-normal text-xs text-muted-foreground">
-                          Unread
+                    <div className="flex items-baseline justify-between gap-3">
+                      <div
+                        className={
+                          unread
+                            ? "truncate font-semibold"
+                            : "truncate font-medium"
+                        }
+                      >
+                        {sender}
+                        {unread ? (
+                          <span className="ml-2 font-normal text-xs text-muted-foreground">
+                            Unread
+                          </span>
+                        ) : null}
+                      </div>
+                      {when ? (
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {when}
                         </span>
                       ) : null}
                     </div>
