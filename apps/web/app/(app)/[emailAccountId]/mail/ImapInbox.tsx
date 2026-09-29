@@ -27,6 +27,7 @@ import { extractNameFromEmail, participant } from "@/utils/email";
 import {
   imapListLocation,
   imapListMessage,
+  imapMessageIsUnread,
   imapMessageMailbox,
   imapSearchRestoreAction,
   imapThreadLabelIds,
@@ -118,11 +119,19 @@ export function ImapInbox() {
       .catch(() => undefined);
   }, [emailAccountId, mutate]);
 
-  async function markOpenedThreadRead(threadId: string) {
+  async function markOpenedThreadRead(threadId: string, messageId?: string) {
     const response = await fetchWithAccount({
       url: `/api/threads/${encodeURIComponent(threadId)}/read`,
       emailAccountId,
-      init: { method: "POST" },
+      init: {
+        method: "POST",
+        ...(messageId
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ messageId }),
+            }
+          : {}),
+      },
     });
     if (response.ok) await mutate();
   }
@@ -373,8 +382,7 @@ export function ImapInbox() {
               const messageInInbox = submittedSearch
                 ? location === "inbox"
                 : folder === "inbox";
-              const unread =
-                messageInInbox && message?.labelIds?.includes("UNREAD");
+              const unread = imapMessageIsUnread(message?.labelIds);
               const searchRestore = submittedSearch
                 ? imapSearchRestoreAction(message?.id)
                 : null;
@@ -394,8 +402,11 @@ export function ImapInbox() {
                         threadId: thread.id,
                         messageId: message?.id,
                       });
-                      if (messageInInbox) {
-                        markOpenedThreadRead(thread.id).catch(() => undefined);
+                      if (unread && message) {
+                        markOpenedThreadRead(
+                          thread.id,
+                          messageInInbox ? undefined : message.id,
+                        ).catch(() => undefined);
                       }
                     }}
                   >

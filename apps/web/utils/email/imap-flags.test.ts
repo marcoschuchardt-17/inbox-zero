@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   imapListLocation,
   imapListMessage,
+  imapMessageIsUnread,
   imapMessageMailbox,
   imapRowLabelIds,
   imapSearchRestoreAction,
@@ -17,6 +18,17 @@ describe("imapRowLabelIds", () => {
 
   it("returns nothing when the message has no user label", () => {
     expect(imapRowLabelIds(undefined)).toEqual([]);
+  });
+});
+
+describe("imapMessageIsUnread", () => {
+  it("treats an archived message as unread when it has not been seen", () => {
+    expect(imapMessageIsUnread(["UNREAD"])).toBe(true);
+  });
+
+  it("leaves a seen message unmarked", () => {
+    expect(imapMessageIsUnread(["INBOX"])).toBe(false);
+    expect(imapMessageIsUnread(undefined)).toBe(false);
   });
 });
 

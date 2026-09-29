@@ -37,6 +37,12 @@ export function imapFlagsToLabelIds(flags: Iterable<string>): string[] {
   return labels;
 }
 
+export function imapMessageIsUnread(
+  labelIds: readonly string[] | null | undefined,
+) {
+  return labelIds?.includes("UNREAD") ?? false;
+}
+
 export function imapMessageMailbox(messageId: string | null | undefined) {
   if (!messageId) return "";
   const slash = messageId.lastIndexOf("/");
