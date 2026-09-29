@@ -656,6 +656,36 @@ describe("createImapProvider", () => {
     });
   });
 
+  it("clears the seen flag on archived mail when that thread is marked unread", async () => {
+    flagsRemoved.length = 0;
+    mailboxState.archiveSource = [
+      "From: News <news@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Todays newsletter",
+      "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+      "Message-ID: <today-newsletter@example.com>",
+      "",
+      "This newsletter arrived today.",
+    ].join("\r\n");
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+
+      await provider.markReadThread("<today-newsletter@example.com>", false);
+
+      expect(flagsRemoved).toEqual(["\\Seen"]);
+      expect(mailboxState.opened).toBe("Archive");
+      expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
+        where: {
+          emailAccountId: "account-1",
+          messageId: { in: ["Archive/9"] },
+        },
+        data: { read: false },
+      });
+    } finally {
+      mailboxState.archiveSource = "";
+    }
+  });
+
   it("archives a thread into the Archive mailbox", async () => {
     movedTo.length = 0;
     const provider = createImapProvider(

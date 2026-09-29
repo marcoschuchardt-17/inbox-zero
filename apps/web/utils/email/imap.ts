@@ -744,7 +744,7 @@ export function createImapProvider(
         messageText: `${args.content || ""}\n\n${email.textPlain || email.snippet}`,
       }),
     markReadThread: async (threadId: string, read: boolean) => {
-      const messages = inboxCopies(await core.getThreadMessages(threadId));
+      const messages = readStateTargets(await core.getThreadMessages(threadId));
       await Promise.all(
         messages.map((message) => setSeenFlag({ config, message, read })),
       );
@@ -2647,6 +2647,17 @@ function messagesForOpenThread(
 
 function inboxCopies<T extends { labelIds?: string[] | null }>(messages: T[]) {
   return messages.filter((message) => message.labelIds?.includes("INBOX"));
+}
+
+function readStateTargets<T extends { labelIds?: string[] | null }>(
+  messages: T[],
+) {
+  const inbox = inboxCopies(messages);
+  if (inbox.length) return inbox;
+  return messages.filter((message) => {
+    const labels = message.labelIds ?? [];
+    return !labels.includes("SENT") && !labels.includes("DRAFT");
+  });
 }
 
 const IMAP_CONNECTION_ERROR =
