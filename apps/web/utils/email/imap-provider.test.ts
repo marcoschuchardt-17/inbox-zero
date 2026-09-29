@@ -419,6 +419,68 @@ describe("createImapProvider", () => {
     expect(appended[0]?.raw).toContain("From: Starttls <owner@example.com>");
   });
 
+  it("replies to the sender on the same conversation", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.replyToEmail(replySource(), "Thanks");
+
+    expect(sentMail[0]).toMatchObject({
+      to: "Sam <sam@example.com>",
+      subject: "Re: Please keep this",
+      inReplyTo: "<please-keep@example.com>",
+      references: "<older@example.com> <please-keep@example.com>",
+    });
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.inReplyTo).toBe("<please-keep@example.com>");
+    expect(parsed.html).toContain("Thanks");
+    expect(parsed.html).toContain("Please keep this note.");
+  });
+
+  it("replies to the other person when the message was sent by the account", async () => {
+    sentMail.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.replyToEmail(
+      replySource({
+        from: "Starttls <owner@example.com>",
+        to: "Sam <sam@example.com>",
+        labelIds: ["SENT"],
+        subject: "Re: Please keep this",
+      }),
+      "Following up",
+    );
+
+    expect(sentMail[0]).toMatchObject({
+      to: "Sam <sam@example.com>",
+      subject: "Re: Please keep this",
+    });
+  });
+
+  it("keeps a file on a rule reply", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const content = Buffer.from("hello file").toString("base64");
+
+    await provider.replyToEmail(replySource(), "See attached", {
+      attachments: [
+        { filename: "note.txt", content, contentType: "text/plain" },
+      ],
+    });
+
+    expect(sentMail[0]?.attachments).toEqual([
+      expect.objectContaining({
+        filename: "note.txt",
+        content,
+        contentType: "text/plain",
+      }),
+    ]);
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
+  });
+
   it("keeps an attachment on the sent IMAP copy", async () => {
     sentMail.length = 0;
     appended.length = 0;
@@ -2699,6 +2761,35 @@ function fetchTargets(
   const end = endRaw === undefined ? start : Number(endRaw);
   const uids = messages.slice(start - 1, end).map((message) => message.uid);
   return new Set(uids);
+}
+
+function replySource(
+  overrides: {
+    from?: string;
+    to?: string;
+    labelIds?: string[];
+    subject?: string;
+  } = {},
+) {
+  return {
+    id: "INBOX/22",
+    threadId: "<please-keep@example.com>",
+    historyId: "",
+    inline: [],
+    snippet: "Please keep this note.",
+    subject: overrides.subject ?? "Please keep this",
+    date: "Mon, 01 Sep 2026 12:05:00 +0000",
+    labelIds: overrides.labelIds ?? ["INBOX"],
+    textPlain: "Please keep this note.",
+    headers: {
+      from: overrides.from ?? "Sam <sam@example.com>",
+      to: overrides.to ?? "Starttls <owner@example.com>",
+      subject: overrides.subject ?? "Please keep this",
+      date: "Mon, 01 Sep 2026 12:05:00 +0000",
+      "message-id": "<please-keep@example.com>",
+      references: "<older@example.com>",
+    },
+  };
 }
 
 function imapConfig() {

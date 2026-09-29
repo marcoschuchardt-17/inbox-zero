@@ -16,6 +16,8 @@ import {
 } from "@/utils/email";
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
+import { formatReplySubject } from "@/utils/email/subject";
+import { createReplyContent } from "@/utils/gmail/reply";
 import type {
   EmailProvider,
   EmailThread,
@@ -740,13 +742,32 @@ export function createImapProvider(
       );
       return true;
     },
-    replyToEmail: async (email: ParsedMessage, content: string) => {
-      const sent = await core.sendEmail({
-        to: email.headers.from,
-        subject: email.subject.startsWith("Re:")
+    replyToEmail: async (email, content, options) => {
+      const sentFromUser = email.labelIds?.includes("SENT");
+      const headerMessageId = email.headers["message-id"] || "";
+      const references = [email.headers.references, headerMessageId]
+        .filter(Boolean)
+        .join(" ");
+      const { html } = createReplyContent({
+        textContent: content,
+        message: email,
+      });
+      const sent = await core.sendEmailWithHtml({
+        to: sentFromUser
+          ? email.headers.to
+          : email.headers["reply-to"] || email.headers.from,
+        subject: sentFromUser
           ? email.subject
-          : `Re: ${email.subject}`,
-        messageText: content,
+          : formatReplySubject(email.subject),
+        messageHtml: html,
+        replyTo: options?.replyTo,
+        from: options?.from,
+        attachments: options?.attachments,
+        replyToEmail: {
+          threadId: email.threadId,
+          headerMessageId,
+          references,
+        },
       });
       return { messageId: sent.messageId };
     },
