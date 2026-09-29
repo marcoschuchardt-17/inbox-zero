@@ -7,6 +7,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useSWRConfig } from "swr";
 import { toastError, toastSuccess } from "@/components/Toast";
 import { isError } from "@/utils/error";
 import { loadEmailStatsAction } from "@/utils/actions/stats";
@@ -72,18 +73,28 @@ export function StatLoaderProvider(props: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [stopLoading, setStopLoading] = useState(false);
   const { emailAccountId } = useAccount();
+  const { mutate } = useSWRConfig();
+
+  const refreshStoredStats = useCallback(
+    () => mutate(isStoredStatsKey),
+    [mutate],
+  );
 
   const onLoad = useCallback(
     async (options: { loadBefore: boolean; showToast: boolean }) => {
       setIsLoading(true);
-      await statLoader.loadStats({
-        emailAccountId,
-        loadBefore: options.loadBefore,
-        showToast: options.showToast,
-      });
-      setIsLoading(false);
+      try {
+        await statLoader.loadStats({
+          emailAccountId,
+          loadBefore: options.loadBefore,
+          showToast: options.showToast,
+        });
+      } finally {
+        setIsLoading(false);
+        await refreshStoredStats().catch(() => undefined);
+      }
     },
-    [emailAccountId],
+    [emailAccountId, refreshStoredStats],
   );
 
   const onLoadBatch = useCallback(
@@ -107,6 +118,7 @@ export function StatLoaderProvider(props: { children: React.ReactNode }) {
       } finally {
         setIsLoading(false);
         setStopLoading(false);
+        await refreshStoredStats().catch(() => undefined);
       }
       if (!options.showToast) return;
       if (failed) {
@@ -115,7 +127,7 @@ export function StatLoaderProvider(props: { children: React.ReactNode }) {
         toastSuccess({ description: "Stats loaded!" });
       }
     },
-    [emailAccountId, stopLoading],
+    [emailAccountId, refreshStoredStats, stopLoading],
   );
 
   const onCancelLoadBatch = useCallback(() => {
@@ -139,4 +151,8 @@ export function LoadStats(props: { loadBefore: boolean; showToast: boolean }) {
   }, [onLoad, props]);
 
   return null;
+}
+
+function isStoredStatsKey(key: unknown) {
+  return typeof key === "string" && key.includes("/api/user/stats");
 }
