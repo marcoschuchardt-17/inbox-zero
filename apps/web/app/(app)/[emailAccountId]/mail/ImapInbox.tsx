@@ -6,6 +6,15 @@ import useSWR from "swr";
 import { LoadingContent } from "@/components/LoadingContent";
 import { PageHeading } from "@/components/Typography";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { AlertCircle } from "lucide-react";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useComposeModal } from "@/providers/ComposeModalProvider";
@@ -216,8 +225,18 @@ export function ImapInbox() {
     await mutate();
   }
 
+  const connectionError = imapConnectionErrorMessage(error);
+
   return (
-    <LoadingContent loading={isLoading} error={error}>
+    <LoadingContent
+      loading={isLoading}
+      error={error}
+      errorComponent={
+        connectionError ? (
+          <ImapConnectionError message={connectionError} />
+        ) : undefined
+      }
+    >
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -544,6 +563,48 @@ export function ImapInbox() {
         ) : null}
       </div>
     </LoadingContent>
+  );
+}
+
+const IMAP_CONNECTION_ERROR =
+  "IMAP connection failed. Check host, port, TLS, and credentials.";
+
+function imapConnectionErrorMessage(error: unknown) {
+  if (!error || typeof error !== "object") return null;
+  const info = "info" in error ? error.info : undefined;
+  const infoMessage =
+    info &&
+    typeof info === "object" &&
+    "error" in info &&
+    typeof info.error === "string"
+      ? info.error
+      : null;
+  const message =
+    infoMessage ||
+    ("message" in error && typeof error.message === "string"
+      ? error.message
+      : null);
+  return message === IMAP_CONNECTION_ERROR ? message : null;
+}
+
+function ImapConnectionError({ message }: { message: string }) {
+  return (
+    <div className="p-4">
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon" className="bg-destructive/10">
+            <AlertCircle className="text-destructive" />
+          </EmptyMedia>
+          <EmptyTitle>There was an error</EmptyTitle>
+          <EmptyDescription>{message}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/accounts/imap">Update mailbox settings</Link>
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </div>
   );
 }
 
