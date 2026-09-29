@@ -175,6 +175,7 @@ vi.mock("imapflow", () => ({
         };
         return;
       }
+      if (mailboxState.opened !== "INBOX") return;
       yield {
         uid: 1,
         source: Buffer.from(mailboxState.inboxSource || rawMessage),
@@ -772,6 +773,28 @@ describe("createImapProvider", () => {
     await provider.removeThreadLabel(message.threadId, "Rechnungen");
 
     expect(flagsRemoved).toEqual(["Rechnungen"]);
+  });
+
+  it("removes a label stored on an archived message", async () => {
+    flagsRemoved.length = 0;
+    mailboxState.archiveSource = [
+      "From: Billing <billing@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Rechnung 2026-09",
+      "Date: Mon, 28 Sep 2026 13:00:00 +0000",
+      "Message-ID: <rechnung-2026-09@example.com>",
+      "",
+      "Bitte begleiche die Rechnung.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.removeThreadLabel(
+      "<rechnung-2026-09@example.com>",
+      "Rechnungen",
+    );
+
+    expect(flagsRemoved).toEqual(["Rechnungen"]);
+    mailboxState.archiveSource = "";
   });
 
   it("lists no sender labels when none are saved", async () => {

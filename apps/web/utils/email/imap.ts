@@ -173,30 +173,11 @@ export function createImapProvider(
       );
     },
     getThread: async (threadId: string) => {
-      const mailboxes = await mailboxNamesForRead({ config, logger });
-      const collected: ParsedImapMessage[] = [];
-      for (const [index, mailbox] of mailboxes.entries()) {
-        let messages: ParsedImapMessage[] = [];
-        try {
-          messages = await fetchMailboxMessages({
-            config,
-            logger,
-            mailbox,
-            maxResults: 100,
-          });
-        } catch (error) {
-          if (index === 0) throw error;
-          if (isMissingImapMailbox(error)) continue;
-          logger.warn("Skipped IMAP folder while opening a thread", {
-            error,
-            mailbox,
-          });
-        }
-        for (const message of messages) {
-          if (!messageMatchesThreadId(message, threadId)) continue;
-          collected.push({ ...message, _mailbox: mailbox });
-        }
-      }
+      const collected = await collectThreadCopies({
+        config,
+        logger,
+        threadId,
+      });
       const threadMessages = messagesForOpenThread(collected);
       if (!threadMessages.length) throw new SafeError("Thread not found");
       return toThread(threadMessages);
@@ -894,7 +875,8 @@ export function createImapProvider(
       await core.trashMessages(messages.map((message) => message.id));
     },
     removeThreadLabel: async (threadId: string, labelId: string) => {
-      const messages = inboxCopies(await core.getThreadMessages(threadId));
+      // A label stays on the message after it leaves the inbox.
+      const messages = await collectThreadCopies({ config, logger, threadId });
       const keyword = imapKeyword(labelId);
       await Promise.all(
         messages.map((message) =>
@@ -2101,6 +2083,42 @@ function messageIdsIn(value?: string) {
   const wrapped = value.match(/<[^>]+>/g);
   if (wrapped?.length) return wrapped;
   return value.split(/\s+/).filter(Boolean);
+}
+
+async function collectThreadCopies({
+  config,
+  logger,
+  threadId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  threadId: string;
+}): Promise<ParsedImapMessage[]> {
+  const mailboxes = await mailboxNamesForRead({ config, logger });
+  const collected: ParsedImapMessage[] = [];
+  for (const [index, mailbox] of mailboxes.entries()) {
+    let messages: ParsedImapMessage[] = [];
+    try {
+      messages = await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox,
+        maxResults: 100,
+      });
+    } catch (error) {
+      if (index === 0) throw error;
+      if (isMissingImapMailbox(error)) continue;
+      logger.warn("Skipped IMAP folder while opening a thread", {
+        error,
+        mailbox,
+      });
+    }
+    for (const message of messages) {
+      if (!messageMatchesThreadId(message, threadId)) continue;
+      collected.push({ ...message, _mailbox: mailbox });
+    }
+  }
+  return collected;
 }
 
 function messagesForOpenThread(messages: ParsedImapMessage[]) {

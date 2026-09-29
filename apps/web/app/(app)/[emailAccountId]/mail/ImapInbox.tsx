@@ -145,6 +145,24 @@ export function ImapInbox() {
     await mutate();
   }
 
+  async function removeLabel(threadId: string, labelId: string) {
+    setArchiveError("");
+    const response = await fetchWithAccount({
+      url: `/api/threads/${encodeURIComponent(threadId)}/unlabel`,
+      emailAccountId,
+      init: {
+        method: "POST",
+        body: JSON.stringify({ labelId }),
+        headers: { "Content-Type": "application/json" },
+      },
+    });
+    if (!response.ok) {
+      setArchiveError("Could not remove this label.");
+      return;
+    }
+    await mutate();
+  }
+
   return (
     <LoadingContent loading={isLoading} error={error}>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
@@ -206,7 +224,10 @@ export function ImapInbox() {
               const unread =
                 folder === "inbox" && message?.labelIds?.includes("UNREAD");
               const rowLabels = imapThreadLabelIds(thread.messages).map(
-                (labelId) => labelNames.get(labelId) ?? labelId,
+                (labelId) => ({
+                  id: labelId,
+                  name: labelNames.get(labelId) ?? labelId,
+                }),
               );
               return (
                 <li key={thread.id} className="flex items-start gap-2">
@@ -240,22 +261,29 @@ export function ImapInbox() {
                     <div className="truncate text-sm">
                       {message?.subject || "(No subject)"}
                     </div>
-                    {rowLabels.length ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {rowLabels.map((name) => (
-                          <span
-                            key={name}
-                            className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                          >
-                            {name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
                     <div className="truncate text-sm text-muted-foreground">
                       {message?.snippet}
                     </div>
                   </button>
+                  {rowLabels.length ? (
+                    <div className="mt-3 flex max-w-40 flex-wrap gap-1">
+                      {rowLabels.map((label) => (
+                        <button
+                          key={label.id}
+                          type="button"
+                          aria-label={`Remove ${label.name} from ${message?.subject || "email"}`}
+                          className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            removeLabel(thread.id, label.id).catch(
+                              () => undefined,
+                            );
+                          }}
+                        >
+                          {label.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   {message && labelList?.labels.length ? (
                     <select
                       aria-label={`Add label to ${message.subject || "email"}`}
