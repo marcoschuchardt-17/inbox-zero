@@ -401,6 +401,31 @@ describe("createImapProvider", () => {
     expect(appended[0]?.raw).toContain("<p>Thanks</p>");
   });
 
+  it("keeps the earlier message on a reply's references", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.sendEmailWithHtml({
+      to: "sam@example.com",
+      subject: "Re: Please keep this",
+      messageHtml: "<p>Thanks</p>",
+      replyToEmail: {
+        threadId: "<older@example.com>",
+        headerMessageId: "<please-keep@example.com>",
+        references: "<older@example.com>",
+      },
+    });
+
+    expect(sentMail[0]).toMatchObject({
+      inReplyTo: "<please-keep@example.com>",
+      references: "<older@example.com> <please-keep@example.com>",
+    });
+    expect(appended[0]?.raw).toContain(
+      "References: <older@example.com> <please-keep@example.com>",
+    );
+  });
+
   it("sends mail with the account display name", async () => {
     sentMail.length = 0;
     appended.length = 0;

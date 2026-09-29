@@ -536,8 +536,10 @@ export function createImapProvider(
     sendEmailWithHtml: async (body: SendEmailBody) => {
       const transport = createSmtpTransport(config);
       const messageId = `smtp-${Date.now()}`;
-      const references =
-        body.replyToEmail?.references || body.replyToEmail?.headerMessageId;
+      const references = replyReferences(
+        body.replyToEmail?.headerMessageId,
+        body.replyToEmail?.references,
+      );
       const result = await transport.sendMail({
         from: body.from || mailboxFrom(config),
         to: body.to,
@@ -2660,6 +2662,13 @@ function messageMatchesThreadId(
   // Older rule history stored the subject when the message had no id yet.
   if (threadId.includes("<")) return false;
   return legacySubjectThreadKey(message.subject) === threadId;
+}
+
+function replyReferences(headerMessageId?: string, references?: string) {
+  const parent = headerMessageId?.trim();
+  if (!parent) return references;
+  if (messageIdsIn(references).includes(parent)) return references;
+  return references ? `${references} ${parent}` : parent;
 }
 
 function messageIdsIn(value?: string) {
