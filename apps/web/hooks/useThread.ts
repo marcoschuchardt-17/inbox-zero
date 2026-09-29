@@ -37,7 +37,7 @@ export function useThread(
   const client = useOptionalMailClient();
   const providerThread = useSWR<ThreadResponse>(
     isImapProvider(provider) && id
-      ? `/api/threads/${encodeURIComponent(id)}?parseReplies=true`
+      ? `/api/threads/${encodeURIComponent(id)}?parseReplies=true&includeDrafts=true`
       : null,
   );
   const includeDrafts = options?.includeDrafts;

@@ -71,7 +71,7 @@ describe("useThread", () => {
     );
     expect(mail.client.observeConversation).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledWith(
-      "/api/threads/morning%20digest?parseReplies=true",
+      "/api/threads/morning%20digest?parseReplies=true&includeDrafts=true",
     );
   });
 

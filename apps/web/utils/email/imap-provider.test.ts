@@ -1912,6 +1912,33 @@ describe("createImapProvider", () => {
     mailboxState.draftSource = "";
   });
 
+  it("keeps a reply draft in the conversation when the inbox message is still there", async () => {
+    mailboxState.draftSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 16:00:00 +0000",
+      "Message-ID: <draft-1@example.com>",
+      "In-Reply-To: <welcome-1@example.com>",
+      "References: <parent@example.com> <welcome-1@example.com>",
+      "",
+      "Draft reply.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const [inbox] = await provider.getInboxMessages(1);
+    const thread = await provider.getThread(inbox?.threadId || "", {
+      includeDrafts: true,
+    });
+
+    expect(thread.messages.map((message) => message.textPlain)).toEqual([
+      expect.stringContaining("The mailbox is ready."),
+      expect.stringContaining("Draft reply."),
+    ]);
+    expect(thread.messages[1]?.labelIds).toContain("DRAFT");
+    mailboxState.draftSource = "";
+  });
+
   it("sends a saved draft and removes it from Drafts", async () => {
     sentMail.length = 0;
     appended.length = 0;

@@ -13,7 +13,11 @@ import {
 } from "@/utils/email";
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
-import type { EmailProvider, EmailThread } from "@/utils/email/types";
+import type {
+  EmailProvider,
+  EmailThread,
+  GetThreadOptions,
+} from "@/utils/email/types";
 import type { Logger } from "@/utils/logger";
 import prisma from "@/utils/prisma";
 import type { ParsedMessage } from "@/utils/types";
@@ -212,13 +216,13 @@ export function createImapProvider(
         maxResults,
         pageToken,
       }),
-    getThread: async (threadId: string) => {
+    getThread: async (threadId: string, options?: GetThreadOptions) => {
       const collected = await collectThreadCopies({
         config,
         logger,
         threadId,
       });
-      const threadMessages = messagesForOpenThread(collected);
+      const threadMessages = messagesForOpenThread(collected, options);
       if (!threadMessages.length) throw new SafeError("Thread not found");
       return toThread(threadMessages);
     },
@@ -2464,8 +2468,12 @@ async function collectThreadCopies({
   return collected;
 }
 
-function messagesForOpenThread(messages: ParsedImapMessage[]) {
-  const hidden = new Set(["trash", "drafts"]);
+function messagesForOpenThread(
+  messages: ParsedImapMessage[],
+  options?: GetThreadOptions,
+) {
+  const hidden = new Set(["trash"]);
+  if (!options?.includeDrafts) hidden.add("drafts");
   const active = messages.filter(
     (message) => !hidden.has((message._mailbox || "").toLowerCase()),
   );
