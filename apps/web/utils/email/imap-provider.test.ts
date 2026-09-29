@@ -2513,6 +2513,40 @@ describe("createImapProvider", () => {
     mailboxState.draftSource = "";
   });
 
+  it("sends the blind copy saved on a draft", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    deleted.length = 0;
+    mailboxState.draftSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Bcc: hidden@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 16:00:00 +0000",
+      "Message-ID: <draft-1@example.com>",
+      "In-Reply-To: <welcome-1@example.com>",
+      "",
+      "Draft reply.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const listed = await provider.getThreadsWithQuery({
+      query: { type: "drafts" },
+    });
+    expect(listed.threads[0]?.messages[0]?.headers.bcc).toBe(
+      "hidden@example.com",
+    );
+
+    await provider.sendDraft(listed.threads[0]?.id || "");
+
+    expect(sentMail.at(-1)).toMatchObject({
+      to: "sam@example.com",
+      bcc: "hidden@example.com",
+    });
+    expect(String(appended.at(-1)?.raw)).toContain("Bcc: hidden@example.com");
+    mailboxState.draftSource = "";
+  });
+
   it("finds a saved draft by its message so the view can discard it", async () => {
     mailboxState.draftSource = savedDraft();
     const provider = createImapProvider(imapConfig(), logger);

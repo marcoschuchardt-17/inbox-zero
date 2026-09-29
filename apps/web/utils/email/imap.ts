@@ -696,6 +696,7 @@ export function createImapProvider(
         from: mailboxFrom(config),
         to: draft.headers.to,
         cc: draft.headers.cc,
+        bcc: draft.headers.bcc,
         subject: draft.subject,
         text,
         html: draft.textHtml,
@@ -717,6 +718,7 @@ export function createImapProvider(
           from: mailboxFrom(config),
           to: draft.headers.to,
           cc: draft.headers.cc,
+          bcc: draft.headers.bcc,
           subject: draft.subject,
           messageId: savedId,
           inReplyTo,
@@ -1700,6 +1702,10 @@ async function parseImapMessage(
     .map((entry) => entry.address)
     .filter(Boolean)
     .join(", ");
+  const bcc = (parsed.bcc || [])
+    .map((entry) => entry.address)
+    .filter(Boolean)
+    .join(", ");
   const attachments = (parsed.attachments || []).map((attachment, index) => {
     const content = attachment.content
       ? new Uint8Array(attachment.content)
@@ -1745,7 +1751,7 @@ async function parseImapMessage(
       from,
       to,
       cc: cc || undefined,
-      bcc: undefined,
+      bcc: bcc || undefined,
       date: parsed.date
         ? new Date(parsed.date).toISOString()
         : new Date().toISOString(),
