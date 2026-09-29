@@ -843,6 +843,54 @@ describe("createImapProvider", () => {
     await expect(provider.searchContacts("ada")).resolves.toEqual([]);
   });
 
+  it("reads earlier mail with the same person, including a sent reply", async () => {
+    const previous = {
+      inboxSearchUids: [...mailboxState.inboxSearchUids],
+      sentSearchUids: [...mailboxState.sentSearchUids],
+      sentSource: mailboxState.sentSource,
+    };
+    mailboxState.inboxSearchUids = [1];
+    mailboxState.sentSearchUids = [11];
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: Sam <sam@example.com>",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <welcome-reply@example.com>",
+      "In-Reply-To: <welcome-1@example.com>",
+      "References: <welcome-1@example.com>",
+      "",
+      "Thanks, the mailbox is ready.",
+    ].join("\r\n");
+
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const threads = await provider.getThreadsWithParticipant({
+        participantEmail: "Sam <sam@example.com>",
+        maxThreads: 5,
+      });
+      const froms = threads
+        .flatMap((thread) => thread.messages)
+        .map((message) => message.headers.from);
+
+      expect(froms).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("sam@example.com"),
+          expect.stringContaining("owner@example.com"),
+        ]),
+      );
+      await expect(
+        provider.getThreadsWithParticipant({
+          participantEmail: "other@example.com",
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      mailboxState.inboxSearchUids = previous.inboxSearchUids;
+      mailboxState.sentSearchUids = previous.sentSearchUids;
+      mailboxState.sentSource = previous.sentSource;
+    }
+  });
+
   it("reads the conversation messages used to draft a reply", async () => {
     const provider = createImapProvider(imapConfig(), logger);
     const [message] = await provider.getInboxMessages(5);

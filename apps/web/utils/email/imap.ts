@@ -175,6 +175,14 @@ export function createImapProvider(
       fetchMessagesByIds({ config, logger, messageIds }),
     getPreviousConversationMessages: async (messageIds: string[]) =>
       fetchMessagesByIds({ config, logger, messageIds }),
+    getThreadsWithParticipant: async ({ participantEmail, maxThreads = 8 }) => {
+      const messages = await findImapMessagesWithParticipant({
+        config,
+        logger,
+        participantEmail,
+      });
+      return groupToThreads(messages).slice(0, Math.max(maxThreads, 0));
+    },
     getThread: async (threadId: string) => {
       const collected = await collectThreadCopies({
         config,
@@ -3058,6 +3066,129 @@ const SEARCH_SKIPPED_MAILBOXES = new Set(["trash", "drafts", "junk", "spam"]);
 
 function isSearchableMailbox(mailbox: string) {
   return !SEARCH_SKIPPED_MAILBOXES.has(mailbox.toLowerCase());
+}
+
+async function findImapMessagesWithParticipant({
+  config,
+  logger,
+  participantEmail,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  participantEmail: string;
+}): Promise<ParsedImapMessage[]> {
+  const participant = extractEmailAddress(participantEmail).toLowerCase();
+  if (!participant) return [];
+
+  const mailboxes = (await mailboxNamesForRead({ config, logger })).filter(
+    isSearchableMailbox,
+  );
+  const found: ParsedImapMessage[] = [];
+  const seen = new Set<string>();
+  for (const [index, mailbox] of mailboxes.entries()) {
+    try {
+      const messages = await fetchMailboxParticipantMatches({
+        config,
+        mailbox,
+        participant,
+      });
+      for (const message of messages) {
+        if (seen.has(message.id)) continue;
+        seen.add(message.id);
+        found.push(message);
+      }
+    } catch (error) {
+      if (index === 0) throw error;
+      if (isMissingImapMailbox(error)) continue;
+      logger.warn("Skipped IMAP folder while reading a participant", {
+        error,
+        mailbox,
+      });
+    }
+  }
+  return found;
+}
+
+async function fetchMailboxParticipantMatches({
+  config,
+  mailbox,
+  participant,
+}: {
+  config: ImapConfig;
+  mailbox: string;
+  participant: string;
+}): Promise<ParsedImapMessage[]> {
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const searched = await client.search(
+        {
+          or: [{ from: participant }, { to: participant }, { cc: participant }],
+        },
+        { uid: true },
+      );
+      const uids = (Array.isArray(searched) ? searched : [])
+        .filter((uid): uid is number => typeof uid === "number")
+        .sort((left, right) => right - left)
+        .slice(0, 40);
+      if (!uids.length) return [];
+      const wanted = new Set(uids.map(String));
+      const messages: ParsedImapMessage[] = [];
+      for await (const message of client.fetch(
+        uids.join(","),
+        {
+          uid: true,
+          source: true,
+          flags: true,
+          internalDate: true,
+        },
+        { uid: true },
+      )) {
+        if (!wanted.has(String(message.uid)) || !message.source) continue;
+        const parsed = await parseImapMessage(
+          message.uid,
+          message.source,
+          message.flags,
+          messageInternalDate(message.internalDate),
+          mailbox,
+        );
+        if (!messageIncludesParticipant(parsed, participant)) continue;
+        if (
+          isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
+          !parsed.labelIds?.includes("INBOX")
+        ) {
+          parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+        }
+        messages.push(parsed);
+      }
+      return messages;
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    if (isMissingImapMailbox(error)) {
+      throw new SafeError("IMAP mailbox not found");
+    }
+    throw error;
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+function messageIncludesParticipant(
+  message: ParsedMessage,
+  participant: string,
+) {
+  return [
+    message.headers.from,
+    message.headers.to,
+    message.headers.cc,
+    message.headers.bcc,
+  ]
+    .flatMap((header) => extractEmailAddresses(header || ""))
+    .some((address) => address.toLowerCase() === participant);
 }
 
 async function searchImapMessages({
