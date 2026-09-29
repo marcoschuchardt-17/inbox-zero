@@ -50,6 +50,7 @@ type ParsedImapMessage = ParsedMessage & {
 };
 
 const DEFAULT_PAGE_SIZE = 20;
+const SEARCH_MATCH_LIMIT = 200;
 
 export function createImapProvider(
   config: ImapConfig,
@@ -123,6 +124,21 @@ export function createImapProvider(
         await reconcileStoredInbox(config);
         await storeSentMailbox({ config, logger });
       }
+      const needle = query?.trim();
+      if (needle) {
+        const page = await searchImapMessages({
+          config,
+          logger,
+          needle,
+          maxResults,
+          pageToken,
+        });
+        await dropStaleThreadCopies({
+          emailAccountId: config.emailAccountId,
+          messages: page.messages,
+        });
+        return page;
+      }
       const offset = Number(pageToken || "0");
       const fetchLimit = maxResults + offset;
       // An empty query still means "previous mail", including mail that left
@@ -143,24 +159,9 @@ export function createImapProvider(
         emailAccountId: config.emailAccountId,
         messages,
       });
-      const needle = query?.trim().toLowerCase();
-      const filtered = needle
-        ? messages.filter((message) =>
-            [
-              message.subject,
-              message.snippet,
-              message.textPlain || "",
-              message.headers.from,
-              message.headers.to,
-            ]
-              .join("\n")
-              .toLowerCase()
-              .includes(needle),
-          )
-        : messages;
-      const slice = filtered.slice(offset, offset + maxResults);
+      const slice = messages.slice(offset, offset + maxResults);
       const nextPageToken =
-        offset + maxResults < filtered.length
+        offset + maxResults < messages.length
           ? String(offset + maxResults)
           : undefined;
       return { messages: slice, nextPageToken };
@@ -379,11 +380,10 @@ export function createImapProvider(
     }) => {
       const { messages, nextPageToken } = await core.getMessagesWithPagination({
         query,
-        maxResults: maxResults * 2,
+        maxResults,
         pageToken,
       });
-      const threads = groupToThreads(messages).slice(0, maxResults);
-      return { threads, nextPageToken };
+      return { threads: groupToThreads(messages), nextPageToken };
     },
     getMailboxSyncPage: async ({ after, limit, cursor }) => {
       const cursorDate = cursor ? new Date(cursor) : after;
@@ -2825,6 +2825,138 @@ const SEARCH_SKIPPED_MAILBOXES = new Set(["trash", "drafts", "junk", "spam"]);
 
 function isSearchableMailbox(mailbox: string) {
   return !SEARCH_SKIPPED_MAILBOXES.has(mailbox.toLowerCase());
+}
+
+async function searchImapMessages({
+  config,
+  logger,
+  needle,
+  maxResults,
+  pageToken,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  needle: string;
+  maxResults: number;
+  pageToken?: string;
+}): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
+  const mailboxes = await mailboxNamesForRead({ config, logger });
+  const collected: ParsedImapMessage[] = [];
+  for (const [index, mailbox] of mailboxes.entries()) {
+    if (!isSearchableMailbox(mailbox)) continue;
+    try {
+      const messages = await fetchMailboxTextMatches({
+        config,
+        logger,
+        mailbox,
+        needle,
+      });
+      collected.push(...messages);
+    } catch (error) {
+      if (index === 0) throw error;
+      if (isMissingImapMailbox(error)) continue;
+      logger.warn("Skipped IMAP folder while searching mail", {
+        error,
+        mailbox,
+      });
+    }
+  }
+  const filtered = collected
+    .filter((message) =>
+      imapMessageHaystack(message).includes(needle.toLowerCase()),
+    )
+    .sort(
+      (left, right) =>
+        new Date(right.date).getTime() - new Date(left.date).getTime(),
+    );
+  const offset = pageOffset(pageToken);
+  return {
+    messages: filtered.slice(offset, offset + maxResults),
+    nextPageToken:
+      offset + maxResults < filtered.length
+        ? String(offset + maxResults)
+        : undefined,
+  };
+}
+
+async function fetchMailboxTextMatches({
+  config,
+  logger,
+  mailbox,
+  needle,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  mailbox: string;
+  needle: string;
+}): Promise<ParsedImapMessage[]> {
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const searched = await client.search({ text: needle }, { uid: true });
+      const uids = (Array.isArray(searched) ? searched : [])
+        .filter((uid): uid is number => typeof uid === "number")
+        .sort((left, right) => right - left)
+        .slice(0, SEARCH_MATCH_LIMIT);
+      if (!uids.length) return [];
+      const wanted = new Set(uids.map(String));
+      const messages: ParsedImapMessage[] = [];
+      for await (const message of client.fetch(
+        uids.join(","),
+        {
+          uid: true,
+          source: true,
+          flags: true,
+          internalDate: true,
+        },
+        { uid: true },
+      )) {
+        if (!wanted.has(String(message.uid)) || !message.source) continue;
+        const parsed = await parseImapMessage(
+          message.uid,
+          message.source,
+          message.flags,
+          message.internalDate,
+          mailbox,
+        );
+        if (
+          isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
+          !parsed.labelIds?.includes("INBOX")
+        ) {
+          parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+        }
+        messages.push(parsed);
+      }
+      return messages;
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    if (isMissingImapMailbox(error)) {
+      throw new SafeError("IMAP mailbox not found");
+    }
+    logger.error("Failed fetching IMAP messages", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to read IMAP mailbox");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+function imapMessageHaystack(message: ParsedImapMessage) {
+  return [
+    message.subject,
+    message.snippet,
+    message.textPlain || "",
+    message.headers.from,
+    message.headers.to,
+  ]
+    .join("\n")
+    .toLowerCase();
 }
 
 async function fetchSearchableMailboxMessages({

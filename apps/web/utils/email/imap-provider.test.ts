@@ -97,6 +97,7 @@ vi.mock("imapflow", () => ({
       since?: Date;
       before?: Date;
       seen?: boolean;
+      text?: string;
     }) {
       if (query?.from) return mailboxState.fromUids;
       if (query?.to) {
@@ -113,6 +114,12 @@ vi.mock("imapflow", () => ({
       if (query?.since || query?.before) {
         return inboxMessagesForSearch()
           .filter((message) => imapDateMatches(message, query))
+          .map((message) => message.uid);
+      }
+      if (query?.text) {
+        const needle = query.text.toLowerCase();
+        return sourcesForOpenedMailbox()
+          .filter((message) => message.source.toLowerCase().includes(needle))
           .map((message) => message.uid);
       }
       return mailboxState.unseen;
@@ -943,6 +950,65 @@ describe("createImapProvider", () => {
       "Please trash this",
     ]);
     mailboxState.archiveSource = "";
+  });
+
+  it("finds inbox mail that is older than the newest page", async () => {
+    mailboxState.exists = 3;
+    mailboxState.archiveSource = "";
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Old billing note",
+          "<old-billing@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-15T12:00:00.000Z",
+        source: datedInboxMessage(
+          "September billing",
+          "<september-billing@example.com>",
+          "Tue, 15 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 8,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Newest note",
+          "<newest-note@example.com>",
+          "Mon, 28 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const first = await provider.getMessagesWithPagination({
+      query: "billing",
+      maxResults: 1,
+    });
+    const second = await provider.getMessagesWithPagination({
+      query: "billing",
+      maxResults: 1,
+      pageToken: first.nextPageToken,
+    });
+
+    expect(first.messages.map((message) => message.subject)).toEqual([
+      "September billing",
+    ]);
+    expect(first.nextPageToken).toBe("1");
+    expect(second.messages.map((message) => message.subject)).toEqual([
+      "Old billing note",
+    ]);
+    expect(second.nextPageToken).toBeUndefined();
+    mailboxState.inboxMessages = [];
+    mailboxState.exists = 1;
   });
 
   it("clears inbox stats for mail that is no longer in the mailbox", async () => {
@@ -1783,6 +1849,31 @@ function datedInboxMessage(subject: string, messageId: string, date: string) {
     "",
     subject,
   ].join("\r\n");
+}
+
+function sourcesForOpenedMailbox() {
+  if (mailboxState.opened === "INBOX") return inboxMessagesForSearch();
+  if (mailboxState.opened === "Archive" && mailboxState.archiveSource) {
+    return [
+      {
+        uid: 9,
+        source: mailboxState.archiveSource,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T13:00:00.000Z",
+      },
+    ];
+  }
+  if (mailboxState.opened === "Sent" && mailboxState.sentSource) {
+    return [
+      {
+        uid: 11,
+        source: mailboxState.sentSource,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T14:00:00.000Z",
+      },
+    ];
+  }
+  return [];
 }
 
 function inboxMessagesForSearch() {
