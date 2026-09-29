@@ -481,6 +481,82 @@ describe("createImapProvider", () => {
     expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
   });
 
+  it("forwards the stored message when a rule only has the message id", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    mailboxState.inboxMessages = [
+      {
+        uid: 22,
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: Starttls <owner@example.com>",
+          "Subject: Please keep this",
+          "Date: Mon, 01 Sep 2026 12:05:00 +0000",
+          "Message-ID: <please-keep@example.com>",
+          "MIME-Version: 1.0",
+          'Content-Type: multipart/mixed; boundary="bound"',
+          "",
+          "--bound",
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "Please keep this note.",
+          "--bound",
+          'Content-Type: text/plain; name="note.txt"',
+          'Content-Disposition: attachment; filename="note.txt"',
+          "Content-Transfer-Encoding: base64",
+          "",
+          "aGVsbG8gZmlsZQ==",
+          "--bound--",
+          "",
+        ].join("\r\n"),
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:05:00.000Z",
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      await provider.forwardEmail(
+        {
+          id: "INBOX/22",
+          threadId: "<please-keep@example.com>",
+          historyId: "",
+          inline: [],
+          snippet: "",
+          subject: "Please keep this",
+          date: "Mon, 01 Sep 2026 12:05:00 +0000",
+          headers: {
+            from: "Sam <sam@example.com>",
+            to: "Starttls <owner@example.com>",
+            subject: "Please keep this",
+            date: "Mon, 01 Sep 2026 12:05:00 +0000",
+          },
+        },
+        {
+          to: "ada@example.com",
+          content: "FYI",
+          from: "Starttls <owner@example.com>",
+        },
+      );
+    } finally {
+      mailboxState.inboxMessages = [];
+    }
+
+    expect(sentMail[0]).toMatchObject({
+      to: "ada@example.com",
+      from: "Starttls <owner@example.com>",
+      subject: "Fwd: Please keep this",
+    });
+    expect(sentMail[0]?.attachments).toEqual([
+      expect.objectContaining({ filename: "note.txt" }),
+    ]);
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.subject).toBe("Fwd: Please keep this");
+    expect(parsed.html).toContain("FYI");
+    expect(parsed.html).toContain("Please keep this note.");
+    expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
+  });
+
   it("keeps an attachment on the sent IMAP copy", async () => {
     sentMail.length = 0;
     appended.length = 0;

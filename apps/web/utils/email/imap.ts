@@ -17,6 +17,7 @@ import {
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
 import { formatReplySubject } from "@/utils/email/subject";
+import { forwardEmailHtml, forwardEmailSubject } from "@/utils/gmail/forward";
 import { createReplyContent } from "@/utils/gmail/reply";
 import type {
   EmailProvider,
@@ -771,19 +772,32 @@ export function createImapProvider(
       });
       return { messageId: sent.messageId };
     },
-    forwardEmail: async (
-      email: ParsedMessage,
-      args: { to: string; cc?: string; bcc?: string; content?: string },
-    ) =>
-      core.sendEmail({
+    forwardEmail: async (email, args) => {
+      const stored = await fetchMessageById({
+        config,
+        logger,
+        messageId: email.id,
+        includeAttachmentBodies: true,
+      });
+      const source = stored ?? email;
+      const sent = await core.sendEmailWithHtml({
         to: args.to,
         cc: args.cc,
         bcc: args.bcc,
-        subject: email.subject.startsWith("Fwd:")
-          ? email.subject
-          : `Fwd: ${email.subject}`,
-        messageText: `${args.content || ""}\n\n${email.textPlain || email.snippet}`,
-      }),
+        from: args.from,
+        subject: forwardEmailSubject(source.subject || email.subject),
+        messageHtml: forwardEmailHtml({
+          content: args.content ?? "",
+          message: source,
+        }),
+        attachments: (stored?._attachments ?? []).map((attachment) => ({
+          filename: attachment.filename,
+          content: Buffer.from(attachment.content).toString("base64"),
+          contentType: attachment.mimeType,
+        })),
+      });
+      return { messageId: sent.messageId };
+    },
     markReadThread: async (threadId: string, read: boolean) => {
       const messages = readStateTargets(await core.getThreadMessages(threadId));
       await Promise.all(
