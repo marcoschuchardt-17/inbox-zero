@@ -171,16 +171,10 @@ export function createImapProvider(
       if (!message) throw new SafeError("Message not found");
       return message;
     },
-    getMessagesBatch: async (messageIds: string[]) => {
-      const messages = await Promise.all(
-        messageIds.map((messageId) =>
-          fetchMessageById({ config, logger, messageId }),
-        ),
-      );
-      return messages.filter((message): message is ParsedMessage =>
-        Boolean(message),
-      );
-    },
+    getMessagesBatch: async (messageIds: string[]) =>
+      fetchMessagesByIds({ config, logger, messageIds }),
+    getPreviousConversationMessages: async (messageIds: string[]) =>
+      fetchMessagesByIds({ config, logger, messageIds }),
     getThread: async (threadId: string) => {
       const collected = await collectThreadCopies({
         config,
@@ -1331,6 +1325,25 @@ async function fetchMailboxMessagesByDate({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+async function fetchMessagesByIds({
+  config,
+  logger,
+  messageIds,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  messageIds: string[];
+}) {
+  const messages = await Promise.all(
+    messageIds.map((messageId) =>
+      fetchMessageById({ config, logger, messageId }),
+    ),
+  );
+  return messages.filter((message): message is ParsedImapMessage =>
+    Boolean(message),
+  );
 }
 
 async function fetchMessageById({

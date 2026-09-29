@@ -843,6 +843,18 @@ describe("createImapProvider", () => {
     await expect(provider.searchContacts("ada")).resolves.toEqual([]);
   });
 
+  it("reads the conversation messages used to draft a reply", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+
+    const messages = await provider.getPreviousConversationMessages([
+      message.id,
+    ]);
+
+    expect(messages.map((item) => item.subject)).toEqual([message.subject]);
+  });
+
   it("removes a label keyword from a thread", async () => {
     flagsRemoved.length = 0;
     const provider = createImapProvider(imapConfig(), logger);
