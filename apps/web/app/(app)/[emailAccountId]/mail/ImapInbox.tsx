@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQueryState } from "nuqs";
 import Link from "next/link";
 import useSWR from "swr";
 import { LoadingContent } from "@/components/LoadingContent";
@@ -56,8 +57,9 @@ export function ImapInbox() {
   const { emailAccountId, userEmail } = useAccount();
   const { onOpen: openCompose } = useComposeModal();
   const [folder, setFolder] = useState("inbox");
-  const [search, setSearch] = useState("");
-  const [submittedSearch, setSubmittedSearch] = useState("");
+  const [queryParam] = useQueryState("q");
+  const [search, setSearch] = useState(queryParam ?? "");
+  const [submittedSearch, setSubmittedSearch] = useState(queryParam ?? "");
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
   const { data: labelList } = useSWR<LabelsResponse>("/api/labels");
   const labelNames = new Map(

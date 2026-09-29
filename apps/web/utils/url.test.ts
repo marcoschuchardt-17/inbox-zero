@@ -6,6 +6,7 @@ import {
   getEmailUrlForMessage,
   getEmailUrlForOptionalMessage,
   getEmailSearchUrl,
+  getExternalEmailUrl,
   getGmailUrl,
   getGmailSearchUrl,
   getGmailBasicSearchUrl,
@@ -162,6 +163,24 @@ describe("getEmailUrl", () => {
   }) => {
     expect(getEmailUrl(messageOrThreadId, emailAddress, provider)).toBe(
       expected,
+    );
+  });
+});
+
+describe("getExternalEmailUrl", () => {
+  it("keeps an IMAP thread inside the app", () => {
+    expect(
+      getExternalEmailUrl(
+        "<please-keep@example.com>",
+        "owner@example.com",
+        "imap",
+      ),
+    ).toBeNull();
+  });
+
+  it("still opens Gmail for a Google thread", () => {
+    expect(getExternalEmailUrl("msg123", "user@gmail.com", "google")).toBe(
+      "https://mail.google.com/mail/u/?authuser=user%40gmail.com#all/msg123",
     );
   });
 });

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { Tooltip } from "@/components/Tooltip";
 import { useAccount } from "@/providers/EmailAccountProvider";
-import { isGoogleProvider } from "@/utils/email/provider-types";
+import { isGoogleProvider, isImapProvider } from "@/utils/email/provider-types";
 
 export function ViewEmailButton({
   threadId,
@@ -19,7 +19,7 @@ export function ViewEmailButton({
   const { provider } = useAccount();
   const { showEmail } = useDisplayedEmail();
 
-  if (!isGoogleProvider(provider)) {
+  if (!isGoogleProvider(provider) && !isImapProvider(provider)) {
     return null;
   }
 

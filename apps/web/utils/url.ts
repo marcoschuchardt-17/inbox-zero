@@ -1,4 +1,5 @@
 import { extractDomainFromEmail } from "@/utils/email";
+import { isImapProvider } from "@/utils/email/provider-types";
 
 export function createSearchParams(params: Record<string, unknown>) {
   const searchParams = new URLSearchParams();
@@ -155,6 +156,15 @@ export function getEmailUrl(
 ): string {
   const config = getProviderConfig(provider);
   return config.buildUrl(messageOrThreadId, emailAddress);
+}
+
+export function getExternalEmailUrl(
+  messageOrThreadId: string,
+  emailAddress?: string | null,
+  provider?: string,
+): string | null {
+  if (isImapProvider(provider)) return null;
+  return getEmailUrl(messageOrThreadId, emailAddress, provider);
 }
 
 /**
