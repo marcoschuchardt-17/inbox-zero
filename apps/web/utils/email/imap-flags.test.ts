@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   imapListLocation,
   imapListMessage,
+  imapMessageIsStarred,
   imapMessageIsUnread,
   imapMessageMailbox,
   imapRowLabelIds,
@@ -29,6 +30,17 @@ describe("imapMessageIsUnread", () => {
   it("leaves a seen message unmarked", () => {
     expect(imapMessageIsUnread(["INBOX"])).toBe(false);
     expect(imapMessageIsUnread(undefined)).toBe(false);
+  });
+});
+
+describe("imapMessageIsStarred", () => {
+  it("treats a flagged message as starred", () => {
+    expect(imapMessageIsStarred(["INBOX", "STARRED"])).toBe(true);
+  });
+
+  it("leaves an unflagged message unmarked", () => {
+    expect(imapMessageIsStarred(["INBOX", "UNREAD"])).toBe(false);
+    expect(imapMessageIsStarred(undefined)).toBe(false);
   });
 });
 

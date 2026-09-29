@@ -43,6 +43,12 @@ export function imapMessageIsUnread(
   return labelIds?.includes("UNREAD") ?? false;
 }
 
+export function imapMessageIsStarred(
+  labelIds: readonly string[] | null | undefined,
+) {
+  return labelIds?.includes("STARRED") ?? false;
+}
+
 export function imapMessageMailbox(messageId: string | null | undefined) {
   if (!messageId) return "";
   const slash = messageId.lastIndexOf("/");

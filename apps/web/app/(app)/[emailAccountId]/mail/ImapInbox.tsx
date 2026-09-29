@@ -27,6 +27,7 @@ import { extractNameFromEmail, participant } from "@/utils/email";
 import {
   imapListLocation,
   imapListMessage,
+  imapMessageIsStarred,
   imapMessageIsUnread,
   imapMessageMailbox,
   imapSearchRestoreAction,
@@ -118,6 +119,28 @@ export function ImapInbox() {
       })
       .catch(() => undefined);
   }, [emailAccountId, mutate]);
+
+  async function toggleStar(threadId: string, starred: boolean) {
+    setArchiveError("");
+    const response = await fetchWithAccount({
+      url: `/api/threads/${encodeURIComponent(threadId)}/star`,
+      emailAccountId,
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starred }),
+      },
+    });
+    if (!response.ok) {
+      setArchiveError(
+        starred
+          ? "Could not star this email."
+          : "Could not remove the star from this email.",
+      );
+      return;
+    }
+    await mutate();
+  }
 
   async function markOpenedThreadRead(threadId: string, messageId?: string) {
     const response = await fetchWithAccount({
@@ -383,6 +406,7 @@ export function ImapInbox() {
                 ? location === "inbox"
                 : folder === "inbox";
               const unread = imapMessageIsUnread(message?.labelIds);
+              const starred = imapMessageIsStarred(message?.labelIds);
               const searchRestore = submittedSearch
                 ? imapSearchRestoreAction(message?.id)
                 : null;
@@ -427,6 +451,11 @@ export function ImapInbox() {
                         {unread ? (
                           <span className="ml-2 font-normal text-xs text-muted-foreground">
                             Unread
+                          </span>
+                        ) : null}
+                        {starred ? (
+                          <span className="ml-2 font-normal text-xs text-muted-foreground">
+                            Starred
                           </span>
                         ) : null}
                       </div>
@@ -483,6 +512,17 @@ export function ImapInbox() {
                         </option>
                       ))}
                     </select>
+                  ) : null}
+                  {message ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => toggleStar(thread.id, !starred)}
+                    >
+                      {starred ? "Unstar" : "Star"}
+                    </Button>
                   ) : null}
                   {messageInInbox ? (
                     <>
