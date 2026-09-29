@@ -2354,6 +2354,13 @@ function buildDraftMessage({
     args.subject ||
     (email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject}`);
   const messageId = email.headers["message-id"];
+  const references = [email.headers.references, messageId]
+    .filter(Boolean)
+    .join(" ");
+  const { html } = createReplyContent({
+    textContent: args.content,
+    message: email,
+  });
   const headers = [
     `From: ${from}`,
     `To: ${to}`,
@@ -2361,23 +2368,23 @@ function buildDraftMessage({
     ...(args.bcc ? [`Bcc: ${args.bcc}`] : []),
     `Subject: ${subject}`,
     ...(messageId
-      ? [`In-Reply-To: ${messageId}`, `References: ${messageId}`]
+      ? [`In-Reply-To: ${messageId}`, `References: ${references}`]
       : []),
     "MIME-Version: 1.0",
   ];
   const files = mimeAttachments(args.attachments);
   if (!files.length) {
-    headers.push("Content-Type: text/plain; charset=utf-8");
-    return `${headers.join("\r\n")}\r\n\r\n${args.content}`;
+    headers.push("Content-Type: text/html; charset=utf-8");
+    return `${headers.join("\r\n")}\r\n\r\n${html}`;
   }
   const boundary = `inboxzero-${crypto.randomUUID()}`;
   headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
   const parts = [
     [
-      "Content-Type: text/plain; charset=utf-8",
+      "Content-Type: text/html; charset=utf-8",
       "Content-Transfer-Encoding: 8bit",
       "",
-      args.content,
+      html,
     ].join("\r\n"),
     ...files.map((file) => attachmentMimePart(file)),
   ];

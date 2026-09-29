@@ -638,7 +638,7 @@ describe("createImapProvider", () => {
     );
 
     const parsed = await new PostalMime().parse(String(appended[0]?.raw));
-    expect(parsed.text).toContain("Thanks, I will reply.");
+    expect(parsed.html).toContain("Thanks, I will reply.");
     expect(parsed.attachments?.[0]?.filename).toBe("note.txt");
     expect(Buffer.from(parsed.attachments?.[0]?.content || []).toString()).toBe(
       "hello file",
@@ -1023,6 +1023,12 @@ describe("createImapProvider", () => {
     expect(appended[0]?.mailbox).toBe("Drafts");
     expect(appended[0]?.raw).toContain("Thanks, I will reply.");
     expect(appended[0]?.raw).toContain("In-Reply-To: <welcome-1@example.com>");
+    expect(appended[0]?.raw).toContain(
+      "References: <parent@example.com> <welcome-1@example.com>",
+    );
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.html).toContain("Thanks, I will reply.");
+    expect(parsed.html).toContain("The mailbox is ready.");
   });
 
   it("counts messages in the inbox and how many are unread", async () => {
