@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadMessage } from "@/components/email-list/types";
-import { organizeThreadMessages } from "@/components/email-list/EmailThread";
+import {
+  initiallyExpandedMessageIds,
+  messageIdForShortcut,
+  organizeThreadMessages,
+} from "@/components/email-list/EmailThread";
 
 describe("organizeThreadMessages", () => {
   it("attaches a draft to the message its headers reply to", () => {
@@ -152,6 +156,46 @@ describe("organizeThreadMessages", () => {
 
   it("handles an empty thread", () => {
     expect(organizeThreadMessages([])).toEqual([]);
+  });
+});
+
+describe("initiallyExpandedMessageIds", () => {
+  it("opens the message that was clicked when a later reply is also in the thread", () => {
+    expect(
+      initiallyExpandedMessageIds(
+        [
+          { id: "INBOX/22", labelIds: ["INBOX"] },
+          { id: "Sent/9", labelIds: ["SENT"] },
+        ],
+        "INBOX/22",
+      ),
+    ).toEqual(["INBOX/22"]);
+  });
+
+  it("still opens unread messages", () => {
+    expect(
+      initiallyExpandedMessageIds(
+        [
+          { id: "INBOX/22", labelIds: ["INBOX", "UNREAD"] },
+          { id: "Sent/9", labelIds: ["SENT"] },
+        ],
+        null,
+      ),
+    ).toEqual(["INBOX/22"]);
+  });
+});
+
+describe("messageIdForShortcut", () => {
+  it("uses the open message instead of a newer sent reply", () => {
+    expect(
+      messageIdForShortcut([{ id: "INBOX/22" }, { id: "Sent/9" }], "INBOX/22"),
+    ).toBe("INBOX/22");
+  });
+
+  it("uses the latest message when nothing was focused", () => {
+    expect(
+      messageIdForShortcut([{ id: "INBOX/22" }, { id: "Sent/9" }], null),
+    ).toBe("Sent/9");
   });
 });
 

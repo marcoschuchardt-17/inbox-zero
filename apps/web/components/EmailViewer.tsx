@@ -15,6 +15,7 @@ export function EmailViewer() {
 
   const {
     threadId,
+    messageId,
     showEmail,
     showReplyButton,
     autoOpenForwardForMessageId,
@@ -50,6 +51,7 @@ export function EmailViewer() {
                 ? (autoOpenForwardForMessageId ?? undefined)
                 : undefined
             }
+            expandMessageId={messageId}
           />
         )}
       </SheetContent>
@@ -62,6 +64,7 @@ export function ThreadContent({
   showReplyButton,
   autoOpenReplyForMessageId,
   autoOpenForwardForMessageId,
+  expandMessageId,
   topRightComponent,
   onSendSuccess,
 }: {
@@ -69,6 +72,7 @@ export function ThreadContent({
   showReplyButton: boolean;
   autoOpenReplyForMessageId?: string;
   autoOpenForwardForMessageId?: string;
+  expandMessageId?: string | null;
   topRightComponent?: React.ReactNode;
   onSendSuccess?: (messageId: string, threadId: string) => void;
 }) {
@@ -85,6 +89,7 @@ export function ThreadContent({
             showReplyButton={showReplyButton}
             autoOpenReplyForMessageId={autoOpenReplyForMessageId}
             autoOpenForwardForMessageId={autoOpenForwardForMessageId}
+            expandMessageId={expandMessageId}
             topRightComponent={topRightComponent}
             onSendSuccess={onSendSuccess}
             withHeader

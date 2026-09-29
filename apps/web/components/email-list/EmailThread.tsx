@@ -27,6 +27,7 @@ export function EmailThread({
   showReplyButton,
   autoOpenReplyForMessageId,
   autoOpenForwardForMessageId,
+  expandMessageId,
   topRightComponent,
   onSendSuccess,
   onMarkDone,
@@ -42,6 +43,7 @@ export function EmailThread({
   showReplyButton: boolean;
   autoOpenReplyForMessageId?: string;
   autoOpenForwardForMessageId?: string;
+  expandMessageId?: string | null;
   topRightComponent?: React.ReactNode;
   onSendSuccess?: (messageId: string, threadId: string) => void;
   onMarkDone?: () => void;
@@ -71,11 +73,10 @@ export function EmailThread({
   >(
     () =>
       new Map(
-        organizedMessages
-          .filter(({ message }) =>
-            message.labelIds?.includes(GmailLabel.UNREAD),
-          )
-          .map(({ message }) => [message.id, true]),
+        initiallyExpandedMessageIds(
+          organizedMessages.map(({ message }) => message),
+          expandMessageId,
+        ).map((id) => [id, true]),
       ),
   );
   const [recoveredReply, setRecoveredReply] = useState<{
@@ -90,6 +91,13 @@ export function EmailThread({
         new Map(previous).set(messageId, true),
       );
   }, [autoOpenForwardForMessageId, autoOpenReplyForMessageId]);
+  useEffect(() => {
+    if (!expandMessageId) return;
+    setExpansionOverrides((previous) => {
+      if (previous.get(expandMessageId)) return previous;
+      return new Map(previous).set(expandMessageId, true);
+    });
+  }, [expandMessageId]);
   const expanded = (id: string, hasDraft: boolean) =>
     expansionOverrides.get(id) ?? (id === lastMessageId || hasDraft);
   const hasLocalDraft = (id: string) =>
@@ -391,6 +399,32 @@ export function organizeThreadMessages(messages: ThreadMessage[]) {
       draftsByMessageId.get(message.id) ?? [],
     ),
   }));
+}
+
+export function initiallyExpandedMessageIds(
+  messages: { id: string; labelIds?: string[] | null }[],
+  focusedMessageId?: string | null,
+) {
+  return messages
+    .filter(
+      (message) =>
+        message.labelIds?.includes(GmailLabel.UNREAD) ||
+        Boolean(focusedMessageId && message.id === focusedMessageId),
+    )
+    .map((message) => message.id);
+}
+
+export function messageIdForShortcut(
+  messages: { id: string }[],
+  focusedMessageId?: string | null,
+) {
+  if (
+    focusedMessageId &&
+    messages.some((message) => message.id === focusedMessageId)
+  ) {
+    return focusedMessageId;
+  }
+  return messages.at(-1)?.id;
 }
 
 function sortDraftsOldestFirst(drafts: ThreadMessage[]) {

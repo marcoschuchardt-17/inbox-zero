@@ -36,6 +36,7 @@ import type {
   MailCommandContext,
   SenderCommandContext,
 } from "@/store/command-palette";
+import { messageIdForShortcut } from "@/components/email-list/EmailThread";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useCommandPaletteCommands } from "@/hooks/useCommandPaletteCommands";
@@ -143,7 +144,7 @@ function CommandPaletteContent({
   const { emailAccountId, provider } = useAccount();
   const { mutate } = useSWRConfig();
   const client = useOptionalMailClient();
-  const { threadId, showEmail } = displayedEmail;
+  const { threadId, messageId: focusedMessageId, showEmail } = displayedEmail;
   const { data: displayedThread, isLoading: isDisplayedThreadLoading } =
     useThread({ id: threadId });
   const { onOpen: onOpenComposeModal } = useComposeModal();
@@ -346,7 +347,10 @@ function CommandPaletteContent({
     forward:
       threadId && displayedThread?.thread.id === threadId
         ? () => {
-            const messageId = displayedThread.thread.messages.at(-1)?.id;
+            const messageId = messageIdForShortcut(
+              displayedThread.thread.messages,
+              focusedMessageId,
+            );
             if (!messageId) return;
             showEmail({
               threadId,
