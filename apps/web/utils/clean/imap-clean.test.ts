@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { CleanAction } from "@/generated/prisma/enums";
-import { loadImapCleanThreads, undoImapClean } from "@/utils/clean/imap-clean";
+import {
+  imapCleanFetchLimit,
+  loadImapCleanThreads,
+  undoImapClean,
+} from "@/utils/clean/imap-clean";
 import type { EmailProvider, EmailThread } from "@/utils/email/types";
 
 describe("loadImapCleanThreads", () => {
@@ -52,6 +56,55 @@ describe("loadImapCleanThreads", () => {
           before: new Date("2026-09-22T12:00:00.000Z"),
         }),
       }),
+    );
+  });
+
+  it("keeps reading pages when the full inbox is larger than one page", async () => {
+    const first: EmailThread = {
+      id: "old-one",
+      messages: [
+        {
+          id: "old-one",
+          threadId: "old-one",
+          date: "2026-08-01T12:00:00.000Z",
+        } as EmailThread["messages"][number],
+      ],
+      snippet: "",
+    };
+    const second: EmailThread = {
+      id: "old-two",
+      messages: [
+        {
+          id: "old-two",
+          threadId: "old-two",
+          date: "2026-08-02T12:00:00.000Z",
+        } as EmailThread["messages"][number],
+      ],
+      snippet: "",
+    };
+    const getThreadsWithQuery = vi.fn(
+      async ({ pageToken }: { pageToken?: string }) => {
+        if (pageToken) return { threads: [second] };
+        return { threads: [first], nextPageToken: "100" };
+      },
+    );
+
+    const threads = await loadImapCleanThreads({
+      emailProvider: { getThreadsWithQuery } as unknown as Pick<
+        EmailProvider,
+        "getThreadsWithQuery"
+      >,
+      daysOld: 7,
+      limit: imapCleanFetchLimit(),
+      now: new Date("2026-09-29T12:00:00.000Z"),
+    });
+
+    expect(imapCleanFetchLimit()).toBe(2000);
+    expect(imapCleanFetchLimit(50)).toBe(50);
+    expect(threads.map((thread) => thread.id)).toEqual(["old-one", "old-two"]);
+    expect(getThreadsWithQuery).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ maxResults: 100 }),
     );
   });
 });

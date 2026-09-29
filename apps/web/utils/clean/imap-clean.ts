@@ -53,7 +53,7 @@ export async function runImapClean({
     },
   });
 
-  const limit = Math.min(maxEmails || 50, 100);
+  const limit = imapCleanFetchLimit(maxEmails);
   const threads = await loadImapCleanThreads({
     emailProvider,
     daysOld,
@@ -125,7 +125,13 @@ export async function undoImapClean({
   await emailProvider.unarchiveThread(threadId);
 }
 
+const CLEAN_PAGE_SIZE = 100;
 const MAX_CLEAN_PAGES = 20;
+
+export function imapCleanFetchLimit(maxEmails?: number) {
+  if (maxEmails == null) return CLEAN_PAGE_SIZE * MAX_CLEAN_PAGES;
+  return Math.min(Math.max(maxEmails, 0), CLEAN_PAGE_SIZE);
+}
 
 export async function loadImapCleanThreads({
   emailProvider,
@@ -144,7 +150,7 @@ export async function loadImapCleanThreads({
 
   for (let page = 0; page < MAX_CLEAN_PAGES && threads.length < limit; page++) {
     const result = await emailProvider.getThreadsWithQuery({
-      maxResults: limit,
+      maxResults: Math.min(CLEAN_PAGE_SIZE, limit),
       pageToken,
       query: cutoff ? { before: new Date(cutoff), type: "inbox" } : undefined,
     });
