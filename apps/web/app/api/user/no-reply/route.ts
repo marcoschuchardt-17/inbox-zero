@@ -24,29 +24,20 @@ async function getNoReply({
   });
 
   const sentEmails = await emailProvider.getSentMessages(50);
-
-  const sentEmailsWithThreads = (
+  const threads = (
     await Promise.all(
       sentEmails.map(async (message) => {
-        const thread = await emailProvider.getThread(message.threadId || "");
-
-        const lastMessage = thread.messages?.[thread.messages?.length - 1];
-        const lastMessageFrom = lastMessage?.headers?.from;
-        const isSentByUser = lastMessageFrom?.includes(userEmail);
-
-        if (isSentByUser)
-          return {
-            ...message,
-            thread: {
-              ...thread,
-              messages: thread.messages,
-            },
-          };
-      }) || [],
+        try {
+          return await emailProvider.getThread(message.threadId || "");
+        } catch (error) {
+          if (isMissingThread(error)) return;
+          throw error;
+        }
+      }),
     )
   ).filter(isDefined);
 
-  return sentEmailsWithThreads;
+  return threadsStillAwaitingReply(threads, userEmail);
 }
 
 export const GET = withEmailProvider("user/no-reply", async (request) => {
@@ -62,3 +53,22 @@ export const GET = withEmailProvider("user/no-reply", async (request) => {
 
   return NextResponse.json(result);
 });
+
+function threadsStillAwaitingReply<
+  T extends { id: string; messages: { headers: { from: string } }[] },
+>(threads: T[], userEmail: string) {
+  const seen = new Set<string>();
+  const awaiting: T[] = [];
+  for (const thread of threads) {
+    if (!thread.id || seen.has(thread.id)) continue;
+    const from = thread.messages.at(-1)?.headers.from || "";
+    if (!from.includes(userEmail)) continue;
+    seen.add(thread.id);
+    awaiting.push(thread);
+  }
+  return awaiting;
+}
+
+function isMissingThread(error: unknown) {
+  return error instanceof Error && error.message === "Thread not found";
+}
