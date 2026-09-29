@@ -154,7 +154,7 @@ export function createImapProvider(
         return page;
       }
       if (before || after) {
-        const page = await fetchMailboxMessagesByDate({
+        const page = await fetchDatedMessagesAcrossMailboxes({
           config,
           logger,
           maxResults,
@@ -1297,6 +1297,91 @@ async function fetchMailboxMessagePage({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+async function fetchDatedMessagesAcrossMailboxes({
+  config,
+  logger,
+  maxResults,
+  pageToken,
+  after,
+  before,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  maxResults: number;
+  pageToken?: string;
+  after?: Date;
+  before?: Date;
+}): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
+  const mailboxes = (await mailboxNamesForRead({ config, logger })).filter(
+    (mailbox) =>
+      isSearchableMailbox(mailbox) && !isSentFolder(mailbox, mailbox),
+  );
+  const start = parseDatedPageToken(pageToken);
+  const collected: ParsedImapMessage[] = [];
+  for (let index = start.mailboxIndex; index < mailboxes.length; index++) {
+    const remaining = maxResults - collected.length;
+    if (remaining <= 0) {
+      return {
+        messages: collected,
+        nextPageToken: datedPageToken(index, 0),
+      };
+    }
+    let page: { messages: ParsedImapMessage[]; nextPageToken?: string };
+    try {
+      page = await fetchMailboxMessagesByDate({
+        config,
+        logger,
+        mailbox: mailboxes[index],
+        maxResults: remaining,
+        pageToken:
+          index === start.mailboxIndex && start.uidIndex > 0
+            ? String(start.uidIndex)
+            : undefined,
+        after,
+        before,
+      });
+    } catch (error) {
+      if (isMissingImapMailbox(error)) continue;
+      if (index === start.mailboxIndex && collected.length === 0) throw error;
+      logger.warn("Skipped IMAP folder while reading mail by date", {
+        error,
+        mailbox: mailboxes[index],
+      });
+      continue;
+    }
+    collected.push(...page.messages);
+    if (page.nextPageToken) {
+      return {
+        messages: collected,
+        nextPageToken: datedPageToken(index, Number(page.nextPageToken)),
+      };
+    }
+  }
+  return { messages: collected };
+}
+
+function parseDatedPageToken(pageToken?: string) {
+  if (!pageToken) return { mailboxIndex: 0, uidIndex: 0 };
+  const [mailboxPart, uidPart] = pageToken.split(":");
+  if (uidPart === undefined) {
+    return { mailboxIndex: 0, uidIndex: pageOffset(pageToken) };
+  }
+  const mailboxIndex = Number(mailboxPart);
+  const uidIndex = Number(uidPart);
+  return {
+    mailboxIndex:
+      Number.isFinite(mailboxIndex) && mailboxIndex > 0
+        ? Math.floor(mailboxIndex)
+        : 0,
+    uidIndex:
+      Number.isFinite(uidIndex) && uidIndex > 0 ? Math.floor(uidIndex) : 0,
+  };
+}
+
+function datedPageToken(mailboxIndex: number, uidIndex: number) {
+  return `${mailboxIndex}:${uidIndex}`;
 }
 
 async function fetchMailboxMessagesByDate({

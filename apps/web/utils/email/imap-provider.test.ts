@@ -44,6 +44,7 @@ const {
     exists: 1,
     unseen: [] as number[],
     fromUids: [] as number[],
+    folderDateUids: {} as Record<string, number[]>,
     allUids: [] as number[],
     missingMailboxes: [] as string[],
     inboxSearchUids: [] as number[],
@@ -120,6 +121,8 @@ vi.mock("imapflow", () => ({
           : mailboxState.inboxSearchUids;
       }
       if (query?.since || query?.before) {
+        const folderUids = mailboxState.folderDateUids[mailboxState.opened];
+        if (folderUids) return folderUids;
         return inboxMessagesForSearch()
           .filter((message) => imapDateMatches(message, query))
           .map((message) => message.uid);
@@ -1273,6 +1276,64 @@ describe("createImapProvider", () => {
     } finally {
       mailboxState.exists = previous.exists;
       mailboxState.inboxMessages = previous.inboxMessages;
+    }
+  });
+
+  it("includes mail outside the inbox when loading a date window", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+      listed: mailboxState.listed,
+      folderSources: mailboxState.folderSources,
+      folderDateUids: mailboxState.folderDateUids,
+    };
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-08-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Old inbox",
+          "<old-inbox@example.com>",
+          "Sat, 01 Aug 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Receipts", name: "Receipts" },
+    ];
+    mailboxState.folderDateUids = { Receipts: [14] };
+    mailboxState.folderSources = {
+      Receipts: [
+        "From: Billing <billing@example.com>",
+        "To: owner@example.com",
+        "Subject: Receipt folder check",
+        "Date: Mon, 28 Sep 2026 23:51:00 +0000",
+        "Message-ID: <receipt-folder-a0b4@example.com>",
+        "",
+        "This message is in Receipts.",
+      ].join("\r\n"),
+    };
+
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const page = await provider.getMessagesWithPagination({
+        after: new Date("2026-09-01T00:00:00.000Z"),
+        before: new Date("2026-09-29T00:00:00.000Z"),
+        maxResults: 20,
+      });
+
+      expect(page.messages.map((message) => message.subject)).toEqual([
+        "Receipt folder check",
+      ]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+      mailboxState.listed = previous.listed;
+      mailboxState.folderSources = previous.folderSources;
+      mailboxState.folderDateUids = previous.folderDateUids;
     }
   });
 
