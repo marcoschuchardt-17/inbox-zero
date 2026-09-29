@@ -808,6 +808,32 @@ describe("createImapProvider", () => {
     mailboxState.fromUids = [];
   });
 
+  it("finds an archived message that matches the search", async () => {
+    mailboxState.archiveSource = [
+      "From: Sam <sam@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Please trash this",
+      "Date: Mon, 28 Sep 2026 13:00:00 +0000",
+      "Message-ID: <trash-me@example.com>",
+      "",
+      "This copy lives in Archive.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const inbox = await provider.getMessagesWithPagination({ maxResults: 20 });
+    const found = await provider.getMessagesWithPagination({
+      query: "Please trash",
+      maxResults: 20,
+    });
+
+    expect(inbox.messages.map((message) => message.id)).toEqual(["INBOX/1"]);
+    expect(found.messages.map((message) => message.subject)).toEqual([
+      "Please trash this",
+    ]);
+    expect(found.messages[0]?.id).toBe("Archive/9");
+    mailboxState.archiveSource = "";
+  });
+
   it("clears inbox stats for mail that is no longer in the mailbox", async () => {
     mailboxState.allUids = [4];
     const provider = createImapProvider(imapConfig(), logger);

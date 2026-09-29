@@ -124,11 +124,18 @@ export function createImapProvider(
         await storeSentMailbox({ config, logger });
       }
       const offset = Number(pageToken || "0");
-      const messages = await fetchMailboxMessages({
-        config,
-        logger,
-        maxResults: maxResults + offset,
-      });
+      const fetchLimit = maxResults + offset;
+      const messages = query
+        ? await fetchSearchableMailboxMessages({
+            config,
+            logger,
+            maxResults: fetchLimit,
+          })
+        : await fetchMailboxMessages({
+            config,
+            logger,
+            maxResults: fetchLimit,
+          });
       await dropStaleThreadCopies({
         emailAccountId: config.emailAccountId,
         messages,
@@ -2564,6 +2571,48 @@ function parseImapMessageRef(messageId: string) {
   const uid = Number(messageId);
   if (Number.isInteger(uid) && uid > 0) return { uid };
   return null;
+}
+
+const SEARCH_SKIPPED_MAILBOXES = new Set(["trash", "drafts", "junk", "spam"]);
+
+function isSearchableMailbox(mailbox: string) {
+  return !SEARCH_SKIPPED_MAILBOXES.has(mailbox.toLowerCase());
+}
+
+async function fetchSearchableMailboxMessages({
+  config,
+  logger,
+  maxResults,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  maxResults: number;
+}): Promise<ParsedImapMessage[]> {
+  const mailboxes = await mailboxNamesForRead({ config, logger });
+  const collected: ParsedImapMessage[] = [];
+  for (const [index, mailbox] of mailboxes.entries()) {
+    if (!isSearchableMailbox(mailbox)) continue;
+    try {
+      const messages = await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox,
+        maxResults,
+      });
+      collected.push(...messages);
+    } catch (error) {
+      if (index === 0) throw error;
+      if (isMissingImapMailbox(error)) continue;
+      logger.warn("Skipped IMAP folder while searching mail", {
+        error,
+        mailbox,
+      });
+    }
+  }
+  return collected.sort(
+    (left, right) =>
+      Number(right.internalDate || "0") - Number(left.internalDate || "0"),
+  );
 }
 
 async function mailboxNamesForRead({
