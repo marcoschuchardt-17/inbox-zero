@@ -3,7 +3,7 @@ import { withEmailProvider } from "@/utils/middleware";
 import { messageQuerySchema } from "@/app/api/messages/validation";
 import { GmailLabel } from "@/utils/gmail/label";
 import type { EmailProvider } from "@/utils/email/types";
-import { isGoogleProvider } from "@/utils/email/provider-types";
+import { isGoogleProvider, isImapProvider } from "@/utils/email/provider-types";
 import type { Logger } from "@/utils/logger";
 
 export type MessagesResponse = Awaited<ReturnType<typeof getMessages>>;
@@ -49,10 +49,13 @@ async function getMessages({
         pageToken: pageToken ?? undefined,
       });
 
-    // Filter messages based on provider-specific logic
     const incomingMessages = messages.filter((message) => {
-      // Provider-specific filtering
-      if (isGoogleProvider(emailProvider.name)) {
+      // Sent and draft rows are mail this account wrote. Rule tests stay on
+      // incoming mail, including a sent copy that is still in the inbox.
+      if (
+        isGoogleProvider(emailProvider.name) ||
+        isImapProvider(emailProvider.name)
+      ) {
         const isSent = message.labelIds?.includes(GmailLabel.SENT);
         const isDraft = message.labelIds?.includes(GmailLabel.DRAFT);
         const isInbox = message.labelIds?.includes(GmailLabel.INBOX);
