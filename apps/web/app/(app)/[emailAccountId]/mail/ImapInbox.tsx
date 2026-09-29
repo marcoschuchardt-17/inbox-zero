@@ -62,16 +62,29 @@ export function ImapInbox() {
   const extra = extraFolders.find(
     (item) => mailboxFolderId(item.id) === folder,
   );
-  const { data, error, isLoading, mutate } = useSWR<ThreadsListResponse>(
-    submittedSearch
-      ? `/api/threads?limit=30&view=list&q=${encodeURIComponent(submittedSearch)}`
-      : (selected?.query ??
-          (extra
-            ? `/api/threads?limit=30&view=list&folderId=${encodeURIComponent(extra.id)}`
-            : folders[0].query)),
-  );
-  const { showEmail, threadId: openThreadId } = useDisplayedEmail();
+  const listQuery = submittedSearch
+    ? `/api/threads?limit=30&view=list&q=${encodeURIComponent(submittedSearch)}`
+    : (selected?.query ??
+      (extra
+        ? `/api/threads?limit=30&view=list&folderId=${encodeURIComponent(extra.id)}`
+        : folders[0].query));
+  const { data, error, isLoading, mutate } =
+    useSWR<ThreadsListResponse>(listQuery);
   const [archiveError, setArchiveError] = useState("");
+  const [olderPages, setOlderPages] = useState<{
+    query: string;
+    threads: ThreadsListResponse["threads"];
+    nextPageToken?: string;
+  } | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderThreads =
+    olderPages?.query === listQuery ? olderPages.threads : [];
+  const nextPageToken =
+    olderPages?.query === listQuery
+      ? olderPages.nextPageToken
+      : data?.nextPageToken;
+  const visibleThreads = [...(data?.threads ?? []), ...olderThreads];
+  const { showEmail, threadId: openThreadId } = useDisplayedEmail();
 
   async function markOpenedThreadRead(threadId: string) {
     const response = await fetchWithAccount({
@@ -80,6 +93,27 @@ export function ImapInbox() {
       init: { method: "POST" },
     });
     if (response.ok) await mutate();
+  }
+
+  async function loadOlderMail() {
+    if (!nextPageToken) return;
+    setArchiveError("");
+    setLoadingOlder(true);
+    const response = await fetchWithAccount({
+      url: `${listQuery}&nextPageToken=${encodeURIComponent(nextPageToken)}`,
+      emailAccountId,
+    });
+    setLoadingOlder(false);
+    if (!response.ok) {
+      setArchiveError("Could not load older mail.");
+      return;
+    }
+    const page = (await response.json()) as ThreadsListResponse;
+    setOlderPages({
+      query: listQuery,
+      threads: [...olderThreads, ...(page.threads ?? [])],
+      nextPageToken: page.nextPageToken,
+    });
   }
 
   async function moveThread(
@@ -258,9 +292,9 @@ export function ImapInbox() {
         {archiveError ? (
           <p className="mt-3 text-sm text-destructive">{archiveError}</p>
         ) : null}
-        {data?.threads.length ? (
+        {visibleThreads.length ? (
           <ul className="mt-4 divide-y">
-            {data.threads.map((thread) => {
+            {visibleThreads.map((thread) => {
               const message = thread.messages.at(-1);
               const unread =
                 folder === "inbox" && message?.labelIds?.includes("UNREAD");
@@ -453,6 +487,20 @@ export function ImapInbox() {
               : emptyFolderCopy(folder)}
           </p>
         )}
+        {nextPageToken ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            disabled={loadingOlder}
+            onClick={() => {
+              loadOlderMail().catch(() => undefined);
+            }}
+          >
+            Older mail
+          </Button>
+        ) : null}
       </div>
     </LoadingContent>
   );

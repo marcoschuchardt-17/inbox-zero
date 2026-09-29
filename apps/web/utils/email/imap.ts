@@ -248,18 +248,23 @@ export function createImapProvider(
             isUnread: query.isUnread,
           });
         }
-        return {
-          messages: await fetchMailboxMessages({
-            config,
-            logger,
-            mailbox,
-            maxResults,
-          }),
-          nextPageToken: undefined,
-        };
+        return fetchMailboxMessagePage({
+          config,
+          logger,
+          mailbox,
+          maxResults,
+          beforeSequence: pageOffset(pageToken) || undefined,
+        });
       };
       if (query?.type === "sent") {
-        messages = await core.getSentMessages(maxResults);
+        const page = await fetchSentMessagePage({
+          config,
+          logger,
+          maxResults,
+          beforeSequence: pageOffset(pageToken) || undefined,
+        });
+        messages = page.messages;
+        nextPageToken = page.nextPageToken;
       } else if (mailbox) {
         try {
           const page = await loadMailbox();
@@ -1157,6 +1162,28 @@ async function fetchMailboxMessages({
   mailbox?: string;
   maxResults?: number;
 }): Promise<ParsedImapMessage[]> {
+  const page = await fetchMailboxMessagePage({
+    config,
+    logger,
+    mailbox,
+    maxResults,
+  });
+  return page.messages;
+}
+
+async function fetchMailboxMessagePage({
+  config,
+  logger,
+  mailbox,
+  maxResults = DEFAULT_PAGE_SIZE,
+  beforeSequence,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  mailbox?: string;
+  maxResults?: number;
+  beforeSequence?: number;
+}): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
   const client = createImapClient(config);
   await client.connect();
   try {
@@ -1165,12 +1192,14 @@ async function fetchMailboxMessages({
     try {
       // ImapFlow stores the selected mailbox on the client. The lock has no mailbox field.
       const openedMailbox = client.mailbox;
-      if (!openedMailbox) return [];
+      if (!openedMailbox) return { messages: [] };
       const messageCount = openedMailbox.exists;
-      if (!messageCount) return [];
-      const start = Math.max(1, messageCount - maxResults + 1);
+      if (!messageCount) return { messages: [] };
+      const end = beforeSequence ? beforeSequence - 1 : messageCount;
+      if (end < 1) return { messages: [] };
+      const start = Math.max(1, end - maxResults + 1);
       const messages: ParsedImapMessage[] = [];
-      for await (const message of client.fetch(`${start}:${messageCount}`, {
+      for await (const message of client.fetch(`${start}:${end}`, {
         uid: true,
         envelope: true,
         source: true,
@@ -1193,9 +1222,13 @@ async function fetchMailboxMessages({
         }
         messages.push(parsed);
       }
-      return messages.sort(
-        (a, b) => Number(a.internalDate || "0") - Number(b.internalDate || "0"),
-      );
+      return {
+        messages: messages.sort(
+          (a, b) =>
+            Number(a.internalDate || "0") - Number(b.internalDate || "0"),
+        ),
+        nextPageToken: start > 1 ? String(start) : undefined,
+      };
     } finally {
       lock.release();
     }
@@ -2363,20 +2396,36 @@ async function fetchSentMessages({
   logger: Logger;
   maxResults: number;
 }) {
+  const page = await fetchSentMessagePage({ config, logger, maxResults });
+  return page.messages;
+}
+
+async function fetchSentMessagePage({
+  config,
+  logger,
+  maxResults,
+  beforeSequence,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  maxResults: number;
+  beforeSequence?: number;
+}) {
   for (const mailbox of SENT_MAILBOXES) {
     try {
-      return await fetchMailboxMessages({
+      return await fetchMailboxMessagePage({
         config,
         logger,
         mailbox,
         maxResults,
+        beforeSequence,
       });
     } catch (error) {
       if (isMissingImapMailbox(error)) continue;
       throw error;
     }
   }
-  return [];
+  return { messages: [], nextPageToken: undefined };
 }
 
 async function findImapMessagesFromSender({

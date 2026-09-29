@@ -1297,6 +1297,64 @@ describe("createImapProvider", () => {
     mailboxState.exists = 1;
   });
 
+  it("returns the next page of older inbox mail", async () => {
+    mailboxState.exists = 3;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Oldest note",
+          "<oldest-note@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-02T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Middle note",
+          "<middle-note@example.com>",
+          "Wed, 02 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 3,
+        flags: [],
+        internalDate: "2026-09-03T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Newest note",
+          "<newest-note@example.com>",
+          "Thu, 03 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const first = await provider.getThreadsWithQuery({
+      maxResults: 1,
+      query: { type: "inbox" },
+    });
+    const second = await provider.getThreadsWithQuery({
+      maxResults: 1,
+      pageToken: first.nextPageToken,
+      query: { type: "inbox" },
+    });
+
+    expect(first.threads.map((thread) => thread.messages[0]?.subject)).toEqual([
+      "Newest note",
+    ]);
+    expect(first.nextPageToken).toBe("3");
+    expect(second.threads.map((thread) => thread.messages[0]?.subject)).toEqual(
+      ["Middle note"],
+    );
+    expect(second.nextPageToken).toBe("2");
+    mailboxState.inboxMessages = [];
+    mailboxState.exists = 1;
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
