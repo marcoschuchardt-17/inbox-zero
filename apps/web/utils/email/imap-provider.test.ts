@@ -867,7 +867,7 @@ describe("createImapProvider", () => {
 
   it("finds an archived message that matches the search", async () => {
     mailboxState.archiveSource = [
-      "From: Sam <sam@example.com>",
+      "From: Billing <billing@example.com>",
       "To: inbox.imap@example.com",
       "Subject: Please trash this",
       "Date: Mon, 28 Sep 2026 13:00:00 +0000",
@@ -896,6 +896,14 @@ describe("createImapProvider", () => {
       "Please trash this",
     ]);
     expect(found.messages[0]?.id).toBe("Archive/9");
+
+    const bySender = await provider.getMessagesWithPagination({
+      query: "billing@example.com",
+      maxResults: 20,
+    });
+    expect(bySender.messages.map((message) => message.subject)).toEqual([
+      "Please trash this",
+    ]);
     mailboxState.archiveSource = "";
   });
 

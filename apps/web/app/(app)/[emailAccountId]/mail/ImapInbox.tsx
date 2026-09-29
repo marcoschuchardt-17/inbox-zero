@@ -44,6 +44,8 @@ export function ImapInbox() {
   const { emailAccountId } = useAccount();
   const { onOpen: openCompose } = useComposeModal();
   const [folder, setFolder] = useState("inbox");
+  const [search, setSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
   const { data: labelList } = useSWR<LabelsResponse>("/api/labels");
   const labelNames = new Map(
@@ -61,10 +63,12 @@ export function ImapInbox() {
     (item) => mailboxFolderId(item.id) === folder,
   );
   const { data, error, isLoading, mutate } = useSWR<ThreadsListResponse>(
-    selected?.query ??
-      (extra
-        ? `/api/threads?limit=30&view=list&folderId=${encodeURIComponent(extra.id)}`
-        : folders[0].query),
+    submittedSearch
+      ? `/api/threads?limit=30&view=list&q=${encodeURIComponent(submittedSearch)}`
+      : (selected?.query ??
+          (extra
+            ? `/api/threads?limit=30&view=list&folderId=${encodeURIComponent(extra.id)}`
+            : folders[0].query)),
   );
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
   const [archiveError, setArchiveError] = useState("");
@@ -175,13 +179,48 @@ export function ImapInbox() {
               Inbox Zero
             </Link>
             <PageHeading>
-              {selected?.label ?? extra?.displayName ?? "Inbox"}
+              {submittedSearch
+                ? "Search"
+                : (selected?.label ?? extra?.displayName ?? "Inbox")}
             </PageHeading>
           </div>
           <Button type="button" size="sm" onClick={openCompose}>
             Compose
           </Button>
         </div>
+        <form
+          className="mt-3 flex max-w-md gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setArchiveError("");
+            setSubmittedSearch(search.trim());
+          }}
+        >
+          <input
+            aria-label="Search mail"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search mail"
+            className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
+          />
+          <Button type="submit" variant="outline" size="sm">
+            Search
+          </Button>
+          {submittedSearch ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearch("");
+                setSubmittedSearch("");
+                setArchiveError("");
+              }}
+            >
+              Clear
+            </Button>
+          ) : null}
+        </form>
         <div className="mt-3 flex flex-wrap gap-2">
           {folders.map((item) => (
             <Button
@@ -191,6 +230,7 @@ export function ImapInbox() {
               size="sm"
               onClick={() => {
                 setArchiveError("");
+                setSubmittedSearch("");
                 setFolder(item.id);
               }}
             >
@@ -207,6 +247,7 @@ export function ImapInbox() {
               size="sm"
               onClick={() => {
                 setArchiveError("");
+                setSubmittedSearch("");
                 setFolder(mailboxFolderId(item.id));
               }}
             >
@@ -306,7 +347,7 @@ export function ImapInbox() {
                       ))}
                     </select>
                   ) : null}
-                  {folder === "inbox" ? (
+                  {folder === "inbox" && !submittedSearch ? (
                     <>
                       <Button
                         type="button"
@@ -349,7 +390,7 @@ export function ImapInbox() {
                       ))}
                     </>
                   ) : null}
-                  {folder === "drafts" ? (
+                  {folder === "drafts" && !submittedSearch ? (
                     <>
                       <Button
                         type="button"
@@ -371,7 +412,8 @@ export function ImapInbox() {
                       </Button>
                     </>
                   ) : null}
-                  {folder === "archive" || folder === "trash" ? (
+                  {!submittedSearch &&
+                  (folder === "archive" || folder === "trash") ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -387,7 +429,7 @@ export function ImapInbox() {
                       Move to inbox
                     </Button>
                   ) : null}
-                  {extra ? (
+                  {extra && !submittedSearch ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -406,7 +448,9 @@ export function ImapInbox() {
           </ul>
         ) : (
           <p className="mt-4 text-sm text-muted-foreground">
-            {emptyFolderCopy(folder)}
+            {submittedSearch
+              ? "No mail matches that search."
+              : emptyFolderCopy(folder)}
           </p>
         )}
       </div>

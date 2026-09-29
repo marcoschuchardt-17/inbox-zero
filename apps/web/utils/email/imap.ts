@@ -143,12 +143,20 @@ export function createImapProvider(
         emailAccountId: config.emailAccountId,
         messages,
       });
-      const filtered = query
-        ? messages.filter((message) => {
-            const haystack =
-              `${message.subject}\n${message.snippet}\n${message.textPlain || ""}`.toLowerCase();
-            return haystack.includes(query.toLowerCase());
-          })
+      const needle = query?.trim().toLowerCase();
+      const filtered = needle
+        ? messages.filter((message) =>
+            [
+              message.subject,
+              message.snippet,
+              message.textPlain || "",
+              message.headers.from,
+              message.headers.to,
+            ]
+              .join("\n")
+              .toLowerCase()
+              .includes(needle),
+          )
         : messages;
       const slice = filtered.slice(offset, offset + maxResults);
       const nextPageToken =
