@@ -11,6 +11,10 @@ import {
   ensureImapMailboxRules,
   labelImapMessagesWithStaticRules,
 } from "@/utils/email/imap-mailbox-rules";
+import {
+  collectImapPollMessages,
+  highestImapUid,
+} from "@/utils/email/imap-poll";
 import type { Logger } from "@/utils/logger";
 
 export const maxDuration = 300;
@@ -71,15 +75,11 @@ async function runImapPoll(logger: Logger) {
         provider: "imap",
         logger,
       });
-      const page = await provider.getMailboxSyncPage({
-        after: account.lastSyncedAt ?? undefined,
+      const messages = await collectImapPollMessages(provider, {
+        after: account.lastSyncedAt,
         limit: env.IMAP_POLL_MESSAGE_LIMIT,
       });
-
-      const highestUid = page.upsertedMessages
-        .map((message) => Number(message.id))
-        .filter((id) => Number.isFinite(id))
-        .reduce((max, value) => (value > max ? value : max), 0);
+      const highestUid = highestImapUid(messages);
 
       await prisma.imapSmtpConfig.update({
         where: { emailAccountId: account.emailAccountId },
@@ -93,24 +93,21 @@ async function runImapPoll(logger: Logger) {
 
       try {
         await ensureImapMailboxRules(account.emailAccountId);
-        const recent = await provider.getMailboxSyncPage({
-          limit: env.IMAP_POLL_MESSAGE_LIMIT,
-        });
         labeled += await labelImapMessagesWithStaticRules({
           emailAccountId: account.emailAccountId,
-          messages: recent.upsertedMessages,
+          messages,
           provider,
           logger,
         });
         await applyImapStaticMailboxActions({
           emailAccountId: account.emailAccountId,
-          messages: recent.upsertedMessages,
+          messages,
           provider,
           logger,
         });
         await archiveBlockedImapSenders({
           emailAccountId: account.emailAccountId,
-          messages: recent.upsertedMessages,
+          messages,
           provider,
         });
       } catch (error) {
