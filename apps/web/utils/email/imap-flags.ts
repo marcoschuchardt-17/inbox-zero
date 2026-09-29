@@ -82,6 +82,17 @@ export function imapListLocation(mailbox: string) {
   return "folder";
 }
 
+export function imapListMessage<T extends { id: string }>(
+  messages: readonly T[],
+) {
+  const incoming = [...messages]
+    .reverse()
+    .find(
+      (message) => imapListLocation(imapMessageMailbox(message.id)) !== "sent",
+    );
+  return incoming ?? messages.at(-1);
+}
+
 export function imapSearchRestoreAction(messageId: string | null | undefined) {
   const mailbox = imapMessageMailbox(messageId);
   if (!mailbox) return null;

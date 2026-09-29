@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   imapListLocation,
+  imapListMessage,
   imapMessageMailbox,
   imapRowLabelIds,
   imapSearchRestoreAction,
@@ -45,6 +46,23 @@ describe("imap message mailbox", () => {
     expect(imapMessageMailbox("")).toBe("");
     expect(imapMessageMailbox("not-an-id")).toBe("");
     expect(imapSearchRestoreAction(undefined)).toBeNull();
+  });
+});
+
+describe("imapListMessage", () => {
+  it("shows the incoming copy when a sent reply is newer", () => {
+    expect(imapListMessage([{ id: "INBOX/22" }, { id: "Sent/9" }])?.id).toBe(
+      "INBOX/22",
+    );
+    expect(imapListMessage([{ id: "Receipts/4" }, { id: "Sent/4" }])?.id).toBe(
+      "Receipts/4",
+    );
+  });
+
+  it("keeps a sent message when that is the only copy", () => {
+    expect(imapListMessage([{ id: "Sent/9" }])?.id).toBe("Sent/9");
+    expect(imapListMessage([{ id: "Archive/10" }])?.id).toBe("Archive/10");
+    expect(imapListMessage([])).toBeUndefined();
   });
 });
 

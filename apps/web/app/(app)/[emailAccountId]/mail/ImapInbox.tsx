@@ -26,6 +26,7 @@ import { formatShortDate } from "@/utils/date";
 import { extractNameFromEmail, participant } from "@/utils/email";
 import {
   imapListLocation,
+  imapListMessage,
   imapMessageMailbox,
   imapSearchRestoreAction,
   imapThreadLabelIds,
@@ -347,7 +348,7 @@ export function ImapInbox() {
         {visibleThreads.length ? (
           <ul className="mt-4 divide-y">
             {visibleThreads.map((thread) => {
-              const message = thread.messages.at(-1);
+              const message = imapListMessage(thread.messages);
               const sender =
                 extractNameFromEmail(
                   participant(
