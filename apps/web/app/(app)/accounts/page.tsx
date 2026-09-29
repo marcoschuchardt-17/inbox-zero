@@ -26,6 +26,7 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { deleteEmailAccountAction } from "@/utils/actions/user";
 import { toastSuccess, toastError } from "@/components/Toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { env } from "@/env";
 import { prefixPath } from "@/utils/path";
 import { AddAccount } from "@/app/(app)/accounts/AddAccount";
 import { PageHeader } from "@/components/PageHeader";
@@ -66,7 +67,13 @@ export default function AccountsPage() {
               onAccountDeleted={mutate}
             />
           ))}
-          <AddAccount />
+          <AddAccount
+            helperText={
+              env.NEXT_PUBLIC_BYPASS_PREMIUM_CHECKS
+                ? "Add another mailbox."
+                : undefined
+            }
+          />
         </div>
       </LoadingContent>
     </PageWrapper>
