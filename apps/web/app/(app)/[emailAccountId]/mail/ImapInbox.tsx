@@ -74,6 +74,7 @@ export function ImapInbox() {
     action:
       | "archive"
       | "trash"
+      | "spam"
       | "unarchive"
       | "untrash"
       | "send-draft"
@@ -219,6 +220,15 @@ export function ImapInbox() {
                       >
                         Trash
                       </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => moveThread(thread.id, "spam")}
+                      >
+                        Spam
+                      </Button>
                     </>
                   ) : null}
                   {folder === "drafts" ? (
@@ -300,6 +310,7 @@ function moveError(
   action:
     | "archive"
     | "trash"
+    | "spam"
     | "unarchive"
     | "untrash"
     | "send-draft"
@@ -307,6 +318,7 @@ function moveError(
     | "restore-folder",
 ) {
   if (action === "trash") return "Could not move this email to Trash.";
+  if (action === "spam") return "Could not mark this email as spam.";
   if (action === "unarchive" || action === "untrash")
     return "Could not move this email to the inbox.";
   if (action === "send-draft") return "Could not send this draft.";

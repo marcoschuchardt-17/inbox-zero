@@ -144,6 +144,29 @@ describe("thread mail mutation batches", () => {
     ]);
   });
 
+  it("marks an IMAP thread as spam over HTTP", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "thread-1", messages: [{ id: "INBOX/1" }] }],
+        payload: { kind: "spam" },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/spam",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      { threadId: "thread-1", kind: "spam", status: "succeeded" },
+    ]);
+  });
+
   it("marks an IMAP thread unread over HTTP", async () => {
     mail.current = null;
     const result = await enqueueThreadMailMutationBatch(

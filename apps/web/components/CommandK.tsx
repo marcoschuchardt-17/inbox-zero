@@ -233,6 +233,43 @@ function CommandPaletteContent({
           }
         }
       : undefined,
+    markSpam:
+      threadId && isImapProvider(provider)
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
+              toastError({
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
+              });
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "spam" },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn't mark this email as spam",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+              showEmail(null);
+            } catch {
+              toastError({
+                description: "Couldn't mark this email as spam",
+              });
+            }
+          }
+        : undefined,
     markUnread:
       threadId && isImapProvider(provider)
         ? async () => {

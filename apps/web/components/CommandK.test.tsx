@@ -250,6 +250,22 @@ describe("CommandK side-panel actions", () => {
     expect(displayedEmail.showEmail).not.toHaveBeenCalled();
   });
 
+  it("marks an open IMAP message as spam through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.markSpam?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/spam",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith(null);
+  });
+
   it("marks an open IMAP message unread through the mailbox API", async () => {
     account.provider = "imap";
     mail.client = null;
