@@ -1154,6 +1154,37 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("leaves inbox mail outside the requested dates", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const inRange = await provider.getThreadsWithQuery({
+      query: {
+        type: "inbox",
+        after: new Date("2026-09-01T00:00:00.000Z"),
+        before: new Date("2026-09-29T00:00:00.000Z"),
+      },
+    });
+    expect(
+      inRange.threads.map((thread) => thread.messages[0]?.subject),
+    ).toEqual(["Welcome to the mailbox"]);
+
+    const tooLate = await provider.getThreadsWithQuery({
+      query: {
+        type: "inbox",
+        after: new Date("2026-10-01T00:00:00.000Z"),
+      },
+    });
+    expect(tooLate.threads).toEqual([]);
+
+    const tooEarly = await provider.getThreadsWithQuery({
+      query: {
+        type: "inbox",
+        before: new Date("2026-09-01T00:00:00.000Z"),
+      },
+    });
+    expect(tooEarly.threads).toEqual([]);
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",

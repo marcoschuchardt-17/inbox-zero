@@ -268,6 +268,13 @@ export function createImapProvider(
         if (query?.labelId && !message.labelIds?.includes(query.labelId)) {
           return false;
         }
+        const sentAt = new Date(message.date).getTime();
+        if (query?.after && sentAt < new Date(query.after).getTime()) {
+          return false;
+        }
+        if (query?.before && sentAt >= new Date(query.before).getTime()) {
+          return false;
+        }
         return true;
       });
       return { threads: groupToThreads(filtered).slice(0, maxResults) };
