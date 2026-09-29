@@ -233,7 +233,10 @@ export function ImapInbox() {
       error={error}
       errorComponent={
         connectionError ? (
-          <ImapConnectionError message={connectionError} />
+          <ImapConnectionError
+            message={connectionError}
+            emailAccountId={emailAccountId}
+          />
         ) : undefined
       }
     >
@@ -587,7 +590,17 @@ function imapConnectionErrorMessage(error: unknown) {
   return message === IMAP_CONNECTION_ERROR ? message : null;
 }
 
-function ImapConnectionError({ message }: { message: string }) {
+function ImapConnectionError({
+  message,
+  emailAccountId,
+}: {
+  message: string;
+  emailAccountId?: string;
+}) {
+  const settingsHref = emailAccountId
+    ? `/accounts/imap?emailAccountId=${emailAccountId}`
+    : "/accounts/imap";
+
   return (
     <div className="p-4">
       <Empty>
@@ -600,7 +613,7 @@ function ImapConnectionError({ message }: { message: string }) {
         </EmptyHeader>
         <EmptyContent>
           <Button asChild variant="outline" size="sm">
-            <Link href="/accounts/imap">Update mailbox settings</Link>
+            <Link href={settingsHref}>Update mailbox settings</Link>
           </Button>
         </EmptyContent>
       </Empty>

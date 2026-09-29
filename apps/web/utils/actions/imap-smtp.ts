@@ -17,14 +17,15 @@ const IMAP_CONNECT_TIMEOUT_MS = 10_000;
 export const testImapSmtpConnectionAction = actionClientUser
   .metadata({ name: "testImapSmtpConnection" })
   .inputSchema(testImapSmtpConnectionBody)
-  .action(async ({ parsedInput, ctx: { logger } }) => {
+  .action(async ({ parsedInput, ctx: { logger, userId } }) => {
+    const passwords = await passwordsForConnectionTest(parsedInput, userId);
     const imapClient = new ImapFlow({
       host: parsedInput.imapHost,
       port: parsedInput.imapPort,
       secure: parsedInput.imapSecure,
       auth: {
         user: parsedInput.imapUsername,
-        pass: parsedInput.imapPassword,
+        pass: passwords.imapPassword,
       },
       logger: false,
       connectionTimeout: IMAP_CONNECT_TIMEOUT_MS,
@@ -50,7 +51,7 @@ export const testImapSmtpConnectionAction = actionClientUser
       secure: parsedInput.smtpSecure,
       auth: {
         user: parsedInput.smtpUsername,
-        pass: parsedInput.smtpPassword,
+        pass: passwords.smtpPassword,
       },
       connectionTimeout: 10_000,
       socketTimeout: 10_000,
@@ -81,6 +82,7 @@ export const upsertImapSmtpAccountAction = actionClientUser
         id: true,
         userId: true,
         accountId: true,
+        imapSmtpConfig: { select: { id: true } },
       },
     });
 
@@ -88,7 +90,9 @@ export const upsertImapSmtpAccountAction = actionClientUser
       throw new SafeError("This email is already linked to another user.");
     }
 
-    const imapConfig = imapConfigFromInput(parsedInput);
+    const imapConfig = imapConfigFromInput(parsedInput, {
+      keepStoredPasswords: Boolean(existingEmailAccount?.imapSmtpConfig),
+    });
 
     if (existingEmailAccount?.userId === userId) {
       await prisma.account.update({
@@ -156,18 +160,69 @@ export const upsertImapSmtpAccountAction = actionClientUser
     return { emailAccountId: createdEmailAccountId, created: true };
   });
 
-function imapConfigFromInput(parsedInput: UpsertImapSmtpAccountBody) {
+function imapConfigFromInput(
+  parsedInput: UpsertImapSmtpAccountBody,
+  options: { keepStoredPasswords: boolean },
+) {
   return {
     imapHost: parsedInput.imapHost,
     imapPort: parsedInput.imapPort,
     imapSecure: parsedInput.imapSecure,
     imapUsername: parsedInput.imapUsername,
-    imapPassword: parsedInput.imapPassword,
+    ...passwordField(
+      "imapPassword",
+      parsedInput.imapPassword,
+      options.keepStoredPasswords,
+      "IMAP password is required.",
+    ),
     smtpHost: parsedInput.smtpHost,
     smtpPort: parsedInput.smtpPort,
     smtpSecure: parsedInput.smtpSecure,
     smtpUsername: parsedInput.smtpUsername,
-    smtpPassword: parsedInput.smtpPassword,
+    ...passwordField(
+      "smtpPassword",
+      parsedInput.smtpPassword,
+      options.keepStoredPasswords,
+      "SMTP password is required.",
+    ),
     syncFolder: parsedInput.syncFolder,
   };
+}
+
+function passwordField(
+  key: "imapPassword" | "smtpPassword",
+  value: string,
+  keepStoredPassword: boolean,
+  requiredMessage: string,
+) {
+  if (value) return { [key]: value };
+  if (keepStoredPassword) return {};
+  throw new SafeError(requiredMessage);
+}
+
+async function passwordsForConnectionTest(
+  parsedInput: {
+    emailAccountId?: string;
+    imapPassword: string;
+    smtpPassword: string;
+  },
+  userId: string,
+) {
+  const stored =
+    (!parsedInput.imapPassword || !parsedInput.smtpPassword) &&
+    parsedInput.emailAccountId
+      ? await prisma.imapSmtpConfig.findFirst({
+          where: {
+            emailAccountId: parsedInput.emailAccountId,
+            emailAccount: { userId },
+          },
+          select: { imapPassword: true, smtpPassword: true },
+        })
+      : null;
+
+  const imapPassword = parsedInput.imapPassword || stored?.imapPassword || "";
+  const smtpPassword = parsedInput.smtpPassword || stored?.smtpPassword || "";
+  if (!imapPassword) throw new SafeError("IMAP password is required.");
+  if (!smtpPassword) throw new SafeError("SMTP password is required.");
+  return { imapPassword, smtpPassword };
 }
