@@ -1056,6 +1056,48 @@ describe("createImapProvider", () => {
     expect(parsed.html).toContain("The mailbox is ready.");
   });
 
+  it("keeps the other recipients on a rule draft", async () => {
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+
+    await provider.draftEmail(
+      {
+        ...message,
+        headers: {
+          ...message.headers,
+          from: "Sam <sam@example.com>",
+          "reply-to": "list@example.com",
+          to: "owner@example.com, Ada <ada@example.com>",
+          cc: "copy@example.com",
+        },
+      },
+      {
+        content: "Thanks, I will reply.",
+        cc: "extra@example.com",
+        bcc: "hidden@example.com",
+      },
+      "owner@example.com",
+    );
+
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.to?.map((address) => address.address)).toEqual([
+      "list@example.com",
+    ]);
+    expect(parsed.cc?.map((address) => address.address).sort()).toEqual([
+      "ada@example.com",
+      "copy@example.com",
+      "extra@example.com",
+    ]);
+    expect(parsed.bcc?.map((address) => address.address)).toEqual([
+      "hidden@example.com",
+    ]);
+    expect(parsed.cc?.map((address) => address.address)).not.toContain(
+      "owner@example.com",
+    );
+  });
+
   it("counts messages in the inbox and how many are unread", async () => {
     mailboxState.exists = 4;
     mailboxState.unseen = [2, 3];

@@ -16,6 +16,11 @@ import {
 } from "@/utils/email";
 import { SafeError } from "@/utils/error";
 import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
+import {
+  buildReplyAllRecipients,
+  formatCcList,
+  mergeAndDedupeRecipients,
+} from "@/utils/email/reply-all";
 import { formatReplySubject } from "@/utils/email/subject";
 import { forwardEmailHtml, forwardEmailSubject } from "@/utils/gmail/forward";
 import { createReplyContent } from "@/utils/gmail/reply";
@@ -2357,7 +2362,10 @@ function buildDraftMessage({
   };
   from: string;
 }) {
-  const to = args.to || email.headers.from;
+  const recipients = buildReplyAllRecipients(email.headers, args.to, from);
+  const to = recipients.to;
+  const cc = formatCcList(mergeAndDedupeRecipients(recipients.cc, args.cc));
+  const bcc = formatCcList(mergeAndDedupeRecipients([], args.bcc));
   const subject =
     args.subject ||
     (email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject}`);
@@ -2372,8 +2380,8 @@ function buildDraftMessage({
   const headers = [
     `From: ${from}`,
     `To: ${to}`,
-    ...(args.cc ? [`Cc: ${args.cc}`] : []),
-    ...(args.bcc ? [`Bcc: ${args.bcc}`] : []),
+    ...(cc ? [`Cc: ${cc}`] : []),
+    ...(bcc ? [`Bcc: ${bcc}`] : []),
     `Subject: ${subject}`,
     ...(messageId
       ? [`In-Reply-To: ${messageId}`, `References: ${references}`]
