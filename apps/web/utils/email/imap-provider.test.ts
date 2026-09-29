@@ -891,6 +891,88 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("returns recent mail that has a file and skips mail without one", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+      archiveSource: mailboxState.archiveSource,
+      trashSource: mailboxState.trashSource,
+    };
+    const newerFile = archivedAttachment()
+      .replace("Subject: File", "Subject: Newer file")
+      .replace(
+        "Message-ID: <file@example.com>",
+        "Message-ID: <newer-file@example.com>",
+      );
+    const olderFile = archivedAttachment()
+      .replace("Subject: File", "Subject: Older file")
+      .replace(
+        "Message-ID: <file@example.com>",
+        "Message-ID: <older-file@example.com>",
+      );
+    mailboxState.exists = 3;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        source: rawMessage,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-27T12:00:00.000Z",
+      },
+      {
+        uid: 2,
+        source: newerFile,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T12:00:00.000Z",
+      },
+      {
+        uid: 3,
+        source: olderFile,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+      },
+    ];
+    mailboxState.archiveSource = archivedAttachment();
+    mailboxState.trashSource = archivedAttachment().replace(
+      "Subject: File",
+      "Subject: Trashed file",
+    );
+
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const first = await provider.getMessagesWithAttachments({
+        maxResults: 1,
+      });
+
+      expect(first.messages.map((message) => message.subject)).toEqual([
+        "Newer file",
+      ]);
+      expect(first.messages[0]?.attachments[0]?.filename).toBe("note.txt");
+      expect(first.nextPageToken).toBe("1");
+
+      const second = await provider.getMessagesWithAttachments({
+        maxResults: 1,
+        pageToken: first.nextPageToken,
+      });
+      expect(second.messages.map((message) => message.subject)).toEqual([
+        "File",
+      ]);
+
+      const all = await provider.getMessagesWithAttachments({
+        maxResults: 20,
+      });
+      expect(all.messages.map((message) => message.subject)).toEqual([
+        "Newer file",
+        "File",
+        "Older file",
+      ]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+      mailboxState.archiveSource = previous.archiveSource;
+      mailboxState.trashSource = previous.trashSource;
+    }
+  });
+
   it("reads the conversation messages used to draft a reply", async () => {
     const provider = createImapProvider(imapConfig(), logger);
     const [message] = await provider.getInboxMessages(5);

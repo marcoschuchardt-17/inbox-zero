@@ -51,6 +51,9 @@ type ParsedImapMessage = ParsedMessage & {
 
 const DEFAULT_PAGE_SIZE = 20;
 const SEARCH_MATCH_LIMIT = 200;
+// A filing preview only needs recent files, so each folder is scanned this far
+// instead of downloading the whole mailbox.
+const ATTACHMENT_SCAN_LIMIT = 100;
 
 export function createImapProvider(
   config: ImapConfig,
@@ -183,6 +186,13 @@ export function createImapProvider(
       });
       return groupToThreads(messages).slice(0, Math.max(maxThreads, 0));
     },
+    getMessagesWithAttachments: async ({ maxResults = 20, pageToken }) =>
+      findImapMessagesWithAttachments({
+        config,
+        logger,
+        maxResults,
+        pageToken,
+      }),
     getThread: async (threadId: string) => {
       const collected = await collectThreadCopies({
         config,
@@ -3066,6 +3076,61 @@ const SEARCH_SKIPPED_MAILBOXES = new Set(["trash", "drafts", "junk", "spam"]);
 
 function isSearchableMailbox(mailbox: string) {
   return !SEARCH_SKIPPED_MAILBOXES.has(mailbox.toLowerCase());
+}
+
+async function findImapMessagesWithAttachments({
+  config,
+  logger,
+  maxResults,
+  pageToken,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  maxResults: number;
+  pageToken?: string;
+}): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
+  const limit = Math.max(maxResults, 0);
+  const offset = pageOffset(pageToken);
+  if (limit === 0) return { messages: [] };
+
+  const mailboxes = (await mailboxNamesForRead({ config, logger })).filter(
+    isSearchableMailbox,
+  );
+  const found: ParsedImapMessage[] = [];
+  const seen = new Set<string>();
+  const scanLimit = Math.max(offset + limit, ATTACHMENT_SCAN_LIMIT);
+  for (const [index, mailbox] of mailboxes.entries()) {
+    try {
+      const messages = await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox,
+        maxResults: scanLimit,
+      });
+      for (const message of messages) {
+        if (!message.hasAttachment || seen.has(message.id)) continue;
+        seen.add(message.id);
+        found.push(message);
+      }
+    } catch (error) {
+      if (index === 0) throw error;
+      if (isMissingImapMailbox(error)) continue;
+      logger.warn("Skipped IMAP folder while reading attachments", {
+        error,
+        mailbox,
+      });
+    }
+  }
+
+  found.sort(
+    (left, right) =>
+      Number(right.internalDate || "0") - Number(left.internalDate || "0"),
+  );
+  return {
+    messages: found.slice(offset, offset + limit),
+    nextPageToken:
+      offset + limit < found.length ? String(offset + limit) : undefined,
+  };
 }
 
 async function findImapMessagesWithParticipant({
