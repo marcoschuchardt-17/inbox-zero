@@ -612,6 +612,43 @@ describe("createImapProvider", () => {
     );
   });
 
+  it("keeps an inline image attached to the message it was inserted in", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+    const content = Buffer.from("hello image").toString("base64");
+
+    await provider.sendEmailWithHtml({
+      to: "sam@example.com",
+      subject: "Photo",
+      messageHtml: '<p>See <img src="cid:photo@inboxzero.local"></p>',
+      attachments: [
+        {
+          filename: "photo.png",
+          content,
+          contentType: "image/png",
+          disposition: "inline",
+          contentId: "photo@inboxzero.local",
+        },
+      ],
+    });
+
+    expect(sentMail[0]?.attachments).toEqual([
+      expect.objectContaining({
+        filename: "photo.png",
+        content,
+        cid: "photo@inboxzero.local",
+        contentDisposition: "inline",
+      }),
+    ]);
+    const parsed = await new PostalMime().parse(String(appended[0]?.raw));
+    expect(parsed.attachments?.[0]).toMatchObject({
+      filename: "photo.png",
+      disposition: "inline",
+      contentId: "<photo@inboxzero.local>",
+    });
+  });
+
   it("keeps a file on the sent copy when a rule sends mail", async () => {
     sentMail.length = 0;
     appended.length = 0;
@@ -2586,6 +2623,53 @@ describe("createImapProvider", () => {
       bcc: "hidden@example.com",
     });
     expect(String(appended.at(-1)?.raw)).toContain("Bcc: hidden@example.com");
+    mailboxState.draftSource = "";
+  });
+
+  it("sends an inline image that was saved on a draft", async () => {
+    sentMail.length = 0;
+    appended.length = 0;
+    mailboxState.draftSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Photo",
+      "Date: Mon, 28 Sep 2026 16:00:00 +0000",
+      "Message-ID: <draft-photo@example.com>",
+      "MIME-Version: 1.0",
+      'Content-Type: multipart/mixed; boundary="bound"',
+      "",
+      "--bound",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      '<p>See <img src="cid:photo@inboxzero.local"></p>',
+      "--bound",
+      'Content-Type: image/png; name="photo.png"',
+      'Content-Disposition: inline; filename="photo.png"',
+      "Content-Transfer-Encoding: base64",
+      "Content-ID: <photo@inboxzero.local>",
+      "",
+      "aGVsbG8=",
+      "--bound--",
+      "",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const listed = await provider.getThreadsWithQuery({
+      query: { type: "drafts" },
+    });
+    expect(
+      listed.threads[0]?.messages[0]?.inline[0]?.headers["content-id"],
+    ).toBe("photo@inboxzero.local");
+
+    await provider.sendDraft(listed.threads[0]?.id || "");
+
+    expect(sentMail.at(-1)?.attachments).toEqual([
+      expect.objectContaining({
+        filename: "photo.png",
+        cid: "photo@inboxzero.local",
+        contentDisposition: "inline",
+      }),
+    ]);
     mailboxState.draftSource = "";
   });
 

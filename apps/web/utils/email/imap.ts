@@ -32,7 +32,7 @@ import type {
 import type { Logger } from "@/utils/logger";
 import prisma from "@/utils/prisma";
 import type { ParsedMessage } from "@/utils/types";
-import type { SendEmailBody } from "@/utils/types/mail";
+import { toMailerAttachments, type SendEmailBody } from "@/utils/types/mail";
 
 type ImapConfig = {
   emailAccountId: string;
@@ -57,6 +57,8 @@ type ParsedAttachment = {
   mimeType: string;
   size: number;
   content: Uint8Array;
+  contentId?: string;
+  disposition?: "attachment" | "inline";
 };
 
 type ParsedImapMessage = ParsedMessage & {
@@ -556,12 +558,7 @@ export function createImapProvider(
         messageId,
         inReplyTo: body.replyToEmail?.headerMessageId,
         references,
-        attachments: body.attachments?.map((attachment) => ({
-          filename: attachment.filename,
-          content: attachment.content,
-          encoding: "base64",
-          contentType: attachment.contentType,
-        })),
+        attachments: toMailerAttachments(body.attachments),
       });
       const savedId = result.messageId || messageId;
       await saveSentCopy({
@@ -696,6 +693,8 @@ export function createImapProvider(
         filename: attachment.filename,
         content: Buffer.from(attachment.content).toString("base64"),
         contentType: attachment.mimeType,
+        disposition: attachment.disposition,
+        contentId: attachment.contentId,
       }));
       const result = await transport.sendMail({
         from: mailboxFrom(config),
@@ -708,12 +707,7 @@ export function createImapProvider(
         messageId,
         inReplyTo,
         references,
-        attachments: attachments?.map((attachment) => ({
-          filename: attachment.filename,
-          content: attachment.content,
-          encoding: "base64" as const,
-          contentType: attachment.contentType,
-        })),
+        attachments: toMailerAttachments(attachments),
       });
       const savedId = result.messageId || messageId;
       await saveSentCopy({
@@ -812,6 +806,8 @@ export function createImapProvider(
           filename: attachment.filename,
           content: Buffer.from(attachment.content).toString("base64"),
           contentType: attachment.mimeType,
+          disposition: attachment.disposition,
+          contentId: attachment.contentId,
         })),
       });
       return { messageId: sent.messageId };
@@ -1715,14 +1711,37 @@ async function parseImapMessage(
     const content = attachment.content
       ? new Uint8Array(attachment.content)
       : new Uint8Array();
+    const contentId = attachment.contentId?.trim().replace(/^<|>$/g, "").trim();
+    const disposition =
+      attachment.disposition === "inline" ||
+      (Boolean(contentId) && attachment.related)
+        ? "inline"
+        : attachment.disposition === "attachment"
+          ? "attachment"
+          : undefined;
     return {
       id: `${uid}:${index}`,
       filename: attachment.filename || `attachment-${index + 1}`,
       mimeType: attachment.mimeType || "application/octet-stream",
       size: content.byteLength,
       content,
+      contentId: contentId || undefined,
+      disposition,
     };
   });
+  const visibleAttachments = attachments.map((attachment) => ({
+    attachmentId: attachment.id,
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    headers: {
+      "content-description": attachment.filename,
+      "content-disposition": attachment.disposition,
+      "content-id": attachment.contentId || attachment.id,
+      "content-transfer-encoding": "base64",
+      "content-type": attachment.mimeType,
+    },
+  }));
   const historyId = String((internalDate || new Date()).getTime());
   const threadKey = imapThreadKey(parsed, subject, uid);
 
@@ -1738,19 +1757,10 @@ async function parseImapMessage(
     textHtml: htmlBody || undefined,
     bodyContentType: htmlBody ? "html" : "text",
     hasAttachment: attachments.length > 0,
-    attachments: attachments.map((attachment) => ({
-      attachmentId: attachment.id,
-      filename: attachment.filename,
-      mimeType: attachment.mimeType,
-      size: attachment.size,
-      headers: {
-        "content-description": attachment.filename,
-        "content-id": attachment.id,
-        "content-transfer-encoding": "base64",
-        "content-type": attachment.mimeType,
-      },
-    })),
-    inline: [],
+    attachments: visibleAttachments,
+    inline: visibleAttachments.filter(
+      (attachment) => attachment.headers["content-disposition"] === "inline",
+    ),
     labelIds: withMailboxRole(imapFlagsToLabelIds(flags), mailbox),
     headers: {
       from,
