@@ -4,6 +4,8 @@ import {
   imapListMessage,
   imapMessageIsStarred,
   imapMessageIsUnread,
+  imapThreadIsStarred,
+  imapThreadIsUnread,
   imapMessageMailbox,
   imapRowLabelIds,
   imapSearchRestoreAction,
@@ -33,6 +35,18 @@ describe("imapMessageIsUnread", () => {
   });
 });
 
+describe("imapThreadIsUnread", () => {
+  it("marks the thread unread when an older copy has not been seen", () => {
+    expect(
+      imapThreadIsUnread([{ labelIds: ["UNREAD"] }, { labelIds: ["FYI"] }]),
+    ).toBe(true);
+  });
+
+  it("leaves the thread read when every copy has been seen", () => {
+    expect(imapThreadIsUnread([{ labelIds: ["FYI"] }])).toBe(false);
+  });
+});
+
 describe("imapMessageIsStarred", () => {
   it("treats a flagged message as starred", () => {
     expect(imapMessageIsStarred(["INBOX", "STARRED"])).toBe(true);
@@ -41,6 +55,18 @@ describe("imapMessageIsStarred", () => {
   it("leaves an unflagged message unmarked", () => {
     expect(imapMessageIsStarred(["INBOX", "UNREAD"])).toBe(false);
     expect(imapMessageIsStarred(undefined)).toBe(false);
+  });
+});
+
+describe("imapThreadIsStarred", () => {
+  it("marks the thread starred when an older copy is flagged", () => {
+    expect(
+      imapThreadIsStarred([{ labelIds: ["STARRED"] }, { labelIds: ["INBOX"] }]),
+    ).toBe(true);
+  });
+
+  it("leaves the thread unstarred when no copy is flagged", () => {
+    expect(imapThreadIsStarred([{ labelIds: ["UNREAD"] }])).toBe(false);
   });
 });
 

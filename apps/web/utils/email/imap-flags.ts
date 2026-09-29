@@ -43,10 +43,22 @@ export function imapMessageIsUnread(
   return labelIds?.includes("UNREAD") ?? false;
 }
 
+export function imapThreadIsUnread(
+  messages: readonly { labelIds?: readonly string[] | null }[],
+) {
+  return messages.some((message) => imapMessageIsUnread(message.labelIds));
+}
+
 export function imapMessageIsStarred(
   labelIds: readonly string[] | null | undefined,
 ) {
   return labelIds?.includes("STARRED") ?? false;
+}
+
+export function imapThreadIsStarred(
+  messages: readonly { labelIds?: readonly string[] | null }[],
+) {
+  return messages.some((message) => imapMessageIsStarred(message.labelIds));
 }
 
 export function imapMessageMailbox(messageId: string | null | undefined) {

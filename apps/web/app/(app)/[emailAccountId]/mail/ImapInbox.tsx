@@ -27,9 +27,10 @@ import { extractNameFromEmail, participant } from "@/utils/email";
 import {
   imapListLocation,
   imapListMessage,
-  imapMessageIsStarred,
   imapMessageIsUnread,
   imapMessageMailbox,
+  imapThreadIsStarred,
+  imapThreadIsUnread,
   imapSearchRestoreAction,
   imapThreadLabelIds,
 } from "@/utils/email/imap-flags";
@@ -405,8 +406,8 @@ export function ImapInbox() {
               const messageInInbox = submittedSearch
                 ? location === "inbox"
                 : folder === "inbox";
-              const unread = imapMessageIsUnread(message?.labelIds);
-              const starred = imapMessageIsStarred(message?.labelIds);
+              const unread = imapThreadIsUnread(thread.messages);
+              const starred = imapThreadIsStarred(thread.messages);
               const searchRestore = submittedSearch
                 ? imapSearchRestoreAction(message?.id)
                 : null;
@@ -426,10 +427,18 @@ export function ImapInbox() {
                         threadId: thread.id,
                         messageId: message?.id,
                       });
-                      if (unread && message) {
-                        markOpenedThreadRead(
-                          thread.id,
-                          messageInInbox ? undefined : message.id,
+                      if (unread) {
+                        const unreadIds = messageInInbox
+                          ? [undefined]
+                          : thread.messages
+                              .filter((item) =>
+                                imapMessageIsUnread(item.labelIds),
+                              )
+                              .map((item) => item.id);
+                        Promise.all(
+                          unreadIds.map((id) =>
+                            markOpenedThreadRead(thread.id, id),
+                          ),
                         ).catch(() => undefined);
                       }
                     }}
