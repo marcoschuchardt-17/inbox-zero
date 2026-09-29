@@ -733,15 +733,12 @@ export function createImapProvider(
       });
     },
     markNotSpam: async (threadId: string) => {
-      const messages = await fetchMailboxMessages({
+      const matches = await messagesMatchingThread({
         config,
         logger,
         mailbox: "Junk",
-        maxResults: 100,
+        threadId,
       });
-      const matches = messages.filter(
-        (message) => message.threadId === threadId,
-      );
       if (!matches.length) throw new SafeError("Thread not found");
       await Promise.all(
         matches.map((message) =>
@@ -806,15 +803,12 @@ export function createImapProvider(
         await core.markNotSpam(threadId);
         return;
       }
-      const messages = await fetchMailboxMessages({
+      const matches = await messagesMatchingThread({
         config,
         logger,
         mailbox: sourceMailbox,
-        maxResults: 100,
+        threadId,
       });
-      const matches = messages.filter(
-        (message) => message.threadId === threadId,
-      );
       if (!matches.length) throw new SafeError("Thread not found");
       const destination = config.syncFolder || "INBOX";
       await Promise.all(
@@ -1950,13 +1944,12 @@ async function moveThreadBetweenMailboxes({
   sourceMailbox: string;
   destinationMailbox: string;
 }) {
-  const messages = await fetchMailboxMessages({
+  const matches = await messagesMatchingThread({
     config,
     logger,
     mailbox: sourceMailbox,
-    maxResults: 100,
+    threadId,
   });
-  const matches = messages.filter((message) => message.threadId === threadId);
   if (!matches.length) throw new SafeError("Thread not found");
   await Promise.all(
     matches.map((message) =>
@@ -2252,6 +2245,115 @@ function messageIdsIn(value?: string) {
   return value.split(/\s+/).filter(Boolean);
 }
 
+async function messagesMatchingThread({
+  config,
+  logger,
+  mailbox,
+  threadId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  mailbox: string;
+  threadId: string;
+}) {
+  const needle = messageIdNeedle(threadId);
+  const messages = needle
+    ? await fetchMailboxThreadMatches({
+        config,
+        logger,
+        mailbox,
+        needle,
+      })
+    : await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox,
+        maxResults: 100,
+      });
+  return messages.filter((message) =>
+    messageMatchesThreadId(message, threadId),
+  );
+}
+
+async function fetchMailboxThreadMatches({
+  config,
+  logger,
+  mailbox,
+  needle,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  mailbox: string;
+  needle: string;
+}): Promise<ParsedImapMessage[]> {
+  const client = createImapClient(config);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const uids = new Set<number>();
+      for (const header of ["Message-ID", "References", "In-Reply-To"]) {
+        const searched = await client.search(
+          { header: { [header]: needle } },
+          { uid: true },
+        );
+        for (const uid of Array.isArray(searched) ? searched : []) {
+          if (typeof uid === "number") uids.add(uid);
+        }
+      }
+      const pageUids = [...uids];
+      if (!pageUids.length) return [];
+      const wanted = new Set(pageUids.map(String));
+      const messages: ParsedImapMessage[] = [];
+      for await (const message of client.fetch(
+        pageUids.join(","),
+        {
+          uid: true,
+          source: true,
+          flags: true,
+          internalDate: true,
+        },
+        { uid: true },
+      )) {
+        if (!wanted.has(String(message.uid)) || !message.source) continue;
+        const parsed = await parseImapMessage(
+          message.uid,
+          message.source,
+          message.flags,
+          message.internalDate,
+          mailbox,
+        );
+        if (
+          isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
+          !parsed.labelIds?.includes("INBOX")
+        ) {
+          parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+        }
+        messages.push(parsed);
+      }
+      return messages;
+    } finally {
+      lock.release();
+    }
+  } catch (error) {
+    if (isMissingImapMailbox(error)) {
+      throw new SafeError("IMAP mailbox not found");
+    }
+    logger.error("Failed fetching IMAP messages", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to read IMAP mailbox");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+function messageIdNeedle(threadId: string) {
+  if (!threadId.includes("@")) return "";
+  return threadId.trim().replace(/^<|>$/g, "");
+}
+
 async function collectThreadCopies({
   config,
   logger,
@@ -2266,11 +2368,11 @@ async function collectThreadCopies({
   for (const [index, mailbox] of mailboxes.entries()) {
     let messages: ParsedImapMessage[] = [];
     try {
-      messages = await fetchMailboxMessages({
+      messages = await messagesMatchingThread({
         config,
         logger,
         mailbox,
-        maxResults: 100,
+        threadId,
       });
     } catch (error) {
       if (index === 0) throw error;
@@ -2281,7 +2383,6 @@ async function collectThreadCopies({
       });
     }
     for (const message of messages) {
-      if (!messageMatchesThreadId(message, threadId)) continue;
       collected.push({ ...message, _mailbox: mailbox });
     }
   }

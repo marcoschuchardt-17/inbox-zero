@@ -1048,6 +1048,52 @@ describe("createImapProvider", () => {
     mailboxState.exists = 1;
   });
 
+  it("opens a thread that is older than the newest page", async () => {
+    mailboxState.exists = 103;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-08-01T12:00:00.000Z",
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Buried parent",
+          "Date: Sat, 01 Aug 2026 12:00:00 +0000",
+          "Message-ID: <buried-parent@example.com>",
+          "",
+          "The older note.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-08-02T12:00:00.000Z",
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Re: Buried parent",
+          "Date: Sun, 02 Aug 2026 12:00:00 +0000",
+          "Message-ID: <buried-reply@example.com>",
+          "In-Reply-To: <buried-parent@example.com>",
+          "References: <buried-parent@example.com>",
+          "",
+          "The older reply.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("<buried-parent@example.com>");
+
+    expect(thread.messages.map((message) => message.subject)).toEqual([
+      "Buried parent",
+      "Re: Buried parent",
+    ]);
+    mailboxState.inboxMessages = [];
+    mailboxState.exists = 1;
+  });
+
   it("clears inbox stats for mail that is no longer in the mailbox", async () => {
     mailboxState.allUids = [4];
     const provider = createImapProvider(imapConfig(), logger);
@@ -1907,6 +1953,40 @@ function sourcesForOpenedMailbox() {
         source: mailboxState.sentSource,
         flags: ["\\Seen"],
         internalDate: "2026-09-28T14:00:00.000Z",
+      },
+    ];
+  }
+  if (mailboxState.opened === "Trash" && mailboxState.trashSource) {
+    return [
+      {
+        uid: 12,
+        source: mailboxState.trashSource,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T15:00:00.000Z",
+      },
+    ];
+  }
+  if (mailboxState.opened === "Drafts" && mailboxState.draftSource) {
+    return [
+      {
+        uid: 13,
+        source: mailboxState.draftSource,
+        flags: ["\\Draft", "\\Seen"],
+        internalDate: "2026-09-28T16:00:00.000Z",
+      },
+    ];
+  }
+  const folderSource = mailboxState.folderSources[mailboxState.opened];
+  if (folderSource) {
+    const source =
+      typeof folderSource === "string" ? folderSource : folderSource.source;
+    const uid = typeof folderSource === "string" ? 14 : folderSource.uid;
+    return [
+      {
+        uid,
+        source,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T17:00:00.000Z",
       },
     ];
   }
