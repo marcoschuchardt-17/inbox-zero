@@ -91,7 +91,7 @@ export async function runImapClean({
   return { jobId: job.id };
 }
 
-async function applyImapCleanAction({
+export async function applyImapCleanAction({
   action,
   emailProvider,
   ownerEmail,
@@ -107,4 +107,20 @@ async function applyImapCleanAction({
     return;
   }
   await emailProvider.archiveThread(threadId, ownerEmail);
+}
+
+export async function undoImapClean({
+  action,
+  emailProvider,
+  threadId,
+}: {
+  action: CleanInboxBody["action"];
+  emailProvider: EmailProvider;
+  threadId: string;
+}) {
+  if (action === CleanAction.MARK_READ) {
+    await emailProvider.markReadThread(threadId, false);
+    return;
+  }
+  await emailProvider.unarchiveThread(threadId);
 }

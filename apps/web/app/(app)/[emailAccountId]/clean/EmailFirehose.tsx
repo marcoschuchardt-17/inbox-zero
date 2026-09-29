@@ -14,6 +14,7 @@ export function EmailFirehose({
   threads,
   stats,
   action,
+  streamEnabled,
 }: {
   threads: CleanThread[];
   stats: {
@@ -21,18 +22,29 @@ export function EmailFirehose({
     done: number;
   };
   action: CleanAction;
+  streamEnabled: boolean;
 }) {
   const { userEmail, emailAccountId } = useAccount();
 
   const [isPaused, _setIsPaused] = useState(false);
   const [userHasScrolled, setUserHasScrolled] = useState(false);
-  const [tab] = useQueryState("tab", parseAsString.withDefault("archived"));
+  const [tab, setTab] = useQueryState(
+    "tab",
+    parseAsString.withDefault("archived"),
+  );
+  const listFilter = tab === "keep" ? "keep" : "archived";
   // Track undo state for all threads
   const [undoStates, setUndoStates] = useState<
     Record<string, "undoing" | "undone">
   >({});
 
-  const { emails } = useEmailStream(emailAccountId, isPaused, threads, tab);
+  const { emails } = useEmailStream(
+    emailAccountId,
+    isPaused,
+    threads,
+    listFilter,
+    streamEnabled,
+  );
 
   // For virtualization
   const parentRef = useRef<HTMLDivElement>(null);
@@ -87,7 +99,13 @@ export function EmailFirehose({
 
   return (
     <div className="flex flex-col space-y-4">
-      <Tabs defaultValue="done" className="w-full">
+      <Tabs
+        value={listFilter === "keep" ? "keep" : "done"}
+        onValueChange={(value) => {
+          setTab(value === "keep" ? "keep" : "archived");
+        }}
+        className="w-full"
+      >
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="done">
             {action === CleanAction.ARCHIVE ? "Archived" : "Marked read"}

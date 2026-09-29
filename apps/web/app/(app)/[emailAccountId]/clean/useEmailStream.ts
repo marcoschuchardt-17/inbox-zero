@@ -17,6 +17,7 @@ export function useEmailStream(
   initialPaused = false,
   initialThreads: CleanThread[] = [],
   filter?: string | null,
+  enabled = true,
 ) {
   // Initialize emailsMap with sorted threads and proper dates
   const [{ emailsMap, emailOrder }, setEmailState] = useState<EmailStreamState>(
@@ -34,6 +35,8 @@ export function useEmailStream(
 
   const connectToSSE = useCallback(() => {
     try {
+      if (!enabled) return;
+
       if (isPaused) {
         console.log("SSE paused - closing connection if exists");
         if (eventSourceRef.current) {
@@ -92,7 +95,7 @@ export function useEmailStream(
     } catch (error) {
       console.error("Error establishing SSE connection:", error);
     }
-  }, [isPaused, emailAccountId]);
+  }, [enabled, isPaused, emailAccountId]);
 
   // Connect or disconnect based on pause state
   useEffect(() => {

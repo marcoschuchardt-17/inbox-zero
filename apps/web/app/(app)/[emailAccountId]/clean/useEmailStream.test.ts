@@ -18,6 +18,12 @@ describe("useEmailStream", () => {
     vi.unstubAllGlobals();
   });
 
+  it("does not open a stream when live updates are off", () => {
+    renderHook(() => useEmailStream("account-id", false, [], null, false));
+
+    expect(MockEventSource.instances).toHaveLength(0);
+  });
+
   it("keeps the existing connection when a thread arrives", () => {
     renderHook(() => useEmailStream("account-id"));
 
