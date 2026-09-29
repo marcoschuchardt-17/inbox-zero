@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { LoadingContent } from "@/components/LoadingContent";
@@ -15,6 +15,7 @@ import { fetchWithAccount } from "@/utils/fetch";
 import { imapThreadLabelIds } from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
+import { syncImapMailboxAction } from "@/utils/actions/imap-sync";
 
 const folders = [
   { id: "inbox", label: "Inbox", query: "/api/threads?limit=30&view=list" },
@@ -85,6 +86,18 @@ export function ImapInbox() {
       : data?.nextPageToken;
   const visibleThreads = [...(data?.threads ?? []), ...olderThreads];
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
+  const syncedAccountId = useRef("");
+
+  useEffect(() => {
+    if (!emailAccountId || syncedAccountId.current === emailAccountId) return;
+    syncedAccountId.current = emailAccountId;
+    syncImapMailboxAction(emailAccountId)
+      .then((result) => {
+        if (!result?.data?.synced) return;
+        return mutate();
+      })
+      .catch(() => undefined);
+  }, [emailAccountId, mutate]);
 
   async function markOpenedThreadRead(threadId: string) {
     const response = await fetchWithAccount({

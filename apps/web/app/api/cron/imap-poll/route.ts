@@ -4,17 +4,7 @@ import prisma from "@/utils/prisma";
 import { hasCronSecret, hasPostCronSecret } from "@/utils/cron";
 import { withError } from "@/utils/middleware";
 import { captureException } from "@/utils/error";
-import { createEmailProvider } from "@/utils/email/provider";
-import {
-  applyImapStaticMailboxActions,
-  archiveBlockedImapSenders,
-  ensureImapMailboxRules,
-  labelImapMessagesWithStaticRules,
-} from "@/utils/email/imap-mailbox-rules";
-import {
-  collectImapPollMessages,
-  highestImapUid,
-} from "@/utils/email/imap-poll";
+import { pollImapAccount } from "@/utils/email/imap-account-poll";
 import type { Logger } from "@/utils/logger";
 
 export const maxDuration = 300;
@@ -69,68 +59,16 @@ async function runImapPoll(logger: Logger) {
   let labeled = 0;
 
   for (const account of candidates) {
-    try {
-      const provider = await createEmailProvider({
-        emailAccountId: account.emailAccountId,
-        provider: "imap",
-        logger,
-      });
-      const messages = await collectImapPollMessages(provider, {
-        after: account.lastSyncedAt,
-        limit: env.IMAP_POLL_MESSAGE_LIMIT,
-      });
-      const highestUid = highestImapUid(messages);
-
-      await prisma.imapSmtpConfig.update({
-        where: { emailAccountId: account.emailAccountId },
-        data: {
-          lastSyncedAt: new Date(),
-          ...(highestUid > 0 ? { lastSyncUid: BigInt(highestUid) } : {}),
-          lastConnectionError: null,
-        },
-      });
+    const result = await pollImapAccount({
+      emailAccountId: account.emailAccountId,
+      lastSyncedAt: account.lastSyncedAt,
+      logger,
+    });
+    if (result.ok) {
       processed += 1;
-
-      try {
-        await ensureImapMailboxRules(account.emailAccountId);
-        labeled += await labelImapMessagesWithStaticRules({
-          emailAccountId: account.emailAccountId,
-          messages,
-          provider,
-          logger,
-        });
-        await applyImapStaticMailboxActions({
-          emailAccountId: account.emailAccountId,
-          messages,
-          provider,
-          logger,
-        });
-        await archiveBlockedImapSenders({
-          emailAccountId: account.emailAccountId,
-          messages,
-          provider,
-        });
-      } catch (error) {
-        logger.error("IMAP mailbox rules failed", {
-          error,
-          emailAccountId: account.emailAccountId,
-        });
-      }
-    } catch (error) {
+      labeled += result.labeled;
+    } else {
       failed += 1;
-      logger.error("IMAP poll failed for account", {
-        error,
-        emailAccountId: account.emailAccountId,
-      });
-      await prisma.imapSmtpConfig.update({
-        where: { emailAccountId: account.emailAccountId },
-        data: {
-          lastConnectionError:
-            error instanceof Error
-              ? error.message.slice(0, 500)
-              : "Unknown error",
-        },
-      });
     }
   }
 
