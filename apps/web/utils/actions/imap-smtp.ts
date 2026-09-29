@@ -105,12 +105,11 @@ export const upsertImapSmtpAccountAction = actionClientUser
           emailAccount: {
             update: {
               name: parsedInput.name || null,
-              imapSmtpConfig: {
-                upsert: {
-                  update: { ...imapConfig, lastConnectionError: null },
-                  create: imapConfig,
-                },
-              },
+              imapSmtpConfig: existingEmailAccount.imapSmtpConfig
+                ? {
+                    update: { ...imapConfig, lastConnectionError: null },
+                  }
+                : { create: imapConfig },
             },
           },
         },

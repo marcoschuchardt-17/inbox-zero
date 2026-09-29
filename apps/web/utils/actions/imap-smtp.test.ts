@@ -123,6 +123,7 @@ describe("upsertImapSmtpAccountAction", () => {
       id: "email-account-1",
       userId: "user-1",
       accountId: "account-1",
+      imapSmtpConfig: { id: "config-1" },
     } as Awaited<ReturnType<typeof prisma.emailAccount.findUnique>>);
 
     const result = await upsertImapSmtpAccountAction(input);
@@ -141,13 +142,11 @@ describe("upsertImapSmtpAccountAction", () => {
             update: expect.objectContaining({
               name: "Marco",
               imapSmtpConfig: {
-                upsert: expect.objectContaining({
-                  update: expect.objectContaining({
-                    imapHost: "imap.example.com",
-                    imapPassword: "imap-secret",
-                    smtpPassword: "smtp-secret",
-                    lastConnectionError: null,
-                  }),
+                update: expect.objectContaining({
+                  imapHost: "imap.example.com",
+                  imapPassword: "imap-secret",
+                  smtpPassword: "smtp-secret",
+                  lastConnectionError: null,
                 }),
               },
             }),
@@ -186,14 +185,18 @@ describe("upsertImapSmtpAccountAction", () => {
         emailAccount: {
           update: {
             imapSmtpConfig: {
-              upsert: { update: Record<string, unknown> };
+              update: Record<string, unknown>;
+              create?: Record<string, unknown>;
             };
           };
         };
       };
     };
     const configUpdate =
-      updateCall.data.emailAccount.update.imapSmtpConfig.upsert.update;
+      updateCall.data.emailAccount.update.imapSmtpConfig.update;
+    expect(
+      updateCall.data.emailAccount.update.imapSmtpConfig.create,
+    ).toBeUndefined();
     expect(configUpdate.imapHost).toBe("127.0.0.1");
     expect(configUpdate.imapPort).toBe(143);
     expect(configUpdate.imapSecure).toBe(false);
