@@ -749,7 +749,9 @@ export function createImapProvider(
     getDraftReferenceForMessage: async (messageId: string) => {
       const drafts = await listDrafts({ config, logger, draftId: messageId });
       const draft = drafts.at(-1);
-      return draft ? { id: draft.id } : null;
+      if (!draft) return null;
+      // Appending a replacement draft changes the uid. The Message-ID does not.
+      return { id: draft.headers["message-id"] || draft.id };
     },
     deleteDraft: async (draftId: string) => {
       const drafts = await findDraftMessages({ config, logger, draftId });

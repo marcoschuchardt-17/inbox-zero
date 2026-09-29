@@ -20,6 +20,12 @@ import {
   getAttachmentUrl,
 } from "@/utils/attachments/download";
 import {
+  attachmentsForDraftUpdate,
+  type DraftAttachmentFile,
+  type StoredDraftAttachmentRef,
+} from "@/utils/email/draft-update-attachments";
+import { blobToBase64 } from "@/utils/voice/recording";
+import {
   Combobox,
   ComboboxInput,
   ComboboxOption,
@@ -161,6 +167,7 @@ export type ReplyingToEmail = {
     filename: string;
     mimeType: string;
   }[];
+  storedAttachments?: StoredDraftAttachmentRef[];
   quotedContentHtml?: string;
   signatureHtml?: string;
   date?: string;
@@ -492,6 +499,10 @@ function ComposeEmailFormContent({
     loadError: draftLoadError,
     getContent: getDraftContent,
   });
+  const storedAttachmentRefs = useRef(replyingToEmail?.storedAttachments);
+  storedAttachmentRefs.current = replyingToEmail?.storedAttachments;
+  const originalStoredFiles = useRef<DraftAttachmentFile[] | null>(null);
+  const attachmentListChanged = useRef(false);
   const providerAutosave = useProviderDraftAutosave({
     enabled: Boolean(providerDraftMessageId) || isNewCompose,
     sessionKey: isNewCompose
@@ -582,13 +593,31 @@ function ComposeEmailFormContent({
         return;
       }
       if (!providerDraftMessageId) return;
-      if (draftAttachments.length)
-        throw new Error(
-          "Drafts with newly added attachments are saved on this device until sent.",
-        );
+      if (draftAttachments.length > 0) attachmentListChanged.current = true;
+      const draftMessageId = providerDraftMessageId;
+      let attachments: DraftAttachmentFile[] | undefined;
+      if (attachmentListChanged.current) {
+        try {
+          attachments = attachmentsForDraftUpdate({
+            composerAttachments: draftAttachments,
+            storedAttachments: await loadOriginalStoredDraftFiles({
+              cache: originalStoredFiles,
+              refs: storedAttachmentRefs.current ?? [],
+              messageId: draftMessageId,
+              emailAccountId: selectedEmailAccountId,
+            }),
+            attachmentListChanged: true,
+          });
+        } catch {
+          throw new Error(
+            "Drafts with newly added attachments are saved on this device until sent.",
+          );
+        }
+      }
       const result = await updateDraftAction(selectedEmailAccountId, {
         ...content,
-        draftMessageId: providerDraftMessageId,
+        ...(attachments ? { attachments } : {}),
+        draftMessageId,
         draftId: providerDraftId.current,
       });
       if (!result?.data) throw new Error(getActionErrorMessage(result ?? {}));
@@ -2015,6 +2044,46 @@ async function ingestMailboxDraft(
     messageId,
   });
   await client.requestSync([emailAccountId]);
+}
+
+async function loadOriginalStoredDraftFiles({
+  cache,
+  refs,
+  messageId,
+  emailAccountId,
+}: {
+  cache: { current: DraftAttachmentFile[] | null };
+  refs: StoredDraftAttachmentRef[];
+  messageId: string;
+  emailAccountId: string;
+}) {
+  if (cache.current) return cache.current;
+  if (refs.length === 0) {
+    cache.current = [];
+    return cache.current;
+  }
+  const files = await Promise.all(
+    refs.map(async (attachment) => {
+      const blob = await fetchAttachment({
+        url: getAttachmentUrl({
+          accountId: emailAccountId,
+          messageId,
+          attachmentId: attachment.attachmentId,
+        }),
+        emailAccountId,
+      });
+      return {
+        filename: attachment.filename,
+        content: await blobToBase64(blob),
+        contentType: attachment.mimeType,
+        size: blob.size,
+        disposition: attachment.disposition,
+        contentId: attachment.contentId,
+      };
+    }),
+  );
+  cache.current = files;
+  return files;
 }
 
 function serializeComposeAttachments(attachments: EmailComposerAttachment[]) {

@@ -1,4 +1,4 @@
-import { sendEmailBody } from "@/utils/types/mail";
+import { sendEmailBody, zodAttachment } from "@/utils/types/mail";
 import { labelVisibility, messageVisibility } from "@/utils/gmail/constants";
 import { z } from "zod";
 
@@ -76,15 +76,36 @@ export const deleteMailboxItemBody = z.object({
   id: z.string().min(1, "Mailbox item ID is required"),
 });
 
-export const updateDraftBody = z.object({
-  draftMessageId: z.string().min(1),
-  draftId: z.string().min(1).optional(),
-  messageHtml: z.string().max(1_000_000),
-  subject: z.string().max(10_000),
-  to: z.string(),
-  cc: z.string(),
-  bcc: z.string(),
-});
+export const updateDraftBody = z
+  .object({
+    draftMessageId: z.string().min(1),
+    draftId: z.string().min(1).optional(),
+    messageHtml: z.string().max(1_000_000),
+    subject: z.string().max(10_000),
+    to: z.string(),
+    cc: z.string(),
+    bcc: z.string(),
+    attachments: z.array(zodAttachment).optional(),
+  })
+  .superRefine((body, context) => {
+    if (!body.attachments) return;
+    const parsed = sendEmailBody.safeParse({
+      to: body.to,
+      cc: body.cc,
+      bcc: body.bcc,
+      subject: body.subject,
+      messageHtml: body.messageHtml,
+      attachments: body.attachments,
+    });
+    if (parsed.success) return;
+    for (const issue of parsed.error.issues) {
+      context.addIssue({
+        code: "custom",
+        message: issue.message,
+        path: issue.path,
+      });
+    }
+  });
 
 export const saveComposeDraftBody = z.object({
   draftId: z.string().min(1).optional(),

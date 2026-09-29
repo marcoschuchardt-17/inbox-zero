@@ -2689,7 +2689,21 @@ describe("createImapProvider", () => {
 
     expect(byMessage?.id).toBe(message.id);
     expect(byThread?.textPlain).toContain("Draft reply.");
-    expect(reference).toEqual({ id: message.id });
+    expect(reference).toEqual({ id: "<draft-1@example.com>" });
+    mailboxState.draftMessages = [
+      {
+        uid: 21,
+        flags: ["\\Draft", "\\Seen"],
+        internalDate: "2026-09-28T16:05:00.000Z",
+        source: savedDraft(),
+      },
+    ];
+    appended.length = 0;
+    await provider.updateDraft(reference?.id || "", {
+      messageHtml: "<p>Second edit</p>",
+    });
+    expect(String(appended.at(-1)?.raw)).toContain("<p>Second edit</p>");
+    mailboxState.draftMessages = [];
     await expect(provider.getDraft("missing-draft")).resolves.toBeNull();
     await expect(
       provider.getDraftReferenceForMessage("missing-draft"),
