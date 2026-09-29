@@ -54,15 +54,15 @@ export async function runImapClean({
   });
 
   const limit = Math.min(maxEmails || 50, 100);
-  const { threads } = await emailProvider.getThreadsWithQuery({
-    maxResults: limit,
+  const threads = await loadImapCleanThreads({
+    emailProvider,
+    daysOld,
+    limit,
   });
-  const cutoff = daysOld > 0 ? Date.now() - daysOld * ONE_DAY_MS : null;
 
   for (const thread of threads) {
     const latest = thread.messages.at(-1);
     if (!thread.id || !latest) continue;
-    if (cutoff && new Date(latest.date).getTime() > cutoff) continue;
 
     const decision = decideCleanAction({
       messages: thread.messages,
@@ -123,4 +123,41 @@ export async function undoImapClean({
     return;
   }
   await emailProvider.unarchiveThread(threadId);
+}
+
+const MAX_CLEAN_PAGES = 20;
+
+export async function loadImapCleanThreads({
+  emailProvider,
+  daysOld,
+  limit,
+  now = new Date(),
+}: {
+  emailProvider: Pick<EmailProvider, "getThreadsWithQuery">;
+  daysOld: number;
+  limit: number;
+  now?: Date;
+}) {
+  const cutoff = daysOld > 0 ? now.getTime() - daysOld * ONE_DAY_MS : null;
+  const threads = [];
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < MAX_CLEAN_PAGES && threads.length < limit; page++) {
+    const result = await emailProvider.getThreadsWithQuery({
+      maxResults: limit,
+      pageToken,
+      query: cutoff ? { before: new Date(cutoff), type: "inbox" } : undefined,
+    });
+    for (const thread of result.threads) {
+      const latest = thread.messages.at(-1);
+      if (!thread.id || !latest) continue;
+      if (cutoff && new Date(latest.date).getTime() > cutoff) continue;
+      threads.push(thread);
+      if (threads.length >= limit) break;
+    }
+    if (!result.nextPageToken || result.nextPageToken === pageToken) break;
+    pageToken = result.nextPageToken;
+  }
+
+  return threads;
 }
