@@ -59,6 +59,12 @@ const {
     sentSource: "" as string,
     trashSource: "" as string,
     draftSource: "" as string,
+    draftMessages: [] as {
+      uid: number;
+      source: string;
+      flags: string[];
+      internalDate: string;
+    }[],
     folderSources: {} as Record<
       string,
       string | { uid: number; source: string }
@@ -199,6 +205,23 @@ vi.mock("imapflow", () => ({
         return;
       }
       if (mailboxState.opened === "Drafts") {
+        if (mailboxState.draftMessages.length) {
+          const wanted = fetchTargets(
+            range,
+            mailboxState.draftMessages,
+            options?.uid === true,
+          );
+          for (const message of mailboxState.draftMessages) {
+            if (!wanted.has(message.uid)) continue;
+            yield {
+              uid: message.uid,
+              source: Buffer.from(message.source),
+              flags: new Set(message.flags),
+              internalDate: new Date(message.internalDate),
+            };
+          }
+          return;
+        }
         if (!mailboxState.draftSource) return;
         yield {
           uid: 13,
@@ -1743,6 +1766,35 @@ describe("createImapProvider", () => {
     mailboxState.draftSource = "";
   });
 
+  it("discards a draft that is older than the newest page", async () => {
+    deleted.length = 0;
+    mailboxState.exists = 101;
+    mailboxState.draftMessages = [
+      {
+        uid: 1,
+        flags: ["\\Draft", "\\Seen"],
+        internalDate: "2026-08-01T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: sam@example.com",
+          "Subject: Old draft",
+          "Date: Sat, 01 Aug 2026 12:00:00 +0000",
+          "Message-ID: <old-draft@example.com>",
+          "",
+          "Hold this older draft.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const removed = await provider.deleteDraft("<old-draft@example.com>");
+
+    expect(removed).toBe(true);
+    expect(deleted).toEqual([{ mailbox: "Drafts", uid: 1 }]);
+    mailboxState.draftMessages = [];
+    mailboxState.exists = 1;
+  });
+
   it("lists the mailbox named by folder id", async () => {
     const provider = createImapProvider(imapConfig(), logger);
 
@@ -1965,6 +2017,9 @@ function sourcesForOpenedMailbox() {
         internalDate: "2026-09-28T15:00:00.000Z",
       },
     ];
+  }
+  if (mailboxState.opened === "Drafts" && mailboxState.draftMessages.length) {
+    return mailboxState.draftMessages;
   }
   if (mailboxState.opened === "Drafts" && mailboxState.draftSource) {
     return [

@@ -1853,18 +1853,35 @@ async function findDraftMessages({
   logger: Logger;
   draftId: string;
 }) {
-  const messages = await fetchMailboxMessages({
-    config,
-    logger,
-    mailbox: "Drafts",
-    maxResults: 100,
-  });
-  return messages.filter(
-    (message) =>
+  const direct = parseImapMessageRef(draftId)
+    ? await fetchMessageById({ config, logger, messageId: draftId })
+    : null;
+  const needle = messageIdNeedle(draftId);
+  const messages = needle
+    ? await fetchMailboxThreadMatches({
+        config,
+        logger,
+        mailbox: "Drafts",
+        needle,
+      })
+    : await fetchMailboxMessages({
+        config,
+        logger,
+        mailbox: "Drafts",
+        maxResults: 100,
+      });
+  const seen = new Set<string>();
+  return [...(direct ? [direct] : []), ...messages].filter((message) => {
+    if (seen.has(message.id)) return false;
+    const matches =
       message.threadId === draftId ||
       message.id === draftId ||
-      message.headers["message-id"] === draftId,
-  );
+      message.headers["message-id"] === draftId ||
+      messageMatchesThreadId(message, draftId);
+    if (!matches) return false;
+    seen.add(message.id);
+    return true;
+  });
 }
 
 async function appendDraftRaw({
