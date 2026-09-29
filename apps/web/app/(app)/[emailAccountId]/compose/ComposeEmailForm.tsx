@@ -16,6 +16,10 @@ import {
   type EmailEditorState,
 } from "@inboxzero/email-editor/web";
 import {
+  fetchAttachment,
+  getAttachmentUrl,
+} from "@/utils/attachments/download";
+import {
   Combobox,
   ComboboxInput,
   ComboboxOption,
@@ -151,6 +155,12 @@ export type ReplyingToEmail = {
   cc?: string;
   bcc?: string;
   draftHtml?: string;
+  draftInlineAttachments?: {
+    attachmentId: string;
+    contentId: string;
+    filename: string;
+    mimeType: string;
+  }[];
   quotedContentHtml?: string;
   signatureHtml?: string;
   date?: string;
@@ -306,6 +316,7 @@ function ComposeEmailFormContent({
     return times.valid ? "" : times.error;
   });
   const editorInitialized = useRef(false);
+  const [editorReady, setEditorReady] = useState(false);
   const providerDraftId = useRef(storedDraft?.content?.providerDraftId);
   const savedAttachments = useRef<string | undefined>(undefined);
 
@@ -639,6 +650,7 @@ function ComposeEmailFormContent({
       if (!editorInitialized.current) {
         queueMicrotask(() => {
           editorInitialized.current = true;
+          setEditorReady(true);
         });
         return;
       }
@@ -646,6 +658,57 @@ function ComposeEmailFormContent({
     },
     [captureDraft, removeUnusedInlineAttachments],
   );
+
+  const inlinePreviewKey = (replyingToEmail?.draftInlineAttachments ?? [])
+    .map((attachment) => `${attachment.attachmentId}:${attachment.contentId}`)
+    .join("|");
+  const draftInlineAttachmentsRef = useRef(
+    replyingToEmail?.draftInlineAttachments,
+  );
+  draftInlineAttachmentsRef.current = replyingToEmail?.draftInlineAttachments;
+  useEffect(() => {
+    const messageId = providerDraftMessageId || replyingToEmail?.messageId;
+    const attachments = draftInlineAttachmentsRef.current;
+    if (!editorReady || !inlinePreviewKey || !messageId || !attachments?.length)
+      return;
+    const controller = new AbortController();
+    const previewUrls: string[] = [];
+    const load = async () => {
+      for (const attachment of attachments) {
+        try {
+          const blob = await fetchAttachment({
+            url: getAttachmentUrl({
+              accountId: selectedEmailAccountId,
+              messageId,
+              attachmentId: attachment.attachmentId,
+            }),
+            emailAccountId: selectedEmailAccountId,
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted) return;
+          const previewUrl = URL.createObjectURL(blob);
+          previewUrls.push(previewUrl);
+          editorRef.current?.showInlineImagePreview(
+            attachment.contentId,
+            previewUrl,
+          );
+        } catch {
+          // The picture stays stored on the draft when the preview cannot load.
+        }
+      }
+    };
+    load().catch(() => undefined);
+    return () => {
+      controller.abort();
+      for (const previewUrl of previewUrls) URL.revokeObjectURL(previewUrl);
+    };
+  }, [
+    editorReady,
+    inlinePreviewKey,
+    providerDraftMessageId,
+    replyingToEmail?.messageId,
+    selectedEmailAccountId,
+  ]);
 
   const addFiles = useCallback(
     async (files: File[], disposition: ComposeAttachment["disposition"]) => {

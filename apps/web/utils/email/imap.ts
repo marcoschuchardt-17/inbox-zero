@@ -657,7 +657,13 @@ export function createImapProvider(
           contentType: "text/html; charset=utf-8",
           body:
             params.messageHtml ?? current.textHtml ?? current.textPlain ?? "",
-          attachments: params.attachments,
+          attachments:
+            params.attachments ??
+            (await storedDraftAttachments({
+              config,
+              logger,
+              messageId: current.id,
+            })),
         }),
       });
       await Promise.all(
@@ -2354,6 +2360,30 @@ async function moveMessageToMailbox({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+async function storedDraftAttachments({
+  config,
+  logger,
+  messageId,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  messageId: string;
+}) {
+  const stored = await fetchMessageById({
+    config,
+    logger,
+    messageId,
+    includeAttachmentBodies: true,
+  });
+  return (stored?._attachments ?? []).map((attachment) => ({
+    filename: attachment.filename,
+    content: Buffer.from(attachment.content).toString("base64"),
+    contentType: attachment.mimeType,
+    disposition: attachment.disposition,
+    contentId: attachment.contentId,
+  }));
 }
 
 function buildDraftMessage({

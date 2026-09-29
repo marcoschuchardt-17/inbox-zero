@@ -2745,6 +2745,49 @@ describe("createImapProvider", () => {
     mailboxState.draftSource = "";
   });
 
+  it("keeps an inline image when a draft is edited without resending the file", async () => {
+    appended.length = 0;
+    mailboxState.draftSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Photo",
+      "Date: Mon, 28 Sep 2026 16:00:00 +0000",
+      "Message-ID: <draft-photo@example.com>",
+      "MIME-Version: 1.0",
+      'Content-Type: multipart/mixed; boundary="bound"',
+      "",
+      "--bound",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      '<p>See <img src="cid:photo@inboxzero.local"></p>',
+      "--bound",
+      'Content-Type: image/png; name="photo.png"',
+      'Content-Disposition: inline; filename="photo.png"',
+      "Content-Transfer-Encoding: base64",
+      "Content-ID: <photo@inboxzero.local>",
+      "",
+      "aGVsbG8=",
+      "--bound--",
+      "",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.updateDraft("<draft-photo@example.com>", {
+      messageHtml: '<p>Updated <img src="cid:photo@inboxzero.local"></p>',
+    });
+
+    const parsed = await new PostalMime().parse(String(appended.at(-1)?.raw));
+    expect(parsed.html).toContain("Updated");
+    expect(parsed.attachments?.[0]).toMatchObject({
+      disposition: "inline",
+      contentId: "<photo@inboxzero.local>",
+    });
+    expect(Buffer.from(parsed.attachments?.[0]?.content || []).toString()).toBe(
+      "hello",
+    );
+    mailboxState.draftSource = "";
+  });
+
   it("keeps an attachment on a saved IMAP draft", async () => {
     appended.length = 0;
     mailboxState.draftSource = savedDraft();

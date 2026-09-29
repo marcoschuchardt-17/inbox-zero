@@ -11,6 +11,7 @@ import {
   combineEmailHtml,
   createInlineContentId,
   detectInlineImageMimeType,
+  contentIdFromImageElement,
   finalizeEditableEmailHtml,
   normalizeEmailUrl,
   prepareEmailDraft,
@@ -161,6 +162,25 @@ describe("outgoing HTML", () => {
     expect(result).not.toContain("blob:");
     expect(result).not.toContain("data:image");
     expect(result).not.toContain("data-content-id");
+  });
+
+  it("keeps a reopened draft picture that is already stored on the message", () => {
+    const result = finalizeEditableEmailHtml({
+      html: '<p>See <img src="blob:https://app.example/preview" data-content-id="photo@inboxzero.local" alt="red block"></p>',
+      inlineAttachments: [],
+    });
+
+    expect(result).toContain('src="cid:photo@inboxzero.local"');
+    expect(result).not.toContain("blob:");
+  });
+
+  it("reads an inline image id from a cid source", () => {
+    expect(
+      contentIdFromImageElement({
+        getAttribute: (name) =>
+          name === "src" ? "cid:<photo@inboxzero.local>" : null,
+      }),
+    ).toBe("photo@inboxzero.local");
   });
 });
 

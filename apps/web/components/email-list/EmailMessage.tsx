@@ -35,6 +35,7 @@ import { HtmlEmail, PlainEmail } from "@/components/email-list/EmailContents";
 import { EmailAttachments } from "@/components/email-list/EmailAttachments";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { shouldCloseConversationAfterDraftDiscard } from "@/utils/email/discarded-thread";
+import { normalizeContentId } from "@/utils/email/inline-images";
 import { formatReplySubject } from "@/utils/email/subject";
 import { env } from "@/env";
 import { isTypingTarget } from "@/lib/shortcuts/registry";
@@ -821,6 +822,18 @@ function prepareDraftReplyEmail(draft: ParsedMessage): ReplyingToEmail {
     bcc: draft.headers.bcc,
     references: draft.headers.references,
     draftHtml: splitHtml.draftHtml,
+    draftInlineAttachments: draft.inline.flatMap((attachment) => {
+      const contentId = normalizeContentId(attachment.headers["content-id"]);
+      if (!attachment.attachmentId || !contentId) return [];
+      return [
+        {
+          attachmentId: attachment.attachmentId,
+          contentId,
+          filename: attachment.filename || "image",
+          mimeType: attachment.mimeType || "application/octet-stream",
+        },
+      ];
+    }),
     quotedContentHtml: splitHtml.originalHtml,
   };
 }
