@@ -1187,6 +1187,103 @@ describe("createImapProvider", () => {
     mailboxState.exists = 1;
   });
 
+  it("keeps only inbox mail inside the requested dates", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+    };
+    mailboxState.exists = 2;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Old billing note",
+          "<old-billing@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 8,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Newest note",
+          "<newest-note@example.com>",
+          "Mon, 28 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const newer = await provider.getMessagesWithPagination({
+        after: new Date("2026-09-20T00:00:00.000Z"),
+        maxResults: 20,
+      });
+      const older = await provider.getMessagesWithPagination({
+        before: new Date("2026-09-10T00:00:00.000Z"),
+        maxResults: 20,
+      });
+
+      expect(newer.messages.map((message) => message.subject)).toEqual([
+        "Newest note",
+      ]);
+      expect(older.messages.map((message) => message.subject)).toEqual([
+        "Old billing note",
+      ]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+    }
+  });
+
+  it("returns older inbox mail when newer mail is past the cutoff", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+    };
+    mailboxState.exists = 2;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Old billing note",
+          "<old-billing@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 20,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-10T18:00:00.000Z",
+        source: datedInboxMessage(
+          "Later billing note",
+          "<later-billing@example.com>",
+          "Thu, 10 Sep 2026 18:00:00 +0000",
+        ),
+      },
+    ];
+
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const page = await provider.getMessagesWithPagination({
+        before: new Date("2026-09-10T12:00:00.000Z"),
+        maxResults: 1,
+      });
+
+      expect(page.messages.map((message) => message.subject)).toEqual([
+        "Old billing note",
+      ]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+    }
+  });
+
   it("finds a message id that is older than the newest page", async () => {
     mailboxState.exists = 101;
     mailboxState.inboxMessages = [

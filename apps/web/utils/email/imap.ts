@@ -118,10 +118,14 @@ export function createImapProvider(
       maxResults = DEFAULT_PAGE_SIZE,
       pageToken,
       query,
+      before,
+      after,
     }: {
       query?: string;
       maxResults?: number;
       pageToken?: string;
+      before?: Date;
+      after?: Date;
     }) => {
       if (!pageToken) {
         await reconcileStoredInbox(config);
@@ -135,6 +139,21 @@ export function createImapProvider(
           needle,
           maxResults,
           pageToken,
+        });
+        await dropStaleThreadCopies({
+          emailAccountId: config.emailAccountId,
+          messages: page.messages,
+        });
+        return page;
+      }
+      if (before || after) {
+        const page = await fetchMailboxMessagesByDate({
+          config,
+          logger,
+          maxResults,
+          pageToken,
+          after,
+          before,
         });
         await dropStaleThreadCopies({
           emailAccountId: config.emailAccountId,
@@ -1283,42 +1302,50 @@ async function fetchMailboxMessagesByDate({
       const uids = (Array.isArray(searched) ? searched : [])
         .filter((uid): uid is number => typeof uid === "number")
         .sort((left, right) => right - left);
-      const offset = pageOffset(pageToken);
-      const pageUids = uids.slice(offset, offset + maxResults);
-      const nextPageToken =
-        offset + maxResults < uids.length
-          ? String(offset + maxResults)
-          : undefined;
-      if (!pageUids.length) return { messages: [], nextPageToken };
-
-      const wanted = new Set(pageUids.map(String));
       const messages: ParsedImapMessage[] = [];
-      for await (const message of client.fetch(
-        pageUids.join(","),
-        {
-          uid: true,
-          envelope: true,
-          source: true,
-          flags: true,
-          internalDate: true,
-        },
-        { uid: true },
-      )) {
-        if (!wanted.has(String(message.uid)) || !message.source) continue;
-        const parsed = await parseImapMessage(
-          message.uid,
-          message.source,
-          message.flags,
-          message.internalDate,
-          selectedMailbox,
-        );
-        if (
-          isInboxMailbox(selectedMailbox, config.syncFolder || "INBOX") &&
-          !parsed.labelIds?.includes("INBOX")
-        ) {
-          parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+      let index = pageOffset(pageToken);
+      // SEARCH dates are whole days, so the first UIDs can sit outside the
+      // exact cutoff. Keep reading until the page is full or the window ends.
+      while (messages.length < maxResults && index < uids.length) {
+        const batch = uids.slice(index, index + maxResults);
+        const wanted = new Set(batch.map(String));
+        const fetched = new Map<number, ParsedImapMessage>();
+        for await (const message of client.fetch(
+          batch.join(","),
+          {
+            uid: true,
+            envelope: true,
+            source: true,
+            flags: true,
+            internalDate: true,
+          },
+          { uid: true },
+        )) {
+          if (!wanted.has(String(message.uid)) || !message.source) continue;
+          const parsed = await parseImapMessage(
+            message.uid,
+            message.source,
+            message.flags,
+            message.internalDate,
+            selectedMailbox,
+          );
+          if (
+            isInboxMailbox(selectedMailbox, config.syncFolder || "INBOX") &&
+            !parsed.labelIds?.includes("INBOX")
+          ) {
+            parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+          }
+          fetched.set(message.uid, parsed);
         }
-        messages.push(parsed);
+        for (const uid of batch) {
+          index += 1;
+          const message = fetched.get(uid);
+          if (!message || !messageInsideDateWindow(message, after, before)) {
+            continue;
+          }
+          messages.push(message);
+          if (messages.length >= maxResults) break;
+        }
       }
       return {
         messages: messages.sort(
@@ -1326,7 +1353,7 @@ async function fetchMailboxMessagesByDate({
             Number(left.internalDate || "0") -
             Number(right.internalDate || "0"),
         ),
-        nextPageToken,
+        nextPageToken: index < uids.length ? String(index) : undefined,
       };
     } finally {
       lock.release();
@@ -2807,6 +2834,18 @@ function pageOffset(pageToken: string | undefined) {
   const offset = Number(pageToken);
   if (!Number.isFinite(offset) || offset <= 0) return 0;
   return Math.floor(offset);
+}
+
+function messageInsideDateWindow(
+  message: { date: string },
+  after?: Date,
+  before?: Date,
+) {
+  const sentAt = new Date(message.date).getTime();
+  if (Number.isNaN(sentAt)) return false;
+  if (after && sentAt < after.getTime()) return false;
+  if (before && sentAt >= before.getTime()) return false;
+  return true;
 }
 
 function imapSearchWindow(after?: Date, before?: Date) {
