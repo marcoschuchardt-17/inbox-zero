@@ -1894,7 +1894,8 @@ async function moveMessagesFromSenders({
   await connectImapClient(client);
   try {
     await ensureMailbox(client, mailbox);
-    const lock = await client.getMailboxLock(config.syncFolder || "INBOX");
+    const sourceMailbox = config.syncFolder || "INBOX";
+    const lock = await client.getMailboxLock(sourceMailbox);
     const movedIds: string[] = [];
     try {
       const uids = new Set<number>();
@@ -1905,7 +1906,7 @@ async function moveMessagesFromSenders({
       }
       for (const uid of uids) {
         await client.messageMove(uid, mailbox, { uid: true });
-        movedIds.push(String(uid));
+        movedIds.push(imapMessageId(sourceMailbox, uid));
       }
     } finally {
       lock.release();

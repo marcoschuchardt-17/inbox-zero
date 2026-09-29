@@ -811,7 +811,7 @@ describe("createImapProvider", () => {
 
     expect(movedTo).toEqual(["Archive"]);
     expect(prisma.emailMessage.updateMany).toHaveBeenCalledWith({
-      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      where: { emailAccountId: "account-1", messageId: { in: ["INBOX/1"] } },
       data: { inbox: false },
     });
     mailboxState.fromUids = [];
@@ -830,7 +830,7 @@ describe("createImapProvider", () => {
 
     expect(movedTo).toEqual(["Trash"]);
     expect(prisma.emailMessage.deleteMany).toHaveBeenCalledWith({
-      where: { emailAccountId: "account-1", messageId: { in: ["1"] } },
+      where: { emailAccountId: "account-1", messageId: { in: ["INBOX/1"] } },
     });
     mailboxState.fromUids = [];
   });
