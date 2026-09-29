@@ -540,6 +540,8 @@ describe("createImapProvider", () => {
       "Re: Welcome to the mailbox",
     ]);
     expect(thread.messages[1]?.textPlain).toContain("I wrote back.");
+    expect(thread.messages[0]?.labelIds).toContain("INBOX");
+    expect(thread.messages[1]?.labelIds).toContain("SENT");
     expect(
       thread.messages.some((message) => message.textPlain?.includes("trashed")),
     ).toBe(false);
@@ -1813,6 +1815,7 @@ describe("createImapProvider", () => {
       "Saving a copy of this reply.",
     );
     expect(result.threads[0]?.messages[0]?.snippet).not.toContain("<p>");
+    expect(result.threads[0]?.messages[0]?.labelIds).toContain("SENT");
 
     const opened = await provider.getThread(result.threads[0]?.id || "");
     expect(opened.messages[0]?.subject).toBe("Re: Please reply");
@@ -1902,6 +1905,7 @@ describe("createImapProvider", () => {
     expect(result.threads[0]?.messages[0]?.subject).toBe(
       "Re: Welcome to the mailbox",
     );
+    expect(result.threads[0]?.messages[0]?.labelIds).toContain("DRAFT");
 
     const opened = await provider.getThread(result.threads[0]?.id || "");
     expect(opened.messages[0]?.textPlain).toContain("Draft reply.");

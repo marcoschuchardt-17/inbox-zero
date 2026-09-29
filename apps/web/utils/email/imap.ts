@@ -1519,7 +1519,7 @@ async function parseImapMessage(
       },
     })),
     inline: [],
-    labelIds: imapFlagsToLabelIds(flags),
+    labelIds: withMailboxRole(imapFlagsToLabelIds(flags), mailbox),
     headers: {
       from,
       to,
@@ -3514,4 +3514,45 @@ async function mailboxNamesForRead({
       all.findIndex((item) => item.toLowerCase() === mailbox.toLowerCase()) ===
       index,
   );
+}
+
+function withMailboxRole(labelIds: string[], mailbox: string) {
+  const role = mailboxRoleLabel(mailbox);
+  if (!role || labelIds.includes(role)) return labelIds;
+  return [...labelIds, role];
+}
+
+function mailboxRoleLabel(mailbox: string) {
+  const name = mailbox.trim().toLowerCase();
+  const leaf = name.split("/").at(-1) || name;
+  if (name === "inbox" || leaf === "inbox") return "INBOX";
+  if (
+    name === "sent" ||
+    leaf === "sent" ||
+    name === "sent items" ||
+    leaf === "sent items" ||
+    name === "[gmail]/sent mail"
+  ) {
+    return "SENT";
+  }
+  if (name === "drafts" || leaf === "drafts" || leaf === "draft") {
+    return "DRAFT";
+  }
+  if (
+    name === "trash" ||
+    leaf === "trash" ||
+    leaf === "deleted" ||
+    leaf === "deleted items"
+  ) {
+    return "TRASH";
+  }
+  if (
+    name === "junk" ||
+    leaf === "junk" ||
+    leaf === "spam" ||
+    leaf === "junk e-mail"
+  ) {
+    return "SPAM";
+  }
+  return;
 }
