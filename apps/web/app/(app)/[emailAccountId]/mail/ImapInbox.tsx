@@ -426,10 +426,10 @@ export function ImapInbox() {
                 name: labelNames.get(labelId) ?? labelId,
               }));
               return (
-                <li key={thread.id} className="flex items-start gap-2">
+                <li key={thread.id} className="flex flex-col">
                   <button
                     type="button"
-                    className="min-w-0 flex-1 px-2 py-3 text-left hover:bg-muted"
+                    className="w-full min-w-0 px-2 py-3 text-left hover:bg-muted"
                     onClick={() => {
                       showEmail({
                         threadId: thread.id,
@@ -489,176 +489,166 @@ export function ImapInbox() {
                       {message?.snippet}
                     </div>
                   </button>
-                  {rowLabels.length ? (
-                    <div className="mt-3 flex max-w-40 flex-wrap gap-1">
-                      {rowLabels.map((label) => (
-                        <button
-                          key={label.id}
-                          type="button"
-                          aria-label={`Remove ${label.name} from ${message?.subject || "email"}`}
-                          className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
-                          onClick={() => {
-                            removeLabel(thread.id, label.id).catch(
-                              () => undefined,
-                            );
-                          }}
-                        >
-                          {label.name}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  {message && labelList?.labels.length ? (
-                    <select
-                      aria-label={`Add label to ${message.subject || "email"}`}
-                      className="mt-3 h-8 rounded-md border bg-background px-2 text-sm"
-                      defaultValue=""
-                      onChange={(event) => {
-                        const labelId = event.target.value;
-                        event.currentTarget.value = "";
-                        if (!labelId) return;
-                        addLabel(thread.id, message.id, labelId).catch(
-                          () => undefined,
-                        );
-                      }}
-                    >
-                      <option value="">Label</option>
-                      {labelList.labels.map((label) => (
-                        <option key={label.id} value={label.id}>
-                          {label.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
-                  {message ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() => toggleStar(thread.id, !starred)}
-                    >
-                      {starred ? "Unstar" : "Star"}
-                    </Button>
-                  ) : null}
-                  {messageInInbox ? (
-                    <>
+                  <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
+                    {rowLabels.map((label) => (
+                      <button
+                        key={label.id}
+                        type="button"
+                        aria-label={`Remove ${label.name} from ${message?.subject || "email"}`}
+                        className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          removeLabel(thread.id, label.id).catch(
+                            () => undefined,
+                          );
+                        }}
+                      >
+                        {label.name}
+                      </button>
+                    ))}
+                    {message && labelList?.labels.length ? (
+                      <select
+                        aria-label={`Add label to ${message.subject || "email"}`}
+                        className="h-8 rounded-md border bg-background px-2 text-sm"
+                        defaultValue=""
+                        onChange={(event) => {
+                          const labelId = event.target.value;
+                          event.currentTarget.value = "";
+                          if (!labelId) return;
+                          addLabel(thread.id, message.id, labelId).catch(
+                            () => undefined,
+                          );
+                        }}
+                      >
+                        <option value="">Label</option>
+                        {labelList.labels.map((label) => (
+                          <option key={label.id} value={label.id}>
+                            {label.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                    {message ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="mt-3"
-                        onClick={() => moveThread(thread.id, "archive")}
+                        onClick={() => toggleStar(thread.id, !starred)}
                       >
-                        Archive
+                        {starred ? "Unstar" : "Star"}
                       </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-3"
-                        onClick={() => moveThread(thread.id, "trash")}
-                      >
-                        Trash
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-3"
-                        onClick={() => moveThread(thread.id, "spam")}
-                      >
-                        Spam
-                      </Button>
-                      {filingFolders.map((item) => (
+                    ) : null}
+                    {messageInInbox ? (
+                      <>
                         <Button
-                          key={item.id}
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="mt-3"
-                          onClick={() => moveThread(thread.id, "move", item.id)}
+                          onClick={() => moveThread(thread.id, "archive")}
                         >
-                          {`Move to ${item.displayName}`}
+                          Archive
                         </Button>
-                      ))}
-                    </>
-                  ) : null}
-                  {(
-                    submittedSearch
-                      ? location === "drafts"
-                      : folder === "drafts"
-                  ) ? (
-                    <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveThread(thread.id, "trash")}
+                        >
+                          Trash
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveThread(thread.id, "spam")}
+                        >
+                          Spam
+                        </Button>
+                        {filingFolders.map((item) => (
+                          <Button
+                            key={item.id}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              moveThread(thread.id, "move", item.id)
+                            }
+                          >
+                            {`Move to ${item.displayName}`}
+                          </Button>
+                        ))}
+                      </>
+                    ) : null}
+                    {(
+                      submittedSearch
+                        ? location === "drafts"
+                        : folder === "drafts"
+                    ) ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveThread(thread.id, "send-draft")}
+                        >
+                          Send
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveThread(thread.id, "discard-draft")}
+                        >
+                          Discard
+                        </Button>
+                      </>
+                    ) : null}
+                    {!submittedSearch &&
+                    (folder === "archive" || folder === "trash") ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="mt-3"
-                        onClick={() => moveThread(thread.id, "send-draft")}
+                        onClick={() =>
+                          moveThread(
+                            thread.id,
+                            folder === "trash" ? "untrash" : "unarchive",
+                          )
+                        }
                       >
-                        Send
+                        Move to inbox
                       </Button>
+                    ) : null}
+                    {searchRestore ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="mt-3"
-                        onClick={() => moveThread(thread.id, "discard-draft")}
+                        onClick={() =>
+                          moveThread(
+                            thread.id,
+                            searchRestore,
+                            searchRestore === "restore-folder"
+                              ? mailbox
+                              : undefined,
+                          )
+                        }
                       >
-                        Discard
+                        Move to inbox
                       </Button>
-                    </>
-                  ) : null}
-                  {!submittedSearch &&
-                  (folder === "archive" || folder === "trash") ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() =>
-                        moveThread(
-                          thread.id,
-                          folder === "trash" ? "untrash" : "unarchive",
-                        )
-                      }
-                    >
-                      Move to inbox
-                    </Button>
-                  ) : null}
-                  {searchRestore ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() =>
-                        moveThread(
-                          thread.id,
-                          searchRestore,
-                          searchRestore === "restore-folder"
-                            ? mailbox
-                            : undefined,
-                        )
-                      }
-                    >
-                      Move to inbox
-                    </Button>
-                  ) : null}
-                  {extra && !submittedSearch ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() =>
-                        moveThread(thread.id, "restore-folder", extra.id)
-                      }
-                    >
-                      Move to inbox
-                    </Button>
-                  ) : null}
+                    ) : null}
+                    {extra && !submittedSearch ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          moveThread(thread.id, "restore-folder", extra.id)
+                        }
+                      >
+                        Move to inbox
+                      </Button>
+                    ) : null}
+                  </div>
                 </li>
               );
             })}
