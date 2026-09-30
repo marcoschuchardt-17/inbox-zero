@@ -16,7 +16,11 @@ import {
   legacySubjectThreadKey,
 } from "@/utils/email";
 import { SafeError } from "@/utils/error";
-import { imapFlagsToLabelIds, imapKeyword } from "@/utils/email/imap-flags";
+import {
+  imapFlagsToLabelIds,
+  imapKeyword,
+  imapListLocation,
+} from "@/utils/email/imap-flags";
 import {
   buildReplyAllRecipients,
   formatCcList,
@@ -3005,11 +3009,12 @@ function messagesForOpenThread(
   messages: ParsedImapMessage[],
   options?: GetThreadOptions,
 ) {
-  const hidden = new Set(["trash"]);
-  if (!options?.includeDrafts) hidden.add("drafts");
-  const active = messages.filter(
-    (message) => !hidden.has((message._mailbox || "").toLowerCase()),
-  );
+  const active = messages.filter((message) => {
+    const location = imapListLocation(message._mailbox || "");
+    if (location === "trash") return false;
+    if (location === "drafts" && !options?.includeDrafts) return false;
+    return true;
+  });
   const chosen = active.length ? active : messages;
   const seen = new Set<string>();
   const unique: ParsedImapMessage[] = [];
@@ -3769,10 +3774,9 @@ function normalizeMessageId(value: string | undefined) {
   return (value || "").trim().replace(/^<|>$/g, "").toLowerCase();
 }
 
-const SEARCH_SKIPPED_MAILBOXES = new Set(["trash", "drafts", "junk", "spam"]);
-
 function isSearchableMailbox(mailbox: string) {
-  return !SEARCH_SKIPPED_MAILBOXES.has(mailbox.toLowerCase());
+  const location = imapListLocation(mailbox);
+  return location !== "trash" && location !== "drafts" && location !== "junk";
 }
 
 async function findImapMessagesWithAttachments({

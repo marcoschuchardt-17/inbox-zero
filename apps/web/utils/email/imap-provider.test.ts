@@ -1071,6 +1071,147 @@ describe("createImapProvider", () => {
     mailboxState.trashSource = "";
   });
 
+  it("leaves Papierkorb and Entwürfe out of the open conversation", async () => {
+    const previousListed = mailboxState.listed;
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Papierkorb", name: "Papierkorb" },
+      { path: "Entwürfe", name: "Entwürfe" },
+    ];
+    mailboxState.folderSources.Papierkorb = [
+      "From: Sam <sam@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 19:00:00 +0000",
+      "Message-ID: <trashed-de@example.com>",
+      "References: <parent@example.com>",
+      "",
+      "This reply was in the waste bin.",
+    ].join("\r\n");
+    mailboxState.folderSources.Entwürfe = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Welcome to the mailbox",
+      "Date: Mon, 28 Sep 2026 19:30:00 +0000",
+      "Message-ID: <draft-de@example.com>",
+      "References: <parent@example.com>",
+      "",
+      "This draft stays in Entwürfe.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+    const [inbox] = await provider.getInboxMessages(5);
+
+    try {
+      const thread = await provider.getThread(inbox?.threadId || "");
+      expect(thread.messages.map((message) => message.subject)).toEqual([
+        "Welcome to the mailbox",
+      ]);
+      expect(
+        thread.messages.some((message) =>
+          message.textPlain?.includes("waste bin"),
+        ),
+      ).toBe(false);
+      expect(
+        thread.messages.some((message) =>
+          message.textPlain?.includes("stays in Entwürfe"),
+        ),
+      ).toBe(false);
+
+      const withDrafts = await provider.getThread(inbox?.threadId || "", {
+        includeDrafts: true,
+      });
+      expect(
+        withDrafts.messages.some((message) =>
+          message.textPlain?.includes("stays in Entwürfe"),
+        ),
+      ).toBe(true);
+      expect(
+        withDrafts.messages.some((message) =>
+          message.textPlain?.includes("waste bin"),
+        ),
+      ).toBe(false);
+    } finally {
+      mailboxState.listed = previousListed;
+      mailboxState.folderSources = {};
+    }
+  });
+
+  it("leaves Papierkorb and Entwürfe out of search", async () => {
+    const previousListed = mailboxState.listed;
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Papierkorb", name: "Papierkorb" },
+      { path: "Entwürfe", name: "Entwürfe" },
+      { path: "Junk E-mail", name: "Junk E-mail" },
+    ];
+    mailboxState.folderSources.Papierkorb = [
+      "From: Sam <sam@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Secret bin note",
+      "Date: Mon, 28 Sep 2026 19:00:00 +0000",
+      "Message-ID: <bin-search@example.com>",
+      "",
+      "secretbinword",
+    ].join("\r\n");
+    mailboxState.folderSources.Entwürfe = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Secret draft note",
+      "Date: Mon, 28 Sep 2026 19:30:00 +0000",
+      "Message-ID: <draft-search@example.com>",
+      "",
+      "secretdraftword",
+    ].join("\r\n");
+    mailboxState.folderSources["Junk E-mail"] = [
+      "From: Ads <ads@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Secret junk note",
+      "Date: Mon, 28 Sep 2026 19:40:00 +0000",
+      "Message-ID: <junk-search@example.com>",
+      "",
+      "secretjunkword",
+    ].join("\r\n");
+    mailboxState.archiveSource = [
+      "From: Billing <billing@example.com>",
+      "To: inbox.imap@example.com",
+      "Subject: Archive still searchable",
+      "Date: Mon, 28 Sep 2026 13:00:00 +0000",
+      "Message-ID: <archive-search@example.com>",
+      "",
+      "archivekeepword",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const hidden = await provider.getMessagesWithPagination({
+        query: "secretbinword",
+        maxResults: 20,
+      });
+      const hiddenDraft = await provider.getMessagesWithPagination({
+        query: "secretdraftword",
+        maxResults: 20,
+      });
+      const hiddenJunk = await provider.getMessagesWithPagination({
+        query: "secretjunkword",
+        maxResults: 20,
+      });
+      const kept = await provider.getMessagesWithPagination({
+        query: "archivekeepword",
+        maxResults: 20,
+      });
+      expect(hidden.messages).toEqual([]);
+      expect(hiddenDraft.messages).toEqual([]);
+      expect(hiddenJunk.messages).toEqual([]);
+      expect(kept.messages.map((message) => message.subject)).toEqual([
+        "Archive still searchable",
+      ]);
+    } finally {
+      mailboxState.listed = previousListed;
+      mailboxState.folderSources = {};
+      mailboxState.archiveSource = "";
+    }
+  });
+
   it("keeps the unsubscribe header from the mailbox message", async () => {
     mailboxState.inboxSource = [
       "From: News <news@example.com>",
