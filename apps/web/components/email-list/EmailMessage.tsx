@@ -382,7 +382,7 @@ function MessageHeader({
 }) {
   const { emailAccount, emailAccountId, userEmail } = useAccount();
 
-  const isSent = message.labelIds?.includes(GmailLabel.SENT) ?? false;
+  const isSent = messageWasSentByAccount(message, userEmail);
   const fromPeople = splitRecipientList(message.headers.from);
   const senderEmail = extractEmailAddress(fromPeople[0] || "");
   const senderName = isSent

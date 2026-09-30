@@ -292,6 +292,30 @@ describe("EmailMessage recipients", () => {
 
     expect(screen.getByText("Sam, Ada")).toBeTruthy();
   });
+
+  it("names archived mail from this account as Me", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Copied only",
+            to: "",
+            cc: "Ada Copy <ada-copy@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Me")).toBeTruthy();
+    expect(screen.getByText("to Ada Copy")).toBeTruthy();
+  });
 });
 
 describe("EmailMessage reply address", () => {
