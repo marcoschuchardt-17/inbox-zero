@@ -2348,6 +2348,31 @@ describe("createImapProvider", () => {
       });
 
       expect(rows).toEqual(["Middle incoming", "Older incoming"]);
+
+      const first = await provider.searchThreads({
+        query: "rankword",
+        maxResults: 1,
+      });
+      const firstRow = first.threads.map((thread) => {
+        const incoming = [...thread.messages]
+          .reverse()
+          .find((message) => !message.id.startsWith("Sent/"));
+        return (incoming ?? thread.messages.at(-1))?.subject;
+      });
+      const second = await provider.searchThreads({
+        query: "rankword",
+        maxResults: 1,
+        pageToken: first.nextPageToken,
+      });
+      const secondRow = second.threads.map((thread) => {
+        const incoming = [...thread.messages]
+          .reverse()
+          .find((message) => !message.id.startsWith("Sent/"));
+        return (incoming ?? thread.messages.at(-1))?.subject;
+      });
+
+      expect(firstRow).toEqual(["Middle incoming"]);
+      expect(secondRow).toEqual(["Older incoming"]);
     } finally {
       mailboxState.exists = previous.exists;
       mailboxState.inboxMessages = previous.inboxMessages;

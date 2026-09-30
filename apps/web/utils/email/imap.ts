@@ -503,14 +503,41 @@ export function createImapProvider(
       maxResults = DEFAULT_PAGE_SIZE,
       pageToken,
     }) => {
-      const { messages, nextPageToken } = await core.searchMessages({
-        query,
-        maxResults,
-        pageToken,
+      const needle = query?.trim();
+      if (!needle) {
+        const page = await core.searchMessages({
+          query,
+          maxResults,
+          pageToken,
+        });
+        return {
+          threads: threadsInListOrder(page.messages),
+          nextPageToken: page.nextPageToken,
+        };
+      }
+      if (!pageToken) {
+        await reconcileStoredInbox(config);
+        await storeSentMailbox({ config, logger });
+      }
+      const matches = await collectImapTextMatches({
+        config,
+        logger,
+        needle,
+        skipSent: false,
+      });
+      const threads = threadsInListOrder(matches);
+      const offset = pageOffset(pageToken);
+      const page = threads.slice(offset, offset + maxResults);
+      await dropStaleThreadCopies({
+        emailAccountId: config.emailAccountId,
+        messages: page.flatMap((thread) => thread.messages),
       });
       return {
-        threads: threadsInListOrder(messages),
-        nextPageToken,
+        threads: page,
+        nextPageToken:
+          offset + maxResults < threads.length
+            ? String(offset + maxResults)
+            : undefined,
       };
     },
     getMailboxSyncPage: async ({ after, limit, cursor }) => {
@@ -4194,6 +4221,35 @@ async function searchImapMessages({
   skipSent: boolean;
 }): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
   const offset = pageOffset(pageToken);
+  const matches = await collectImapTextMatches({
+    config,
+    logger,
+    needle,
+    skipSent,
+    limit: offset + maxResults + 1,
+  });
+  return {
+    messages: matches.slice(offset, offset + maxResults),
+    nextPageToken:
+      matches.length > offset + maxResults
+        ? String(offset + maxResults)
+        : undefined,
+  };
+}
+
+async function collectImapTextMatches({
+  config,
+  logger,
+  needle,
+  skipSent,
+  limit,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  needle: string;
+  skipSent: boolean;
+  limit?: number;
+}) {
   const mailboxes = await mailboxNamesForRead({ config, logger });
   const dated: { mailbox: string; uid: number; shown: number }[] = [];
   for (const [index, mailbox] of mailboxes.entries()) {
@@ -4218,10 +4274,10 @@ async function searchImapMessages({
   }
   dated.sort((left, right) => right.shown - left.shown || right.uid - left.uid);
   const needleText = needle.toLowerCase();
-  const needed = offset + maxResults + 1;
+  const cap = limit ?? Number.POSITIVE_INFINITY;
   const matches: ParsedImapMessage[] = [];
   let index = 0;
-  while (matches.length < needed && index < dated.length) {
+  while (matches.length < cap && index < dated.length) {
     const batch = dated.slice(index, index + 100);
     index += batch.length;
     const parsed = await fetchMailboxTextMatches({
@@ -4236,16 +4292,10 @@ async function searchImapMessages({
         continue;
       }
       matches.push(message);
-      if (matches.length >= needed) break;
+      if (matches.length >= cap) break;
     }
   }
-  return {
-    messages: matches.slice(offset, offset + maxResults),
-    nextPageToken:
-      matches.length > offset + maxResults
-        ? String(offset + maxResults)
-        : undefined,
-  };
+  return matches;
 }
 
 async function listMailboxTextMatchTimes({
