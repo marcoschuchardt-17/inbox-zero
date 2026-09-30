@@ -66,6 +66,12 @@ const {
       internalDate: string;
     }[],
     sentSource: "" as string,
+    sentMessages: [] as {
+      uid: number;
+      source: string;
+      flags: string[];
+      internalDate: string;
+    }[],
     trashSource: "" as string,
     draftSource: "" as string,
     draftMessages: [] as {
@@ -231,6 +237,23 @@ vi.mock("imapflow", () => ({
         return;
       }
       if (mailboxState.opened === "Sent") {
+        if (mailboxState.sentMessages.length) {
+          const wanted = fetchTargets(
+            range,
+            mailboxState.sentMessages,
+            options?.uid === true,
+          );
+          for (const message of mailboxState.sentMessages) {
+            if (!wanted.has(message.uid)) continue;
+            yield {
+              uid: message.uid,
+              source: Buffer.from(message.source),
+              flags: new Set(message.flags),
+              internalDate: new Date(message.internalDate),
+            };
+          }
+          return;
+        }
         if (!mailboxState.sentSource) return;
         yield {
           uid: 11,
@@ -2481,6 +2504,70 @@ describe("createImapProvider", () => {
     });
     expect(outsideRange.messages).toEqual([]);
     mailboxState.sentSource = "";
+  });
+
+  it("reads the next page of sent message ids", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.sentMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: old@example.com",
+          "Subject: Older sent note",
+          "Date: Tue, 01 Sep 2026 12:00:00 +0000",
+          "Message-ID: <older-sent@example.com>",
+          "",
+          "Older sent note.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: new@example.com",
+          "Subject: Newer sent note",
+          "Date: Sun, 20 Sep 2026 12:00:00 +0000",
+          "Message-ID: <newer-sent@example.com>",
+          "",
+          "Newer sent note.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+    const range = {
+      after: new Date("2026-08-01T00:00:00.000Z"),
+      before: new Date("2026-10-01T00:00:00.000Z"),
+    };
+
+    try {
+      const first = await provider.getSentMessageIds({
+        maxResults: 1,
+        ...range,
+      });
+      expect(first.messages).toEqual([
+        { id: "Sent/2", threadId: "<newer-sent@example.com>" },
+      ]);
+      expect(first.nextPageToken).toBe("2");
+
+      const second = await provider.getSentMessageIds({
+        maxResults: 1,
+        pageToken: first.nextPageToken,
+        ...range,
+      });
+      expect(second.messages).toEqual([
+        { id: "Sent/1", threadId: "<older-sent@example.com>" },
+      ]);
+      expect(second.nextPageToken).toBeUndefined();
+    } finally {
+      mailboxState.sentMessages = [];
+      mailboxState.exists = previousExists;
+    }
   });
 
   it("treats earlier company-domain mail as prior contact and ignores the open message", async () => {

@@ -108,22 +108,26 @@ export function createImapProvider(
     },
     getSentMessages: async (maxResults = DEFAULT_PAGE_SIZE) =>
       fetchSentMessages({ config, logger, maxResults }),
-    getSentMessageIds: async ({ maxResults, after, before }) => {
-      const messages = await core.getSentMessages(maxResults);
-      const inRange = messages.filter((message) => {
+    getSentMessageIds: async ({ maxResults, after, before, pageToken }) => {
+      const page = await fetchSentMessagePage({
+        config,
+        logger,
+        maxResults,
+        beforeSequence: pageOffset(pageToken) || undefined,
+      });
+      const inRange = page.messages.filter((message) => {
         const sentAt = new Date(message.date);
         if (Number.isNaN(sentAt.getTime())) return false;
         if (after && sentAt < after) return false;
         if (before && sentAt > before) return false;
         return true;
       });
-      // The sent fetch already returns the newest page. A second page would
-      // repeat that same window, so response-time stats stop after one page.
       return {
         messages: inRange.slice(0, maxResults).map((message) => ({
           id: message.id,
           threadId: message.threadId,
         })),
+        nextPageToken: page.nextPageToken,
       };
     },
     hasPreviousCommunicationsWithSenderOrDomain: async ({
