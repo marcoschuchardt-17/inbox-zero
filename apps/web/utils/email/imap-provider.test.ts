@@ -2114,6 +2114,55 @@ describe("createImapProvider", () => {
     mailboxState.archiveSource = "";
   });
 
+  it("lists earlier mail by the date written on it when that mail arrived later", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+      archiveMessages: mailboxState.archiveMessages,
+    };
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T03:02:00.000Z",
+        source: datedInboxMessage(
+          "Old header",
+          "<old-header-list@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    mailboxState.archiveMessages = [
+      {
+        uid: 4,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-02T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Newer header",
+          "<newer-header-list@example.com>",
+          "Sun, 20 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const listed = await provider.getMessagesWithPagination({
+        query: "",
+        maxResults: 1,
+      });
+
+      expect(listed.messages.map((message) => message.subject)).toEqual([
+        "Newer header",
+      ]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+      mailboxState.archiveMessages = previous.archiveMessages;
+    }
+  });
+
   it("finds inbox mail that is older than the newest page", async () => {
     mailboxState.exists = 3;
     mailboxState.archiveSource = "";

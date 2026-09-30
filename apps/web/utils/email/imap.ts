@@ -4338,8 +4338,7 @@ async function fetchSearchableMailboxMessages({
     }
   }
   return collected.sort(
-    (left, right) =>
-      Number(right.internalDate || "0") - Number(left.internalDate || "0"),
+    (left, right) => messageShownTime(right) - messageShownTime(left),
   );
 }
 
