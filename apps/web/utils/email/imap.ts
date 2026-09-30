@@ -14,6 +14,7 @@ import {
   formatEmailWithName,
   getSearchTermForSender,
   legacySubjectThreadKey,
+  storedRecipientAddresses,
 } from "@/utils/email";
 import { IMAP_CONNECTION_ERROR } from "@/utils/email/imap-connection-error";
 import { SafeError } from "@/utils/error";
@@ -3098,8 +3099,7 @@ async function storeSentMessages({
     const from = fromAddresses.join(", ");
     const date = new Date(message.date);
     if (!from || Number.isNaN(date.getTime())) continue;
-    const to =
-      extractEmailAddresses(message.headers.to || "").join(", ") || "Missing";
+    const to = storedRecipientAddresses(message.headers);
     await prisma.emailMessage.upsert({
       where: {
         emailAccountId_threadId_messageId: {

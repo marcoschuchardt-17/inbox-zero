@@ -7,6 +7,7 @@ import {
   collapsedReplyRecipientNames,
   recipientDisplayNames,
   storedAnalyticsAddresses,
+  storedRecipientAddresses,
   extractUniqueEmailAddresses,
   splitRecipientList,
   extractDomainFromEmail,
@@ -112,6 +113,26 @@ describe("email utils", () => {
           "Sam <sam@example.com>, Ada <ada@example.com>",
         ),
       ).toBe("sam@example.com, ada@example.com");
+    });
+  });
+
+  describe("storedRecipientAddresses", () => {
+    it("keeps the person on Cc when To is empty", () => {
+      expect(
+        storedRecipientAddresses({
+          to: "",
+          cc: "Ada Copy <ada-copy@example.com>",
+        }),
+      ).toBe("ada-copy@example.com");
+    });
+
+    it("keeps To when someone is also copied", () => {
+      expect(
+        storedRecipientAddresses({
+          to: "Sam <sam@example.com>",
+          cc: "Ada Copy <ada-copy@example.com>",
+        }),
+      ).toBe("sam@example.com");
     });
   });
 

@@ -56,6 +56,18 @@ export function storedAnalyticsAddresses(header: string) {
   return extractEmailAddresses(header).join(", ");
 }
 
+export function storedRecipientAddresses(headers: {
+  to?: string | null;
+  cc?: string | null;
+  bcc?: string | null;
+}) {
+  for (const header of [headers.to, headers.cc, headers.bcc]) {
+    const addresses = storedAnalyticsAddresses(header || "");
+    if (addresses) return addresses;
+  }
+  return "Missing";
+}
+
 // Extracts all email addresses from a comma-separated header string
 // e.g., "John <john@example.com>, Jane <jane@example.com>" -> ["john@example.com", "jane@example.com"]
 export function extractEmailAddresses(header: string): string[] {

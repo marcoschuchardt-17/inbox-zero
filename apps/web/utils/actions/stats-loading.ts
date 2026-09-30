@@ -12,6 +12,7 @@ import {
   legacySubjectThreadKey,
   messageIsFromAccountOnly,
   storedAnalyticsAddresses,
+  storedRecipientAddresses,
 } from "@/utils/email";
 import type { EmailProvider } from "@/utils/email/types";
 import { internalDateToDate } from "@/utils/date";
@@ -208,7 +209,7 @@ export async function saveBatch({
         from: storedAnalyticsAddresses(m.headers.from) || "Missing",
         fromName: extractNameFromEmail(m.headers.from),
         fromDomain: extractDomainFromEmail(fromAddresses[0] || ""),
-        to: storedAnalyticsAddresses(m.headers.to || "") || "Missing",
+        to: storedRecipientAddresses(m.headers),
         date,
         unsubscribeLink,
         read: !m.labelIds?.includes("UNREAD"),
