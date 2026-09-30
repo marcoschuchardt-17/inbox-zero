@@ -1926,6 +1926,9 @@ async function parseImapMessage(
           parsed.replyTo?.[0]?.name,
           parsed.replyTo?.[0]?.address,
         ) || undefined,
+      sender:
+        formatEmailWithName(parsed.sender?.name, parsed.sender?.address) ||
+        headerValue(parsed.headers, "sender"),
       "message-id": parsed.messageId || undefined,
       references: parsed.references || undefined,
       "in-reply-to": parsed.inReplyTo || undefined,
@@ -4485,6 +4488,9 @@ function imapMessageHaystack(message: ParsedImapMessage) {
     message.headers.cc || "",
     message.headers.bcc || "",
     message.headers["reply-to"] || "",
+    message.headers.sender || "",
+    message.headers["list-unsubscribe"] || "",
+    message.headers["list-unsubscribe-post"] || "",
     ...(message.attachments ?? []).map((attachment) => attachment.filename),
     attachmentSearchText.get(message) || "",
     ...imapRowLabelIds(message.labelIds).flatMap((label) => [

@@ -121,6 +121,7 @@ export interface ParsedMessageHeaders {
   "message-id"?: string;
   references?: string;
   "reply-to"?: string;
+  sender?: string;
   subject: string;
   to: string;
 }

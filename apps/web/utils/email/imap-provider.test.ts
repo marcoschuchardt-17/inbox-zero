@@ -2976,6 +2976,58 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("finds a sender and an unsubscribe address when they are not in the message", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T16:00:00.000Z",
+        source: [
+          "From: News <news@example.com>",
+          "Sender: Ada List <ada-sender@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Member note",
+          "Date: Tue, 29 Sep 2026 16:00:00 +0000",
+          "Message-ID: <member-note@example.com>",
+          "List-Unsubscribe: <mailto:leave-list@example.com>",
+          "",
+          "A short note for members.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const bySender = await provider.searchThreads({
+        query: "ada-sender@example.com",
+        maxResults: 20,
+      });
+      const bySenderName = await provider.searchThreads({
+        query: "Ada List",
+        maxResults: 20,
+      });
+      const byUnsubscribe = await provider.searchThreads({
+        query: "leave-list@example.com",
+        maxResults: 20,
+      });
+
+      expect(
+        bySender.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Member note"]);
+      expect(
+        bySenderName.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Member note"]);
+      expect(
+        byUnsubscribe.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Member note"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("returns the search match with the newest written date when that mail arrived earlier", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 3;
