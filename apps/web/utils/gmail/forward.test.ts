@@ -227,6 +227,27 @@ ${message.textHtml}
     );
   });
 
+  it("keeps every sender when the message lists more than one", () => {
+    const message: Pick<ParsedMessage, "headers" | "textPlain"> = {
+      headers: {
+        from: "Sam <sam@example.com>, Ada <ada@example.com>",
+        date: testDate.toISOString(),
+        subject: "Two senders",
+        to: "owner@example.com",
+      },
+      textPlain: "A short note from both.",
+    };
+
+    const html = forwardEmailHtml({
+      content: "",
+      message: message as ParsedMessage,
+    });
+
+    expect(html).toContain(
+      'From: <strong class="gmail_sendername" dir="auto">Sam</strong> <span dir="auto">&lt;<a href="mailto:sam@example.com">sam@example.com</a>&gt;</span>, <strong class="gmail_sendername" dir="auto">Ada</strong> <span dir="auto">&lt;<a href="mailto:ada@example.com">ada@example.com</a>&gt;</span><br>',
+    );
+  });
+
   it("escapes email header when no angle brackets present", () => {
     const message: Pick<ParsedMessage, "headers" | "textHtml"> = {
       headers: {

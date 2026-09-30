@@ -20,7 +20,7 @@ export const forwardEmailHtml = ({
   return `<div dir="ltr">${escapeHtml(content)}<br><br>
 <div class="gmail_quote gmail_quote_container">
   <div dir="ltr" class="gmail_attr">---------- Forwarded message ----------<br>
-From: ${formatFromEmailWithName(message.headers.from)}<br>
+From: ${formatFromListHtml(message.headers.from)}<br>
 Date: ${quotedDate}<br>
 Subject: ${escapeHtml(message.headers.subject)}<br>
 To: ${formatAddressListHtml(message.headers.to)}<br>${copiedRecipientsLine(message.headers.cc)}
@@ -44,6 +44,12 @@ Subject: ${message.headers.subject}
 To: ${message.headers.to}${message.headers.cc?.trim() ? `\nCc: ${message.headers.cc}` : ""}
 
 ${message.textPlain}`;
+
+function formatFromListHtml(emailHeader: string) {
+  const senders = splitRecipientList(emailHeader);
+  if (!senders.length) return escapeHtml(emailHeader || "");
+  return senders.map(formatFromEmailWithName).join(", ");
+}
 
 const formatFromEmailWithName = (emailHeader: string) => {
   const match = emailHeader?.match(/(.*?)\s*<([^>]+)>/);
