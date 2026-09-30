@@ -374,7 +374,7 @@ describe("EmailMessage reply address", () => {
       "Sam <sam@example.com>",
     );
     expect(screen.getByTestId("composer").dataset.cc).toBe(
-      "ada@example.com, pat@example.com",
+      "Ada <ada@example.com>, Pat <pat@example.com>",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Reply" }));

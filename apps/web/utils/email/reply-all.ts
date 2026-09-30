@@ -115,23 +115,20 @@ function addHeaderRecipientsToCcSet({
 }) {
   if (!headerValue) return;
 
-  const headerEmails = splitRecipientList(headerValue)
-    .map((entry) => extractEmailAddress(entry))
-    .filter((email) => {
-      if (!email) return false;
+  for (const entry of splitRecipientList(headerValue)) {
+    const email = extractEmailAddress(entry);
+    if (!email) continue;
 
-      const normalizedEmail = email.toLowerCase();
-      return (
-        !replyTargets.has(normalizedEmail) &&
-        !currentUserEmailSet.has(normalizedEmail)
-      );
-    });
-
-  for (const email of headerEmails) {
-    const key = email.toLowerCase();
-    if (!seenEmails.has(key)) {
-      seenEmails.add(key);
-      ccSet.add(email);
+    const normalizedEmail = email.toLowerCase();
+    if (
+      replyTargets.has(normalizedEmail) ||
+      currentUserEmailSet.has(normalizedEmail) ||
+      seenEmails.has(normalizedEmail)
+    ) {
+      continue;
     }
+
+    seenEmails.add(normalizedEmail);
+    ccSet.add(entry);
   }
 }

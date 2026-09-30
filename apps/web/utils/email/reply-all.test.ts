@@ -196,6 +196,28 @@ describe("buildReplyAllRecipients", () => {
     expect(result.cc).toHaveLength(2);
   });
 
+  it("keeps the name written on a copied person", () => {
+    const headers: ParsedMessageHeaders = {
+      from: "Sam <sam@example.com>",
+      to: "user@company.com, Pat <pat@example.com>",
+      cc: "Ada <ada@example.com>",
+      subject: "Test",
+      date: "2024-01-01",
+    };
+
+    const result = buildReplyAllRecipients(
+      headers,
+      undefined,
+      "user@company.com",
+    );
+
+    expect(result.to).toBe("Sam <sam@example.com>");
+    expect(result.cc).toEqual([
+      "Ada <ada@example.com>",
+      "Pat <pat@example.com>",
+    ]);
+  });
+
   it("should handle email addresses with display names", () => {
     const headers: ParsedMessageHeaders = {
       from: '"John Doe" <john@example.com>',
@@ -212,10 +234,11 @@ describe("buildReplyAllRecipients", () => {
     );
 
     expect(result.to).toBe('"John Doe" <john@example.com>');
-    expect(result.cc).toContain("alice@company.com");
-    expect(result.cc).toContain("bob@company.com");
-    expect(result.cc).toContain("charlie@company.com");
-    expect(result.cc).toHaveLength(3);
+    expect(result.cc).toEqual([
+      '"Charlie Brown" <charlie@company.com>',
+      '"Alice Smith" <alice@company.com>',
+      '"Bob Jones" <bob@company.com>',
+    ]);
   });
 
   it("should deduplicate emails with different display names", () => {
@@ -254,10 +277,10 @@ describe("buildReplyAllRecipients", () => {
     );
 
     expect(result.to).toBe('"John Doe" <john@example.com>');
-    expect(result.cc).not.toContain("john@example.com");
-    expect(result.cc).toContain("alice@company.com");
-    expect(result.cc).toContain("bob@company.com");
-    expect(result.cc).toHaveLength(2);
+    expect(result.cc).toEqual([
+      "bob@company.com",
+      '"Alice" <alice@company.com>',
+    ]);
   });
 
   it("should handle mixed email formats", () => {
@@ -276,11 +299,12 @@ describe("buildReplyAllRecipients", () => {
     );
 
     expect(result.to).toBe("sender@example.com");
-    expect(result.cc).toContain("alice@company.com");
-    expect(result.cc).toContain("bob@company.com");
-    expect(result.cc).toContain("charlie@company.com");
-    expect(result.cc).toContain("david@company.com");
-    expect(result.cc).toHaveLength(4);
+    expect(result.cc).toEqual([
+      "charlie@company.com",
+      '"David Lee" <david@company.com>',
+      '"Alice" <alice@company.com>',
+      "bob@company.com",
+    ]);
   });
 
   it("should handle override TO with display name format", () => {
@@ -365,10 +389,10 @@ describe("buildReplyAllRecipients", () => {
     );
 
     expect(result.to).toBe('"Alice" <alice@example.com>');
-    expect(result.cc).not.toContain("me@mycompany.com");
-    expect(result.cc).toContain("bob@company.com");
-    expect(result.cc).toContain("charlie@company.com");
-    expect(result.cc).toHaveLength(2);
+    expect(result.cc).toEqual([
+      '"Charlie" <charlie@company.com>',
+      '"Bob" <bob@company.com>',
+    ]);
   });
 
   it("should handle display names with commas correctly", () => {
@@ -387,11 +411,12 @@ describe("buildReplyAllRecipients", () => {
     );
 
     expect(result.to).toBe('"Smith, John" <john@example.com>');
-    expect(result.cc).toContain("jane@company.com");
-    expect(result.cc).toContain("bob@company.com");
-    expect(result.cc).toContain("mary@company.com");
-    expect(result.cc).toContain("simple@company.com");
-    expect(result.cc).toHaveLength(4);
+    expect(result.cc).toEqual([
+      '"Williams, Mary" <mary@company.com>',
+      "simple@company.com",
+      '"Doe, Jane" <jane@company.com>',
+      '"Johnson, Bob" <bob@company.com>',
+    ]);
   });
 
   it("should exclude the current user from CC regardless of address casing", () => {
@@ -454,7 +479,7 @@ describe("buildReplyAllRecipients", () => {
     );
 
     expect(result.to).toBe("Sam <sam@example.com>, Ada <ada@example.com>");
-    expect(result.cc).toEqual(["pat@example.com"]);
+    expect(result.cc).toEqual(["Pat <pat@example.com>"]);
   });
 
   it("does not copy the first of two senders onto Cc", () => {
@@ -473,7 +498,7 @@ describe("buildReplyAllRecipients", () => {
     );
 
     expect(result.to).toBe("Sam <sam@example.com>, Ada <ada@example.com>");
-    expect(result.cc).toEqual(["pat@example.com"]);
+    expect(result.cc).toEqual(["Pat <pat@example.com>"]);
   });
 });
 
