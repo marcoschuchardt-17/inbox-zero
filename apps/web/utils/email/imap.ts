@@ -1954,15 +1954,18 @@ function groupToThreads(messages: ParsedMessage[]): EmailThread[] {
     .map((threadMessages) =>
       toThread(
         threadMessages.sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+          (a, b) => messageShownTime(a) - messageShownTime(b),
         ),
       ),
     )
-    .sort(
-      (a, b) =>
-        new Date(b.messages.at(-1)?.date || 0).getTime() -
-        new Date(a.messages.at(-1)?.date || 0).getTime(),
-    );
+    .sort((a, b) => {
+      const left = a.messages.at(-1);
+      const right = b.messages.at(-1);
+      return (
+        (right ? messageShownTime(right) : 0) -
+        (left ? messageShownTime(left) : 0)
+      );
+    });
 }
 
 function toThread(messages: ParsedMessage[]): EmailThread {
@@ -4453,4 +4456,14 @@ function mailboxRoleLabel(mailbox: string) {
     return "SPAM";
   }
   return;
+}
+
+function messageShownTime(message: {
+  date: string;
+  headers: { date: string };
+}) {
+  const shown = new Date(message.headers.date).getTime();
+  if (!Number.isNaN(shown)) return shown;
+  const arrived = new Date(message.date).getTime();
+  return Number.isNaN(arrived) ? 0 : arrived;
 }

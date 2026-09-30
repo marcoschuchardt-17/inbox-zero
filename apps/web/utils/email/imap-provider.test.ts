@@ -3093,6 +3093,48 @@ describe("createImapProvider", () => {
     mailboxState.exists = 1;
   });
 
+  it("lists mail by the date written on it when that mail arrived later", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T03:02:00.000Z",
+        source: datedInboxMessage(
+          "Old header",
+          "<old-header@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-15T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Newer header",
+          "<newer-header@example.com>",
+          "Sun, 20 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const result = await provider.getThreadsWithQuery({
+        maxResults: 5,
+        query: { type: "inbox" },
+      });
+
+      expect(
+        result.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Newer header", "Old header"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("lists a reply stored in Sent", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
