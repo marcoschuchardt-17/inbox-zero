@@ -1957,6 +1957,21 @@ describe("createImapProvider", () => {
     await expect(provider.searchContacts("ada")).resolves.toEqual([]);
   });
 
+  it("renames a stored label and deletes it", async () => {
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.updateLabel("Desk_tag", { name: "Desk mark" });
+    await provider.deleteLabel("Desk_tag");
+
+    expect(prisma.label.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", gmailLabelId: "Desk_tag" },
+      data: { name: "Desk mark" },
+    });
+    expect(prisma.label.deleteMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", gmailLabelId: "Desk_tag" },
+    });
+  });
+
   it("reads earlier mail with the same person, including a sent reply", async () => {
     const previous = {
       inboxSearchUids: [...mailboxState.inboxSearchUids],

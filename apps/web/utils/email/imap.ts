@@ -1316,6 +1316,25 @@ export function createImapProvider(
       if (!row) return null;
       return { id: row.gmailLabelId, name: row.name, type: "user" };
     },
+    updateLabel: async (labelId, update) => {
+      const name = update.name?.trim();
+      if (!name) return;
+      await prisma.label.updateMany({
+        where: {
+          emailAccountId: config.emailAccountId,
+          gmailLabelId: labelId,
+        },
+        data: { name },
+      });
+    },
+    deleteLabel: async (labelId) => {
+      await prisma.label.deleteMany({
+        where: {
+          emailAccountId: config.emailAccountId,
+          gmailLabelId: labelId,
+        },
+      });
+    },
     createLabel: async (name: string) => {
       const keyword = imapKeyword(name);
       const row = await prisma.label.upsert({
