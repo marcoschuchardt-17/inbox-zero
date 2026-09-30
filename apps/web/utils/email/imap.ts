@@ -3630,6 +3630,8 @@ async function hasEarlierImapCorrespondence({
               { to: searchTerm },
               { cc: searchTerm },
               { bcc: searchTerm },
+              { header: { "reply-to": searchTerm } },
+              { header: { sender: searchTerm } },
             ],
           },
           { uid: true },
@@ -3675,6 +3677,8 @@ async function hasEarlierImapCorrespondence({
                 parsed.headers.to,
                 parsed.headers.cc || "",
                 parsed.headers.bcc || "",
+                parsed.headers["reply-to"] || "",
+                parsed.headers.sender || "",
               ],
               searchTerm,
             )
@@ -4139,6 +4143,8 @@ async function fetchMailboxParticipantMatches({
             { to: participant },
             { cc: participant },
             { bcc: participant },
+            { header: { "reply-to": participant } },
+            { header: { sender: participant } },
           ],
         },
         { uid: true },
@@ -4218,6 +4224,8 @@ function messageIncludesParticipant(
     message.headers.to,
     message.headers.cc,
     message.headers.bcc,
+    message.headers["reply-to"],
+    message.headers.sender,
   ]
     .flatMap((header) => extractEmailAddresses(header || ""))
     .some((address) => address.toLowerCase() === participant);

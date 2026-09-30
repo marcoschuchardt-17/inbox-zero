@@ -168,6 +168,7 @@ vi.mock("imapflow", () => ({
                     cc?: string;
                     bcc?: string;
                     from?: string;
+                    header?: Record<string, string | boolean>;
                   };
                   if (
                     record.to &&
@@ -193,6 +194,20 @@ vi.mock("imapflow", () => ({
                   ) {
                     return true;
                   }
+                  if (
+                    headerValueMatches(
+                      message.source,
+                      record.header,
+                      "reply-to",
+                    )
+                  ) {
+                    return true;
+                  }
+                  if (
+                    headerValueMatches(message.source, record.header, "sender")
+                  ) {
+                    return true;
+                  }
                   return false;
                 }),
               )
@@ -210,6 +225,7 @@ vi.mock("imapflow", () => ({
                   cc?: string;
                   bcc?: string;
                   from?: string;
+                  header?: Record<string, string | boolean>;
                 };
                 if (
                   record.to &&
@@ -232,6 +248,16 @@ vi.mock("imapflow", () => ({
                 if (
                   record.from &&
                   headerLineIncludes(message.source, "From", record.from)
+                ) {
+                  return true;
+                }
+                if (
+                  headerValueMatches(message.source, record.header, "reply-to")
+                ) {
+                  return true;
+                }
+                if (
+                  headerValueMatches(message.source, record.header, "sender")
                 ) {
                   return true;
                 }
@@ -2006,6 +2032,72 @@ describe("createImapProvider", () => {
 
       expect(threads.map((thread) => thread.messages[0]?.subject)).toEqual([
         "Quiet note",
+      ]);
+    } finally {
+      mailboxState.inboxMessages = previous;
+    }
+  });
+
+  it("finds a person who is only on the reply-to line", async () => {
+    const previous = mailboxState.inboxMessages;
+    mailboxState.inboxMessages = [
+      {
+        uid: 4,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: [
+          "From: News <news@example.com>",
+          "To: starttls.imap@example.com",
+          "Reply-To: Hidden <hidden-reply@example.com>",
+          "Subject: Reply path note",
+          "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+          "Message-ID: <reply-path-note@example.com>",
+          "",
+          "Answers go to Hidden.",
+        ].join("\r\n"),
+      },
+    ];
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const threads = await provider.getThreadsWithParticipant({
+        participantEmail: "hidden-reply@example.com",
+      });
+
+      expect(threads.map((thread) => thread.messages[0]?.subject)).toEqual([
+        "Reply path note",
+      ]);
+    } finally {
+      mailboxState.inboxMessages = previous;
+    }
+  });
+
+  it("finds a person who is only named in the sender header", async () => {
+    const previous = mailboxState.inboxMessages;
+    mailboxState.inboxMessages = [
+      {
+        uid: 4,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: [
+          "From: News <news@example.com>",
+          "To: starttls.imap@example.com",
+          "Sender: Hidden <hidden-sender@example.com>",
+          "Subject: Sender path note",
+          "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+          "Message-ID: <sender-path-note@example.com>",
+          "",
+          "Sent for Hidden.",
+        ].join("\r\n"),
+      },
+    ];
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const threads = await provider.getThreadsWithParticipant({
+        participantEmail: "hidden-sender@example.com",
+      });
+
+      expect(threads.map((thread) => thread.messages[0]?.subject)).toEqual([
+        "Sender path note",
       ]);
     } finally {
       mailboxState.inboxMessages = previous;
@@ -3974,6 +4066,78 @@ describe("createImapProvider", () => {
     mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
   });
 
+  it("treats a reply-to address as earlier mail with that person", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Sent", name: "Sent" },
+    ];
+    mailboxState.sentMessages = [
+      {
+        uid: 11,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T10:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: other@example.com",
+          "Reply-To: Quiet <quiet@acme.example>",
+          "Subject: Quiet reply path",
+          "Date: Mon, 28 Sep 2026 10:00:00 +0000",
+          "Message-ID: <quiet-reply-to@example.com>",
+          "",
+          "Answers go to Quiet.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const earlierReplyTo =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "introducer@acme.example",
+        date: new Date("2026-09-28T15:00:00.000Z"),
+        messageId: "1",
+      });
+
+    expect(earlierReplyTo).toBe(true);
+    mailboxState.sentMessages = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+  });
+
+  it("treats a sender header as earlier mail with that person", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Sent", name: "Sent" },
+    ];
+    mailboxState.sentMessages = [
+      {
+        uid: 11,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T10:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: other@example.com",
+          "Sender: Quiet <quiet@acme.example>",
+          "Subject: Quiet sender path",
+          "Date: Mon, 28 Sep 2026 10:00:00 +0000",
+          "Message-ID: <quiet-sender@example.com>",
+          "",
+          "Sent for Quiet.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const earlierSender =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "introducer@acme.example",
+        date: new Date("2026-09-28T15:00:00.000Z"),
+        messageId: "1",
+      });
+
+    expect(earlierSender).toBe(true);
+    mailboxState.sentMessages = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+  });
+
   it("matches a public-email sender by the full address", async () => {
     mailboxState.listed = [
       { path: "INBOX", name: "INBOX" },
@@ -5885,6 +6049,16 @@ function headerLineIncludes(source: string, name: string, value: string) {
       match[2]?.toLowerCase().includes(needle)
     );
   });
+}
+
+function headerValueMatches(
+  source: string,
+  header: Record<string, string | boolean> | undefined,
+  name: string,
+) {
+  const value = header?.[name];
+  if (typeof value !== "string" || !value) return false;
+  return headerLineIncludes(source, name, value);
 }
 
 function imapConfig() {
