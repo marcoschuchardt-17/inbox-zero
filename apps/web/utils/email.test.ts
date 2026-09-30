@@ -3,6 +3,7 @@ import {
   extractNameFromEmail,
   extractEmailAddress,
   extractEmailAddresses,
+  recipientDisplayNames,
   extractUniqueEmailAddresses,
   splitRecipientList,
   extractDomainFromEmail,
@@ -27,6 +28,14 @@ describe("email utils", () => {
       ["empty input", "", ""],
     ])("handles %s", (_caseName, input, expected) => {
       expect(extractNameFromEmail(input)).toBe(expected);
+    });
+  });
+
+  describe("recipientDisplayNames", () => {
+    it("names every recipient", () => {
+      expect(
+        recipientDisplayNames("Sam <sam@example.com>, Ada <ada@example.com>"),
+      ).toBe("Sam, Ada");
     });
   });
 

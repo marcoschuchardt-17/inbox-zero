@@ -16,6 +16,15 @@ export function extractNameFromEmail(email: string) {
   return email;
 }
 
+export function recipientDisplayNames(recipients: string) {
+  return splitRecipientList(recipients)
+    .map(
+      (person) => extractNameFromEmail(person) || extractEmailAddress(person),
+    )
+    .filter(Boolean)
+    .join(", ");
+}
+
 // Extracts all email addresses from a comma-separated header string
 // e.g., "John <john@example.com>, Jane <jane@example.com>" -> ["john@example.com", "jane@example.com"]
 export function extractEmailAddresses(header: string): string[] {
