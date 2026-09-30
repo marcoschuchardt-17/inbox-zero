@@ -602,6 +602,20 @@ describe("email utils", () => {
         ),
       ).toBe("Ada Beside <ada-beside@example.com>");
     });
+
+    it("names the other person when this account is also addressed", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Owner <owner@example.com>",
+              to: "Owner <owner@example.com>, Ada Listed <ada-listed@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Ada Listed <ada-listed@example.com>");
+    });
   });
 
   describe("normalizeEmailAddress", () => {

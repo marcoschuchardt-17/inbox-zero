@@ -316,18 +316,14 @@ export function participant(
     fromAddresses.length > 0 &&
     fromAddresses.every((address) => isSameEmailAddress(address, userEmail));
   if (!sentByAccount) return message.headers.from;
-  // Mail addressed only to this account still went to the copied people.
+  // The account is not someone this mail is waiting on.
   for (const header of [
     message.headers.to,
     message.headers.cc,
     message.headers.bcc,
   ]) {
-    if (
-      header &&
-      addressesOtherThanAccount(extractEmailAddresses(header), userEmail).length
-    ) {
-      return header;
-    }
+    const others = recipientPeopleOtherThanAccount(header, userEmail);
+    if (others.length) return others.join(", ");
   }
   return message.headers.to;
 }
@@ -445,6 +441,16 @@ function displayNameBesideAddress(
   // second name, so it must not replace Billing with the domain.
   if (!display || isSameEmailAddress(display, email)) return "";
   return display;
+}
+
+function recipientPeopleOtherThanAccount(
+  header: string | null | undefined,
+  accountEmail: string,
+) {
+  return splitRecipientList(header || "").filter((person) => {
+    const address = extractEmailAddress(person);
+    return Boolean(address) && !isSameEmailAddress(address, accountEmail);
+  });
 }
 
 function replyHeaderReachesSomeoneElse(
