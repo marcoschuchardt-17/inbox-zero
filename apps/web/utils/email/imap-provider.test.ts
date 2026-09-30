@@ -706,6 +706,27 @@ describe("createImapProvider", () => {
     });
   });
 
+  it("replies to the copied person when archived sent mail has no To", async () => {
+    sentMail.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.replyToEmail(
+      replySource({
+        from: "Starttls <owner@example.com>",
+        to: "",
+        cc: "Ada Copy <ada-copy@example.com>",
+        labelIds: ["ARCHIVE"],
+        subject: "Copied only",
+      }),
+      "Following up",
+    );
+
+    expect(sentMail[0]).toMatchObject({
+      to: "Ada Copy <ada-copy@example.com>",
+      subject: "Copied only",
+    });
+  });
+
   it("keeps a file on a rule reply", async () => {
     sentMail.length = 0;
     appended.length = 0;
@@ -6083,6 +6104,7 @@ function replySource(
   overrides: {
     from?: string;
     to?: string;
+    cc?: string;
     labelIds?: string[];
     subject?: string;
   } = {},
@@ -6100,6 +6122,7 @@ function replySource(
     headers: {
       from: overrides.from ?? "Sam <sam@example.com>",
       to: overrides.to ?? "Starttls <owner@example.com>",
+      ...(overrides.cc ? { cc: overrides.cc } : {}),
       subject: overrides.subject ?? "Please keep this",
       date: "Mon, 01 Sep 2026 12:05:00 +0000",
       "message-id": "<please-keep@example.com>",

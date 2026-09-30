@@ -59,6 +59,7 @@ vi.mock("@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy", () => ({
     replyingToEmail?: {
       to?: string;
       cc?: string;
+      subject?: string;
       threadId?: string;
       forwardedMessageId?: string;
       forwardedAttachments?: Array<{ filename: string }>;
@@ -70,6 +71,7 @@ vi.mock("@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy", () => ({
       data-thread-id={replyingToEmail?.threadId}
       data-to={replyingToEmail?.to}
       data-cc={replyingToEmail?.cc}
+      data-subject={replyingToEmail?.subject}
       data-forwarded-message-id={replyingToEmail?.forwardedMessageId}
       data-forwarded-attachments={replyingToEmail?.forwardedAttachments
         ?.map((attachment) => attachment.filename)
@@ -346,6 +348,35 @@ describe("EmailMessage reply address", () => {
     expect(screen.getByTestId("composer").dataset.to).toBe(
       "Sam <sam@example.com>",
     );
+  });
+
+  it("replies to the copied person when archived sent mail has no To", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Copied only",
+            to: "",
+            cc: "Ada Copy <ada-copy@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Copy <ada-copy@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBeUndefined();
+    expect(screen.getByTestId("composer").dataset.subject).toBe("Copied only");
   });
 
   it("includes the other recipients when replying to everyone", () => {

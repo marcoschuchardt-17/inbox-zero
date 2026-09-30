@@ -14,6 +14,8 @@ import {
   extractEmailAddress,
   extractNameFromEmail,
   isSameEmailAddress,
+  messageWasSentByAccount,
+  sentReplyRecipients,
   splitRecipientList,
 } from "@/utils/email";
 import { formatShortDate } from "@/utils/date";
@@ -800,14 +802,15 @@ const prepareReplyingToEmail = (
   content = "",
   options?: { replyAll?: boolean; userEmail?: string },
 ): ReplyingToEmail => {
-  const sentFromUser = message.labelIds?.includes("SENT");
+  const sentFromUser = messageWasSentByAccount(message, options?.userEmail);
+  const sentRecipients = sentReplyRecipients(message.headers);
 
   const { html } = createReplyContent({ message });
   const everyone =
     options?.replyAll && options.userEmail
       ? buildReplyAllRecipients(
           message.headers,
-          sentFromUser ? message.headers.to : undefined,
+          sentFromUser ? sentRecipients.to : undefined,
           options.userEmail,
         )
       : undefined;
@@ -819,7 +822,7 @@ const prepareReplyingToEmail = (
     to: everyone
       ? everyone.to
       : sentFromUser
-        ? message.headers.to
+        ? sentRecipients.to
         : message.headers["reply-to"] || message.headers.from,
     // If following an email from yourself, don't add "Re:" prefix
     subject: sentFromUser
@@ -829,9 +832,13 @@ const prepareReplyingToEmail = (
     messageId: message.id || undefined,
     threadId: message.threadId || undefined,
     // Keep original CC. Reply all also adds the other To addresses.
-    cc: everyone ? formatCcList(everyone.cc) : message.headers.cc,
+    cc: everyone
+      ? formatCcList(everyone.cc)
+      : sentFromUser
+        ? (sentRecipients.cc ?? undefined)
+        : message.headers.cc,
     // Keep original BCC if available
-    bcc: sentFromUser ? message.headers.bcc : "",
+    bcc: sentFromUser ? (sentRecipients.bcc ?? undefined) : "",
     references: message.headers.references,
     draftHtml: content || "",
     quotedContentHtml: html,

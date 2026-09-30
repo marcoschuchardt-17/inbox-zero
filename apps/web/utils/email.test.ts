@@ -18,6 +18,8 @@ import {
   messageRepliesToSourceSender,
   isSameOrganization,
   messageIsFromAccountOnly,
+  messageWasSentByAccount,
+  sentReplyRecipients,
 } from "./email";
 
 describe("messageIsFromAccountOnly", () => {
@@ -133,6 +135,63 @@ describe("email utils", () => {
           cc: "Ada Copy <ada-copy@example.com>",
         }),
       ).toBe("sam@example.com");
+    });
+  });
+
+  describe("sentReplyRecipients", () => {
+    it("addresses the copied person when sent mail has no To", () => {
+      expect(
+        sentReplyRecipients({
+          to: "",
+          cc: "Ada Copy <ada-copy@example.com>",
+        }),
+      ).toEqual({
+        to: "Ada Copy <ada-copy@example.com>",
+        cc: undefined,
+        bcc: undefined,
+      });
+    });
+
+    it("keeps To when someone is also copied", () => {
+      expect(
+        sentReplyRecipients({
+          to: "Sam <sam@example.com>",
+          cc: "Ada Copy <ada-copy@example.com>",
+          bcc: "hidden@example.com",
+        }),
+      ).toEqual({
+        to: "Sam <sam@example.com>",
+        cc: "Ada Copy <ada-copy@example.com>",
+        bcc: "hidden@example.com",
+      });
+    });
+  });
+
+  describe("messageWasSentByAccount", () => {
+    it("is true for archived mail that is only from the account", () => {
+      expect(
+        messageWasSentByAccount(
+          {
+            labelIds: ["ARCHIVE"],
+            headers: { from: "Starttls <starttls.imap@example.com>" },
+          },
+          "starttls.imap@example.com",
+        ),
+      ).toBe(true);
+    });
+
+    it("is false when someone else also sent the message", () => {
+      expect(
+        messageWasSentByAccount(
+          {
+            labelIds: ["ARCHIVE"],
+            headers: {
+              from: "Sam <sam@example.com>, Starttls <starttls.imap@example.com>",
+            },
+          },
+          "starttls.imap@example.com",
+        ),
+      ).toBe(false);
     });
   });
 

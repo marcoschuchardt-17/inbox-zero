@@ -14,6 +14,8 @@ import {
   formatEmailWithName,
   getSearchTermForSender,
   legacySubjectThreadKey,
+  messageWasSentByAccount,
+  sentReplyRecipients,
   storedRecipientAddresses,
 } from "@/utils/email";
 import { IMAP_CONNECTION_ERROR } from "@/utils/email/imap-connection-error";
@@ -854,7 +856,8 @@ export function createImapProvider(
       return true;
     },
     replyToEmail: async (email, content, options) => {
-      const sentFromUser = email.labelIds?.includes("SENT");
+      const sentFromUser = messageWasSentByAccount(email, config.ownerEmail);
+      const sentRecipients = sentReplyRecipients(email.headers);
       const headerMessageId = email.headers["message-id"] || "";
       const references = [email.headers.references, headerMessageId]
         .filter(Boolean)
@@ -865,7 +868,7 @@ export function createImapProvider(
       });
       const sent = await core.sendEmailWithHtml({
         to: sentFromUser
-          ? email.headers.to
+          ? sentRecipients.to
           : email.headers["reply-to"] || email.headers.from,
         subject: sentFromUser
           ? email.subject

@@ -68,6 +68,23 @@ export function storedRecipientAddresses(headers: {
   return "Missing";
 }
 
+export function sentReplyRecipients(headers: {
+  to?: string | null;
+  cc?: string | null;
+  bcc?: string | null;
+}) {
+  if (storedAnalyticsAddresses(headers.to || "")) {
+    return { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
+  }
+  if (storedAnalyticsAddresses(headers.cc || "")) {
+    return { to: headers.cc || "", cc: undefined, bcc: headers.bcc };
+  }
+  if (storedAnalyticsAddresses(headers.bcc || "")) {
+    return { to: headers.bcc || "", cc: undefined, bcc: undefined };
+  }
+  return { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
+}
+
 // Extracts all email addresses from a comma-separated header string
 // e.g., "John <john@example.com>, Jane <jane@example.com>" -> ["john@example.com", "jane@example.com"]
 export function extractEmailAddresses(header: string): string[] {
@@ -147,6 +164,19 @@ export function messageIsFromAccountOnly(
   return (
     addresses.length > 0 &&
     addressesOtherThanAccount(addresses, accountEmail).length === 0
+  );
+}
+
+export function messageWasSentByAccount(
+  message: {
+    labelIds?: readonly string[] | null;
+    headers: { from?: string | null };
+  },
+  accountEmail?: string | null,
+) {
+  return (
+    !!message.labelIds?.includes("SENT") ||
+    messageIsFromAccountOnly(message.headers.from || "", accountEmail)
   );
 }
 
