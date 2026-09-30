@@ -117,6 +117,28 @@ export function imapListMessage<T extends { id: string }>(
   return incoming ?? messages.at(-1);
 }
 
+type ImapFilingRole = "archive" | "trash" | "junk";
+
+const FILED_LABEL: Record<ImapFilingRole, string> = {
+  archive: "ARCHIVE",
+  trash: "TRASH",
+  junk: "SPAM",
+};
+
+export function imapThreadNeedsMove(
+  messages: readonly { id: string; labelIds?: readonly string[] | null }[],
+  role: ImapFilingRole,
+) {
+  const inbox = messages.filter((message) => messageIsInboxCopy(message));
+  const targets = inbox.length
+    ? inbox
+    : messages.filter((message) => {
+        const labels = message.labelIds ?? [];
+        return !labels.includes("SENT") && !labels.includes("DRAFT");
+      });
+  return targets.some((message) => !messageIsFiled(message, role));
+}
+
 export function imapSearchRestoreAction(messageId: string | null | undefined) {
   const mailbox = imapMessageMailbox(messageId);
   if (!mailbox) return null;
@@ -136,4 +158,24 @@ export function imapKeyword(name: string): string {
     throw new Error("Invalid IMAP label");
   }
   return keyword;
+}
+
+function messageIsInboxCopy(message: {
+  id: string;
+  labelIds?: readonly string[] | null;
+}) {
+  return (
+    message.labelIds?.includes("INBOX") ||
+    imapListLocation(imapMessageMailbox(message.id)) === "inbox"
+  );
+}
+
+function messageIsFiled(
+  message: { id: string; labelIds?: readonly string[] | null },
+  role: ImapFilingRole,
+) {
+  if (message.labelIds?.includes(FILED_LABEL[role])) return true;
+  const location = imapListLocation(imapMessageMailbox(message.id));
+  if (role === "junk") return location === "junk";
+  return location === role;
 }

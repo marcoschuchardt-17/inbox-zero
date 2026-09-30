@@ -59,6 +59,7 @@ import {
 import { enqueueThreadMailMutationBatch } from "@/utils/mail-engine/thread-mail-mutations";
 import { submitConversationChange } from "@/utils/mail-engine/submit-conversations";
 import { admissionRejectionCopy } from "@/utils/mail-engine/admission-notice";
+import { imapThreadNeedsMove } from "@/utils/email/imap-flags";
 import { isImapProvider } from "@/utils/email/provider-types";
 import { AccountCommandList } from "@/components/AccountCommandList";
 import { toastError } from "@/components/Toast";
@@ -170,6 +171,12 @@ function CommandPaletteContent({
             });
             return;
           }
+          if (
+            isImapProvider(provider) &&
+            !imapThreadNeedsMove(displayedThread.thread.messages, "archive")
+          ) {
+            return;
+          }
           try {
             const admission = await queueDisplayedThread({
               client,
@@ -245,6 +252,9 @@ function CommandPaletteContent({
               });
               return;
             }
+            if (!imapThreadNeedsMove(displayedThread.thread.messages, "junk")) {
+              return;
+            }
             try {
               const admission = await queueDisplayedThread({
                 client,
@@ -316,6 +326,11 @@ function CommandPaletteContent({
                   ? "Email is still loading"
                   : "Email is unavailable",
               });
+              return;
+            }
+            if (
+              !imapThreadNeedsMove(displayedThread.thread.messages, "trash")
+            ) {
               return;
             }
             try {

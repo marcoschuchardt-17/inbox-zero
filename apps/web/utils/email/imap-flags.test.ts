@@ -10,6 +10,7 @@ import {
   imapRowLabelIds,
   imapSearchRestoreAction,
   imapThreadLabelIds,
+  imapThreadNeedsMove,
 } from "./imap-flags";
 
 describe("imapRowLabelIds", () => {
@@ -113,6 +114,44 @@ describe("imapListMessage", () => {
     expect(imapListMessage([{ id: "Sent/9" }])?.id).toBe("Sent/9");
     expect(imapListMessage([{ id: "Archive/10" }])?.id).toBe("Archive/10");
     expect(imapListMessage([])).toBeUndefined();
+  });
+});
+
+describe("imapThreadNeedsMove", () => {
+  it("leaves an archived message where it is", () => {
+    expect(
+      imapThreadNeedsMove(
+        [{ id: "Archive/10", labelIds: ["ARCHIVE"] }],
+        "archive",
+      ),
+    ).toBe(false);
+    expect(
+      imapThreadNeedsMove(
+        [{ id: "Archiv/3", labelIds: ["ARCHIVE"] }],
+        "archive",
+      ),
+    ).toBe(false);
+  });
+
+  it("still archives a copy that is in the inbox", () => {
+    expect(
+      imapThreadNeedsMove(
+        [
+          { id: "INBOX/4", labelIds: ["INBOX"] },
+          { id: "Archive/4", labelIds: ["ARCHIVE"] },
+        ],
+        "archive",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves mail that is already in Trash or Junk", () => {
+    expect(
+      imapThreadNeedsMove([{ id: "Trash/1", labelIds: ["TRASH"] }], "trash"),
+    ).toBe(false);
+    expect(
+      imapThreadNeedsMove([{ id: "Junk/2", labelIds: ["SPAM"] }], "junk"),
+    ).toBe(false);
   });
 });
 
