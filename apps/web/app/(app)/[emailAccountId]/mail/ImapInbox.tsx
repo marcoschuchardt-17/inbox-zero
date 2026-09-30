@@ -76,7 +76,9 @@ export function ImapInbox() {
   );
   const extraFolders = (mailboxList ?? []).filter(
     (item) =>
-      !isStandardMailbox(item.id) && !isStandardMailbox(item.displayName),
+      !isStandardMailbox(item.id) &&
+      !isStandardMailbox(item.displayName) &&
+      !isDedicatedMailbox(item.systemType),
   );
   const filingFolders = extraFolders.filter(
     (item) => !isJunkMailbox(item.id) && !isJunkMailbox(item.displayName),
@@ -740,6 +742,15 @@ function mailboxFolderId(mailbox: string) {
 function isStandardMailbox(name: string) {
   return ["inbox", "sent", "drafts", "archive", "trash"].includes(
     name.toLowerCase(),
+  );
+}
+
+function isDedicatedMailbox(systemType: string | undefined) {
+  return (
+    systemType === "SENT" ||
+    systemType === "DRAFT" ||
+    systemType === "ARCHIVE" ||
+    systemType === "TRASH"
   );
 }
 

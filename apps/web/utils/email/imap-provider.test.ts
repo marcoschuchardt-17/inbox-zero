@@ -2609,6 +2609,104 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("uses the sent mailbox the server already has", async () => {
+    const previous = mailboxState.listed;
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Gesendet", name: "Gesendet" },
+    ];
+    mailboxState.missingMailboxes = ["Sent", "Sent Items", "[Gmail]/Sent Mail"];
+    mailboxState.folderSources.Gesendet = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Gesendet note",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <gesendet-note@example.com>",
+      "",
+      "Stored in the existing sent mailbox.",
+    ].join("\r\n");
+    appended.length = 0;
+    created.length = 0;
+    sentMail.length = 0;
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const result = await provider.getThreadsWithQuery({
+        query: { type: "sent" },
+      });
+
+      expect(result.threads[0]?.messages[0]?.subject).toBe("Gesendet note");
+      expect(result.threads[0]?.messages[0]?.labelIds).toContain("SENT");
+
+      await provider.sendEmailWithHtml({
+        to: "sam@example.com",
+        subject: "Hello",
+        messageHtml: "<p>Hi</p>",
+      });
+
+      expect(appended.at(-1)?.mailbox).toBe("Gesendet");
+      expect(created).not.toContain("Sent");
+    } finally {
+      mailboxState.listed = previous;
+      mailboxState.missingMailboxes = [];
+      mailboxState.folderSources.Gesendet = "";
+      appended.length = 0;
+      created.length = 0;
+      sentMail.length = 0;
+    }
+  });
+
+  it("archives into the mailbox the server already uses", async () => {
+    const previous = mailboxState.listed;
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Archiv", name: "Archiv" },
+    ];
+    movedTo.length = 0;
+    created.length = 0;
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const [message] = await provider.getInboxMessages(5);
+      await provider.archiveThread(
+        message?.threadId || "",
+        "owner@example.com",
+      );
+
+      expect(movedTo).toEqual(["Archiv"]);
+      expect(created).not.toContain("Archive");
+    } finally {
+      mailboxState.listed = previous;
+      movedTo.length = 0;
+      created.length = 0;
+    }
+  });
+
+  it("saves a draft in the mailbox the server already uses", async () => {
+    const previous = mailboxState.listed;
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Entwürfe", name: "Entwürfe" },
+    ];
+    appended.length = 0;
+    created.length = 0;
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const [message] = await provider.getInboxMessages(5);
+      if (!message) throw new Error("Missing message");
+      await provider.draftEmail(
+        message,
+        { content: "Thanks, I will reply." },
+        "owner@example.com",
+      );
+
+      expect(appended.at(-1)?.mailbox).toBe("Entwürfe");
+      expect(created).not.toContain("Drafts");
+    } finally {
+      mailboxState.listed = previous;
+      appended.length = 0;
+      created.length = 0;
+    }
+  });
+
   it("shows the readable address in an HTML-only sent snippet", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",

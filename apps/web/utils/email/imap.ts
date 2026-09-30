@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { ImapFlow } from "imapflow";
+import { specialUse } from "imapflow/lib/special-use";
 import he from "he";
 import PostalMime from "postal-mime";
 import nodemailer from "nodemailer";
@@ -275,10 +276,17 @@ export function createImapProvider(
     }) => {
       let messages: ParsedMessage[] = [];
       let nextPageToken: string | undefined;
-      const mailbox =
+      const requestedMailbox =
         (query?.type ? mailboxForListType(query.type) : undefined) ||
         query?.folderId ||
         undefined;
+      const mailbox = requestedMailbox
+        ? await resolveRequestedMailbox({
+            config,
+            logger,
+            mailbox: requestedMailbox,
+          })
+        : undefined;
       const fromEmail = query?.fromEmail?.trim();
       if (fromEmail && !mailbox && query?.type !== "sent") {
         const fromSender = await findImapMessagesFromSender({
@@ -418,7 +426,7 @@ export function createImapProvider(
     },
     checkIfReplySent: async (senderEmail: string) => {
       try {
-        return await hasSentMailTo({ config, senderEmail });
+        return await hasSentMailTo({ config, logger, senderEmail });
       } catch (error) {
         logger.warn("Error checking if an IMAP reply was sent", {
           error,
@@ -588,12 +596,15 @@ export function createImapProvider(
         return { draftId: "" };
       }
 
+      const draftsMailbox =
+        (await lookupRoleMailbox({ config, logger, role: "drafts" })) ||
+        "Drafts";
       const client = createImapClient(config);
       await connectImapClient(client);
       try {
-        await ensureMailbox(client, "Drafts");
+        await ensureMailbox(client, draftsMailbox);
         const appended = await client.append(
-          "Drafts",
+          draftsMailbox,
           buildDraftMessage({ email, args, from: userEmail }),
           ["\\Draft"],
         );
@@ -856,9 +867,14 @@ export function createImapProvider(
       );
     },
     markSpam: async (threadId: string) => {
+      const junkMailbox = await resolveRequestedMailbox({
+        config,
+        logger,
+        mailbox: "Junk",
+      });
       const messages = actionTargets(
         await core.getThreadMessages(threadId),
-        "Junk",
+        junkMailbox,
       );
       if (!messages.length) throw new SafeError("Thread not found");
       const messageIds = messages.map((message) => message.id);
@@ -868,7 +884,7 @@ export function createImapProvider(
             config,
             logger,
             messageId,
-            mailbox: "Junk",
+            mailbox: junkMailbox,
           }),
         ),
       );
@@ -879,10 +895,15 @@ export function createImapProvider(
       });
     },
     markNotSpam: async (threadId: string) => {
-      const matches = await messagesMatchingThread({
+      const junkMailbox = await resolveRequestedMailbox({
         config,
         logger,
         mailbox: "Junk",
+      });
+      const matches = await messagesMatchingThread({
+        config,
+        logger,
+        mailbox: junkMailbox,
         threadId,
       });
       if (!matches.length) throw new SafeError("Thread not found");
@@ -893,7 +914,7 @@ export function createImapProvider(
             logger,
             messageId: message.id,
             mailbox: config.syncFolder || "INBOX",
-            sourceMailbox: "Junk",
+            sourceMailbox: junkMailbox,
           }),
         ),
       );
@@ -1008,9 +1029,14 @@ export function createImapProvider(
         messageIds.map((messageId) => core.archiveMessage(messageId)),
       ).then(() => undefined),
     archiveThread: async (threadId: string, _ownerEmail: string) => {
+      const archiveMailbox = await resolveRequestedMailbox({
+        config,
+        logger,
+        mailbox: "Archive",
+      });
       const messages = actionTargets(
         await core.getThreadMessages(threadId),
-        "Archive",
+        archiveMailbox,
       );
       await Promise.all(
         messages.map((message) => core.archiveMessage(message.id)),
@@ -1057,9 +1083,14 @@ export function createImapProvider(
       return { succeededThreadIds, failedThreadIds };
     },
     trashThread: async (threadId: string) => {
+      const trashMailbox = await resolveRequestedMailbox({
+        config,
+        logger,
+        mailbox: "Trash",
+      });
       const messages = actionTargets(
         await core.getThreadMessages(threadId),
-        "Trash",
+        trashMailbox,
       );
       await core.trashMessages(messages.map((message) => message.id));
     },
@@ -1144,6 +1175,7 @@ export function createImapProvider(
           totalItemCount: 0,
           unreadItemCount: 0,
           isHidden: false,
+          systemType: systemTypeForMailbox(box.name || box.path),
         }));
       } finally {
         await client.logout().catch(() => undefined);
@@ -2012,10 +2044,15 @@ async function moveMessagesFromSenders({
 }) {
   const senders = fromEmails.map((email) => email.trim()).filter(Boolean);
   if (!senders.length) return;
+  const destination = await resolveRequestedMailbox({
+    config,
+    logger,
+    mailbox,
+  });
   const client = createImapClient(config);
   await connectImapClient(client);
   try {
-    await ensureMailbox(client, mailbox);
+    await ensureMailbox(client, destination);
     const sourceMailbox = config.syncFolder || "INBOX";
     const lock = await client.getMailboxLock(sourceMailbox);
     const movedIds: string[] = [];
@@ -2027,7 +2064,7 @@ async function moveMessagesFromSenders({
         for (const uid of found) uids.add(uid);
       }
       for (const uid of uids) {
-        await client.messageMove(uid, mailbox, { uid: true });
+        await client.messageMove(uid, destination, { uid: true });
         movedIds.push(imapMessageId(sourceMailbox, uid));
       }
     } finally {
@@ -2188,8 +2225,10 @@ async function findDraftMessages({
 }) {
   // Rule drafts are stored under the Drafts uid. The same number can name a
   // different message in the inbox.
+  const draftsMailbox =
+    (await lookupRoleMailbox({ config, logger, role: "drafts" })) || "Drafts";
   const ref = parseImapMessageRef(draftId);
-  const draftsUid = ref && !ref.mailbox ? `Drafts/${ref.uid}` : null;
+  const draftsUid = ref && !ref.mailbox ? `${draftsMailbox}/${ref.uid}` : null;
   const direct = ref
     ? await fetchMessageById({
         config,
@@ -2202,13 +2241,13 @@ async function findDraftMessages({
     ? await fetchMailboxThreadMatches({
         config,
         logger,
-        mailbox: "Drafts",
+        mailbox: draftsMailbox,
         needle,
       })
     : await fetchMailboxMessages({
         config,
         logger,
-        mailbox: "Drafts",
+        mailbox: draftsMailbox,
         maxResults: 100,
       });
   const seen = new Set<string>();
@@ -2238,8 +2277,10 @@ async function appendDraftRaw({
   const client = createImapClient(config);
   await connectImapClient(client);
   try {
-    await ensureMailbox(client, "Drafts");
-    return await client.append("Drafts", raw, ["\\Draft"]);
+    const draftsMailbox =
+      (await lookupRoleMailbox({ config, logger, role: "drafts" })) || "Drafts";
+    await ensureMailbox(client, draftsMailbox);
+    return await client.append(draftsMailbox, raw, ["\\Draft"]);
   } catch (error) {
     logger.error("Failed saving IMAP draft", {
       error,
@@ -2303,10 +2344,20 @@ async function moveThreadBetweenMailboxes({
   sourceMailbox: string;
   destinationMailbox: string;
 }) {
-  const matches = await messagesMatchingThread({
+  const source = await resolveRequestedMailbox({
     config,
     logger,
     mailbox: sourceMailbox,
+  });
+  const destination = await resolveRequestedMailbox({
+    config,
+    logger,
+    mailbox: destinationMailbox,
+  });
+  const matches = await messagesMatchingThread({
+    config,
+    logger,
+    mailbox: source,
     threadId,
   });
   if (!matches.length) throw new SafeError("Thread not found");
@@ -2316,8 +2367,8 @@ async function moveThreadBetweenMailboxes({
         config,
         logger,
         messageId: message.id,
-        mailbox: destinationMailbox,
-        sourceMailbox,
+        mailbox: destination,
+        sourceMailbox: source,
       }),
     ),
   );
@@ -2362,15 +2413,23 @@ async function moveMessageToMailbox({
 }) {
   const ref = parseImapMessageRef(messageId);
   if (!ref) return;
+  const destination = await resolveRequestedMailbox({
+    config,
+    logger,
+    mailbox,
+  });
+  const source = sourceMailbox
+    ? await resolveRequestedMailbox({ config, logger, mailbox: sourceMailbox })
+    : undefined;
   const client = createImapClient(config);
   await connectImapClient(client);
   try {
-    await ensureMailbox(client, mailbox);
+    await ensureMailbox(client, destination);
     const lock = await client.getMailboxLock(
-      sourceMailbox || ref.mailbox || config.syncFolder || "INBOX",
+      source || ref.mailbox || config.syncFolder || "INBOX",
     );
     try {
-      await client.messageMove(ref.uid, mailbox, { uid: true });
+      await client.messageMove(ref.uid, destination, { uid: true });
     } finally {
       lock.release();
     }
@@ -2381,7 +2440,7 @@ async function moveMessageToMailbox({
       mailbox,
       emailAccountId: config.emailAccountId,
     });
-    throw new SafeError(`Failed to move message to ${mailbox}`);
+    throw new SafeError(`Failed to move message to ${destination}`);
   } finally {
     await client.logout().catch(() => undefined);
   }
@@ -2692,15 +2751,17 @@ async function saveSentCopy({
   const client = createImapClient(config);
   try {
     await connectImapClient(client);
-    await ensureMailbox(client, "Sent");
-    const appended = await client.append("Sent", raw, ["\\Seen"]);
+    const sentMailbox =
+      (await lookupRoleMailbox({ config, logger, role: "sent" })) || "Sent";
+    await ensureMailbox(client, sentMailbox);
+    const appended = await client.append(sentMailbox, raw, ["\\Seen"]);
     if (appended?.uid) {
       const message = await parseImapMessage(
         appended.uid,
         Buffer.from(raw),
         new Set(["\\Seen"]),
         undefined,
-        "Sent",
+        sentMailbox,
       );
       await storeSentMessages({ config, messages: [message] });
     }
@@ -2989,9 +3050,11 @@ const SENT_MAILBOXES = ["Sent", "Sent Items", "[Gmail]/Sent Mail"];
 
 async function hasSentMailTo({
   config,
+  logger,
   senderEmail,
 }: {
   config: ImapConfig;
+  logger: Logger;
   senderEmail: string;
 }) {
   const sender = extractEmailAddress(senderEmail).toLowerCase();
@@ -3000,7 +3063,15 @@ async function hasSentMailTo({
   const client = createImapClient(config);
   await connectImapClient(client);
   try {
-    for (const mailbox of SENT_MAILBOXES) {
+    const preferred = await lookupRoleMailbox({ config, logger, role: "sent" });
+    const sentMailboxes = [
+      ...new Set(
+        [preferred, ...SENT_MAILBOXES].filter((mailbox): mailbox is string =>
+          Boolean(mailbox),
+        ),
+      ),
+    ];
+    for (const mailbox of sentMailboxes) {
       const lock = await client
         .getMailboxLock(mailbox)
         .catch((error: unknown) => {
@@ -3074,7 +3145,15 @@ async function fetchSentMessagePage({
   maxResults: number;
   beforeSequence?: number;
 }) {
-  for (const mailbox of SENT_MAILBOXES) {
+  const preferred = await lookupRoleMailbox({ config, logger, role: "sent" });
+  const mailboxes = [
+    ...new Set(
+      [preferred, ...SENT_MAILBOXES].filter((mailbox): mailbox is string =>
+        Boolean(mailbox),
+      ),
+    ),
+  ];
+  for (const mailbox of mailboxes) {
     try {
       const page = await fetchMailboxMessagePage({
         config,
@@ -3344,15 +3423,10 @@ function correspondenceFolders(
 }
 
 function isSentFolder(name: string, path: string) {
-  const normalizedName = name.toLowerCase();
-  const normalizedPath = path.toLowerCase();
   return (
-    normalizedName === "sent" ||
-    normalizedName === "sent items" ||
-    normalizedPath === "sent" ||
-    normalizedPath === "sent items" ||
-    normalizedPath === "[gmail]/sent mail" ||
-    normalizedPath.endsWith("/sent")
+    roleFromMailboxName(name) === "sent" ||
+    roleFromMailboxName(path) === "sent" ||
+    path.toLowerCase().endsWith("/sent")
   );
 }
 
@@ -4041,6 +4115,145 @@ async function mailboxNamesForRead({
   );
 }
 
+type MailboxRole = "sent" | "drafts" | "trash" | "archive" | "junk";
+
+const ROLE_FLAG: Record<MailboxRole, string> = {
+  sent: "\\Sent",
+  drafts: "\\Drafts",
+  trash: "\\Trash",
+  archive: "\\Archive",
+  junk: "\\Junk",
+};
+
+const ROLE_LABEL: Record<
+  MailboxRole,
+  "SENT" | "DRAFT" | "TRASH" | "ARCHIVE" | "SPAM"
+> = {
+  sent: "SENT",
+  drafts: "DRAFT",
+  trash: "TRASH",
+  archive: "ARCHIVE",
+  junk: "SPAM",
+};
+
+const ROLE_FALLBACKS: Record<MailboxRole, string[]> = {
+  sent: ["Sent", "Sent Items", "[Gmail]/Sent Mail"],
+  drafts: ["Drafts"],
+  trash: ["Trash", "Deleted", "Deleted Items"],
+  archive: ["Archive"],
+  junk: ["Junk", "Spam"],
+};
+
+type ListedMailbox = {
+  path?: string | null;
+  name?: string | null;
+  specialUse?: string | null;
+  specialUseSource?: string | null;
+};
+
+function roleFromMailboxName(name: string | null | undefined) {
+  const leaf = (name || "").trim();
+  if (!leaf) return;
+  const flag = specialUse(false, { flags: new Set<string>(), name: leaf }).flag;
+  if (!flag) return;
+  return (Object.keys(ROLE_FLAG) as MailboxRole[]).find(
+    (role) => ROLE_FLAG[role].toLowerCase() === flag.toLowerCase(),
+  );
+}
+
+function systemTypeForMailbox(name: string | null | undefined) {
+  const role = roleFromMailboxName(name);
+  if (!role) return;
+  return ROLE_LABEL[role];
+}
+
+function roleMailboxPath(boxes: ListedMailbox[], role: MailboxRole) {
+  const flag = ROLE_FLAG[role].toLowerCase();
+  const extension = boxes.find(
+    (box) =>
+      box.path &&
+      box.specialUse?.toLowerCase() === flag &&
+      box.specialUseSource === "extension",
+  );
+  if (extension?.path) return extension.path;
+
+  const fallbacks = ROLE_FALLBACKS[role].map((item) => item.toLowerCase());
+  const english = boxes.find((box) => {
+    const path = box.path?.toLowerCase();
+    const name = box.name?.toLowerCase();
+    return Boolean(
+      (path && fallbacks.includes(path)) || (name && fallbacks.includes(name)),
+    );
+  });
+  if (english?.path) return english.path;
+
+  return boxes.find(
+    (box) => box.path && roleFromMailboxName(box.name || box.path) === role,
+  )?.path;
+}
+
+function roleForRequestedMailbox(mailbox: string) {
+  const leaf = mailbox.trim().split("/").at(-1) || mailbox.trim();
+  return (
+    roleFromMailboxName(leaf) ||
+    roleFromMailboxName(mailbox) ||
+    (Object.keys(ROLE_FALLBACKS) as MailboxRole[]).find((role) =>
+      ROLE_FALLBACKS[role].some(
+        (name) => name.toLowerCase() === mailbox.trim().toLowerCase(),
+      ),
+    )
+  );
+}
+
+async function listImapMailboxes({
+  config,
+  logger,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+}) {
+  const client = createImapClient(config);
+  try {
+    await connectImapClient(client);
+    return await client.list();
+  } catch (error) {
+    logger.warn("Skipped IMAP folder list while choosing a mailbox", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    return [];
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+async function lookupRoleMailbox({
+  config,
+  logger,
+  role,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  role: MailboxRole;
+}) {
+  const boxes = await listImapMailboxes({ config, logger });
+  return roleMailboxPath(boxes, role);
+}
+
+async function resolveRequestedMailbox({
+  config,
+  logger,
+  mailbox,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  mailbox: string;
+}) {
+  const role = roleForRequestedMailbox(mailbox);
+  if (!role) return mailbox;
+  return (await lookupRoleMailbox({ config, logger, role })) || mailbox;
+}
+
 function withMailboxRole(labelIds: string[], mailbox: string) {
   const role = mailboxRoleLabel(mailbox);
   if (!role || labelIds.includes(role)) return labelIds;
@@ -4050,6 +4263,8 @@ function withMailboxRole(labelIds: string[], mailbox: string) {
 function mailboxRoleLabel(mailbox: string) {
   const name = mailbox.trim().toLowerCase();
   const leaf = name.split("/").at(-1) || name;
+  const role = roleFromMailboxName(leaf) || roleFromMailboxName(name);
+  if (role) return ROLE_LABEL[role];
   if (name === "inbox" || leaf === "inbox") return "INBOX";
   if (
     name === "sent" ||
