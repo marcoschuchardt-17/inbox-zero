@@ -1968,23 +1968,72 @@ describe("createImapProvider", () => {
       },
     ];
     flagsRemoved.length = 0;
+    flagsAdded.length = 0;
     const provider = createImapProvider(imapConfig(), logger);
 
     try {
       await provider.updateLabel("Desk_tag", { name: "Desk mark" });
-      await provider.deleteLabel("Desk_tag");
+      await provider.deleteLabel("Desk_mark");
     } finally {
       mailboxState.inboxMessages = previous;
     }
 
+    expect(flagsAdded).toEqual([{ uid: 7, flags: ["Desk_mark"] }]);
+    expect(flagsRemoved).toEqual(["Desk_tag"]);
     expect(prisma.label.updateMany).toHaveBeenCalledWith({
       where: { emailAccountId: "account-1", gmailLabelId: "Desk_tag" },
-      data: { name: "Desk mark" },
+      data: { name: "Desk mark", gmailLabelId: "Desk_mark" },
     });
-    expect(flagsRemoved).toEqual(["Desk_tag"]);
+    expect(prisma.action.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", labelId: "Desk_tag" },
+      data: { label: "Desk mark", labelId: "Desk_mark" },
+    });
+    expect(prisma.mailSplitFilter.updateMany).toHaveBeenCalledWith({
+      where: {
+        kind: "LABEL",
+        value: "Desk_tag",
+        mailSplit: { emailAccountId: "account-1" },
+      },
+      data: { value: "Desk_mark" },
+    });
     expect(prisma.label.deleteMany).toHaveBeenCalledWith({
-      where: { emailAccountId: "account-1", gmailLabelId: "Desk_tag" },
+      where: { emailAccountId: "account-1", gmailLabelId: "Desk_mark" },
     });
+  });
+
+  it("keeps the keyword when a renamed label still uses it", async () => {
+    flagsRemoved.length = 0;
+    flagsAdded.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.updateLabel("Desk_tag", { name: "Desk  tag" });
+
+    expect(flagsAdded).toEqual([]);
+    expect(flagsRemoved).toEqual([]);
+    expect(prisma.label.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", gmailLabelId: "Desk_tag" },
+      data: { name: "Desk  tag" },
+    });
+    expect(prisma.action.updateMany).toHaveBeenCalledWith({
+      where: { emailAccountId: "account-1", labelId: "Desk_tag" },
+      data: { label: "Desk  tag", labelId: "Desk_tag" },
+    });
+    expect(prisma.mailSplitFilter.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves the keyword in place when the new name is already a label", async () => {
+    flagsRemoved.length = 0;
+    flagsAdded.length = 0;
+    prisma.label.findFirst.mockResolvedValue({ id: "other-label" } as never);
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await expect(
+      provider.updateLabel("Desk_tag", { name: "Desk mark" }),
+    ).rejects.toThrow("Failed to update label");
+
+    expect(flagsAdded).toEqual([]);
+    expect(flagsRemoved).toEqual([]);
+    expect(prisma.label.updateMany).not.toHaveBeenCalled();
   });
 
   it("reads earlier mail with the same person, including a sent reply", async () => {

@@ -4,7 +4,7 @@ import { specialUse } from "imapflow/lib/special-use";
 import he from "he";
 import PostalMime, { decodeWords } from "postal-mime";
 import nodemailer from "nodemailer";
-import { ActionType } from "@/generated/prisma/enums";
+import { ActionType, MailSplitFilterKind } from "@/generated/prisma/enums";
 import { shouldSkipAutoDraft } from "@/utils/auto-draft";
 import {
   extractDomainFromEmail,
@@ -1318,13 +1318,47 @@ export function createImapProvider(
     },
     updateLabel: async (labelId, update) => {
       const name = update.name?.trim();
-      if (!name) return;
+      const currentId = labelId.trim();
+      if (!name || !currentId) return;
+      let keyword: string;
+      try {
+        keyword = imapKeyword(name);
+      } catch {
+        throw new SafeError("Failed to update label");
+      }
+      const taken = await prisma.label.findFirst({
+        where: {
+          emailAccountId: config.emailAccountId,
+          NOT: { gmailLabelId: currentId },
+          OR: [
+            { name },
+            ...(keyword === currentId ? [] : [{ gmailLabelId: keyword }]),
+          ],
+        },
+        select: { id: true },
+      });
+      if (taken) throw new SafeError("Failed to update label");
+      if (keyword !== currentId) {
+        await replaceKeywordOnAllMailboxes({
+          config,
+          logger,
+          fromKeyword: currentId,
+          toKeyword: keyword,
+        });
+      }
+      await renameStoredLabelReferences({
+        emailAccountId: config.emailAccountId,
+        fromId: currentId,
+        toId: keyword,
+        name,
+      });
       await prisma.label.updateMany({
         where: {
           emailAccountId: config.emailAccountId,
-          gmailLabelId: labelId,
+          gmailLabelId: currentId,
         },
-        data: { name },
+        data:
+          keyword === currentId ? { name } : { name, gmailLabelId: keyword },
       });
     },
     deleteLabel: async (labelId) => {
@@ -2282,6 +2316,116 @@ async function moveMessagesFromSenders({
     throw new SafeError(`Failed to move IMAP messages to ${mailbox}`);
   } finally {
     await client.logout().catch(() => undefined);
+  }
+}
+
+async function replaceKeywordOnAllMailboxes({
+  config,
+  logger,
+  fromKeyword,
+  toKeyword,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  fromKeyword: string;
+  toKeyword: string;
+}) {
+  const client = createImapClient(config);
+  await connectImapClient(client);
+  try {
+    const boxes = await client.list();
+    const mailboxes = [
+      ...new Set(
+        [config.syncFolder || "INBOX", ...boxes.map((box) => box.path)].filter(
+          (mailbox): mailbox is string => Boolean(mailbox),
+        ),
+      ),
+    ];
+    for (const mailbox of mailboxes) {
+      const lock = await client
+        .getMailboxLock(mailbox)
+        .catch((error: unknown) => {
+          if (isMissingImapMailbox(error)) return null;
+          throw error;
+        });
+      if (!lock) continue;
+      try {
+        const searched = await client.search(
+          { keyword: fromKeyword },
+          { uid: true },
+        );
+        const uids = (Array.isArray(searched) ? searched : []).filter(
+          (uid): uid is number => typeof uid === "number",
+        );
+        for (const uid of uids) {
+          await client.messageFlagsAdd(uid, [toKeyword], { uid: true });
+          await client.messageFlagsRemove(uid, [fromKeyword], { uid: true });
+        }
+      } finally {
+        lock.release();
+      }
+    }
+  } catch (error) {
+    logger.error("Failed renaming an IMAP label", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to update label");
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+async function renameStoredLabelReferences({
+  emailAccountId,
+  fromId,
+  toId,
+  name,
+}: {
+  emailAccountId: string;
+  fromId: string;
+  toId: string;
+  name: string;
+}) {
+  const data = { label: name, labelId: toId };
+  await prisma.action.updateMany({
+    where: { emailAccountId, labelId: fromId },
+    data,
+  });
+  await prisma.scheduledAction.updateMany({
+    where: { emailAccountId, labelId: fromId },
+    data,
+  });
+  await prisma.executedAction.updateMany({
+    where: { labelId: fromId, executedRule: { emailAccountId } },
+    data,
+  });
+  if (fromId === toId) return;
+  await prisma.mailSplitFilter.updateMany({
+    where: {
+      kind: MailSplitFilterKind.LABEL,
+      value: fromId,
+      mailSplit: { emailAccountId },
+    },
+    data: { value: toId },
+  });
+  const rules = await prisma.rule.findMany({
+    where: {
+      emailAccountId,
+      name: { startsWith: SENDER_LABEL_RULE_PREFIX },
+      actions: { some: { labelId: toId } },
+    },
+    select: { id: true, name: true, from: true },
+  });
+  if (!Array.isArray(rules)) return;
+  for (const rule of rules) {
+    if (!rule.from) continue;
+    const nextName = `${SENDER_LABEL_RULE_PREFIX} ${rule.from} ${toId}`;
+    if (nextName === rule.name) continue;
+    await prisma.rule.update({
+      where: { id: rule.id },
+      data: { name: nextName },
+    });
   }
 }
 
