@@ -820,9 +820,9 @@ function ImapLabelManager({
           ) : null}
           <ul className="mt-2 flex flex-col gap-1">
             {ordered.map((label) => (
-              <li key={label.id} className="flex items-center gap-2 text-sm">
+              <li key={label.id} className="flex flex-col gap-1 text-sm">
                 {editingId === label.id ? (
-                  <>
+                  <div className="flex gap-2">
                     <input
                       aria-label={`Label name for ${label.name}`}
                       value={editName}
@@ -839,53 +839,53 @@ function ImapLabelManager({
                     >
                       Save label
                     </Button>
-                  </>
+                  </div>
                 ) : (
-                  <span className="min-w-0 flex-1 break-words">
-                    {label.name}
-                  </span>
+                  <span>{label.name}</span>
                 )}
-                {editingId === label.id ? null : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      setEditingId(label.id);
-                      setEditName(label.name);
-                      setConfirmDeleteId(null);
-                    }}
-                  >
-                    {`Rename ${label.name}`}
-                  </Button>
-                )}
-                {confirmDeleteId === label.id ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      deleteLabel(label.id).catch(() => undefined);
-                    }}
-                  >
-                    {`Delete ${label.name} now`}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      setConfirmDeleteId(label.id);
-                      setEditingId(null);
-                    }}
-                  >
-                    {`Delete ${label.name}`}
-                  </Button>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  {editingId === label.id ? null : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setEditingId(label.id);
+                        setEditName(label.name);
+                        setConfirmDeleteId(null);
+                      }}
+                    >
+                      {`Rename ${label.name}`}
+                    </Button>
+                  )}
+                  {confirmDeleteId === label.id ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        deleteLabel(label.id).catch(() => undefined);
+                      }}
+                    >
+                      {`Delete ${label.name} now`}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setConfirmDeleteId(label.id);
+                        setEditingId(null);
+                      }}
+                    >
+                      {`Delete ${label.name}`}
+                    </Button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
