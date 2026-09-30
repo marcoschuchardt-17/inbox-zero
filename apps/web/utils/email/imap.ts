@@ -124,7 +124,7 @@ export function createImapProvider(
               config,
               logger,
               maxResults,
-              beforeSequence: pageOffset(pageToken) || undefined,
+              pageToken,
             });
       const inRange = page.messages.filter((message) => {
         const sentAt = new Date(message.date);
@@ -354,7 +354,7 @@ export function createImapProvider(
           logger,
           mailbox,
           maxResults,
-          beforeSequence: pageOffset(pageToken) || undefined,
+          pageToken,
         });
       };
       if (query?.type === "sent") {
@@ -373,7 +373,7 @@ export function createImapProvider(
                 config,
                 logger,
                 maxResults,
-                beforeSequence: pageOffset(pageToken) || undefined,
+                pageToken,
               });
         messages = page.messages;
         nextPageToken = page.nextPageToken;
@@ -1386,13 +1386,13 @@ async function fetchMailboxMessagePage({
   logger,
   mailbox,
   maxResults = DEFAULT_PAGE_SIZE,
-  beforeSequence,
+  pageToken,
 }: {
   config: ImapConfig;
   logger: Logger;
   mailbox?: string;
   maxResults?: number;
-  beforeSequence?: number;
+  pageToken?: string;
 }): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
   const client = createImapClient(config);
   await connectImapClient(client);
@@ -1405,18 +1405,38 @@ async function fetchMailboxMessagePage({
       if (!openedMailbox) return { messages: [] };
       const messageCount = openedMailbox.exists;
       if (!messageCount) return { messages: [] };
-      const end = beforeSequence ? beforeSequence - 1 : messageCount;
-      if (end < 1) return { messages: [] };
-      const start = Math.max(1, end - maxResults + 1);
-      const messages: ParsedImapMessage[] = [];
-      for await (const message of client.fetch(`${start}:${end}`, {
+      const dated: { uid: number; shown: number }[] = [];
+      for await (const message of client.fetch(`1:${messageCount}`, {
         uid: true,
         envelope: true,
-        source: true,
-        flags: true,
         internalDate: true,
       })) {
-        if (!message.source) continue;
+        if (!message.uid) continue;
+        dated.push({
+          uid: message.uid,
+          shown: shownTimeFromListedMessage(message),
+        });
+      }
+      dated.sort(
+        (left, right) => right.shown - left.shown || right.uid - left.uid,
+      );
+      const offset = pageOffset(pageToken);
+      const chosen = dated.slice(offset, offset + maxResults);
+      if (!chosen.length) return { messages: [] };
+      const wanted = new Set(chosen.map((item) => item.uid));
+      const fetched = new Map<number, ParsedImapMessage>();
+      for await (const message of client.fetch(
+        chosen.map((item) => item.uid).join(","),
+        {
+          uid: true,
+          envelope: true,
+          source: true,
+          flags: true,
+          internalDate: true,
+        },
+        { uid: true },
+      )) {
+        if (!wanted.has(message.uid) || !message.source) continue;
         const parsed = await parseListedImapMessage({
           uid: message.uid,
           source: message.source,
@@ -1432,14 +1452,17 @@ async function fetchMailboxMessagePage({
         ) {
           parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
         }
-        messages.push(parsed);
+        fetched.set(message.uid, parsed);
       }
       return {
-        messages: messages.sort(
-          (a, b) =>
-            Number(a.internalDate || "0") - Number(b.internalDate || "0"),
-        ),
-        nextPageToken: start > 1 ? String(start) : undefined,
+        messages: chosen.flatMap((item) => {
+          const message = fetched.get(item.uid);
+          return message ? [message] : [];
+        }),
+        nextPageToken:
+          offset + chosen.length < dated.length
+            ? String(offset + chosen.length)
+            : undefined,
       };
     } finally {
       lock.release();
@@ -3275,12 +3298,12 @@ async function fetchSentMessagePage({
   config,
   logger,
   maxResults,
-  beforeSequence,
+  pageToken,
 }: {
   config: ImapConfig;
   logger: Logger;
   maxResults: number;
-  beforeSequence?: number;
+  pageToken?: string;
 }) {
   const preferred = await lookupRoleMailbox({ config, logger, role: "sent" });
   const mailboxes = [
@@ -3297,7 +3320,7 @@ async function fetchSentMessagePage({
         logger,
         mailbox,
         maxResults,
-        beforeSequence,
+        pageToken,
       });
       return { ...page, foundMailbox: true };
     } catch (error) {
@@ -4456,6 +4479,30 @@ function mailboxRoleLabel(mailbox: string) {
     return "SPAM";
   }
   return;
+}
+
+function shownTimeFromListedMessage(message: {
+  envelope?: { date?: Date | string | null };
+  source?: Buffer;
+  internalDate?: Date;
+}) {
+  const header = message.envelope?.date;
+  if (header) {
+    const shown = new Date(header).getTime();
+    if (!Number.isNaN(shown)) return shown;
+  }
+  if (message.source) {
+    const headerBlock = message.source
+      .toString("utf8")
+      .split(/\r?\n\r?\n/, 1)[0];
+    const line = headerBlock?.match(/^Date: (.*)$/im);
+    if (line?.[1]) {
+      const shown = new Date(line[1].trim()).getTime();
+      if (!Number.isNaN(shown)) return shown;
+    }
+  }
+  const arrived = message.internalDate?.getTime();
+  return arrived && !Number.isNaN(arrived) ? arrived : 0;
 }
 
 function messageShownTime(message: {

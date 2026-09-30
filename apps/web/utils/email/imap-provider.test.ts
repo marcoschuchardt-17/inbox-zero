@@ -3084,7 +3084,7 @@ describe("createImapProvider", () => {
     expect(first.threads.map((thread) => thread.messages[0]?.subject)).toEqual([
       "Newest note",
     ]);
-    expect(first.nextPageToken).toBe("3");
+    expect(first.nextPageToken).toBe("1");
     expect(second.threads.map((thread) => thread.messages[0]?.subject)).toEqual(
       ["Middle note"],
     );
@@ -3129,6 +3129,66 @@ describe("createImapProvider", () => {
       expect(
         result.threads.map((thread) => thread.messages[0]?.subject),
       ).toEqual(["Newer header", "Old header"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
+  it("puts the newest written date on the first page when that mail arrived earlier", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 3;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Written later",
+          "<written-later@example.com>",
+          "Tue, 29 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Earlier written",
+          "<earlier-written@example.com>",
+          "Wed, 02 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 3,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-21T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Recent arrival",
+          "<recent-arrival@example.com>",
+          "Thu, 03 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const first = await provider.getThreadsWithQuery({
+        maxResults: 1,
+        query: { type: "inbox" },
+      });
+      const second = await provider.getThreadsWithQuery({
+        maxResults: 1,
+        pageToken: first.nextPageToken,
+        query: { type: "inbox" },
+      });
+
+      expect(
+        first.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Written later"]);
+      expect(
+        second.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Recent arrival"]);
     } finally {
       mailboxState.inboxMessages = [];
       mailboxState.exists = previousExists;
