@@ -12,6 +12,7 @@ import {
 import { Tooltip } from "@/components/Tooltip";
 import {
   extractEmailAddress,
+  extractEmailAddresses,
   extractNameFromEmail,
   isSameEmailAddress,
   messageWasSentByAccount,
@@ -817,6 +818,18 @@ const prepareReplyingToEmail = (
           options.userEmail,
         )
       : undefined;
+  const replyAllCc = everyone
+    ? [
+        ...everyone.cc,
+        ...(sentFromUser
+          ? coSendersForReplyAll(
+              message.headers.from || "",
+              options?.userEmail || "",
+              [everyone.to, ...everyone.cc],
+            )
+          : []),
+      ]
+    : undefined;
 
   return {
     // A message the account sent keeps its original recipients. Otherwise
@@ -835,8 +848,8 @@ const prepareReplyingToEmail = (
     messageId: message.id || undefined,
     threadId: message.threadId || undefined,
     // Keep original CC. Reply all also adds the other To addresses.
-    cc: everyone
-      ? formatCcList(everyone.cc)
+    cc: replyAllCc
+      ? formatCcList(replyAllCc)
       : sentFromUser
         ? (sentRecipients.cc ?? undefined)
         : message.headers.cc,
@@ -911,4 +924,24 @@ function uniqueRecipients(recipients: string[]) {
     unique.push(recipient);
   }
   return unique;
+}
+
+function coSendersForReplyAll(
+  from: string,
+  userEmail: string,
+  alreadyAddressed: readonly string[],
+) {
+  const addressed = new Set(
+    alreadyAddressed.flatMap((value) =>
+      extractEmailAddresses(value).map((email) => email.toLowerCase()),
+    ),
+  );
+  return splitRecipientList(from).filter((person) => {
+    const email = extractEmailAddress(person).toLowerCase();
+    return (
+      Boolean(email) &&
+      !isSameEmailAddress(person, userEmail) &&
+      !addressed.has(email)
+    );
+  });
 }

@@ -432,6 +432,39 @@ describe("EmailMessage reply address", () => {
     );
   });
 
+  it("includes the other sender when replying to everyone on mail this account also sent", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam Participant <sam.participant@gmail.com>, Starttls <user@example.com>",
+            subject: "Profile co-sender",
+            to: "Ada Participant <ada.participant@acme.example>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        replyAll
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Participant <ada.participant@acme.example>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Sam Participant <sam.participant@gmail.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Profile co-sender",
+    );
+  });
+
   it("includes the other recipients when replying to everyone", () => {
     render(
       <EmailMessage
