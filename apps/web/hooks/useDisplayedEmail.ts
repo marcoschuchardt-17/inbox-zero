@@ -1,11 +1,19 @@
 import { useCallback, useState } from "react";
-import { useQueryState } from "nuqs";
+import { parseAsBoolean, parseAsInteger, useQueryState } from "nuqs";
 
 export const useDisplayedEmail = () => {
   const [threadId, setThreadId] = useQueryState("side-panel-thread-id");
   const [messageId, setMessageId] = useQueryState("side-panel-message-id");
   const [autoOpenReplyForMessageId, setAutoOpenReplyForMessageId] =
     useQueryState("auto-open-reply-for-message-id");
+  const [autoOpenReplyAll, setAutoOpenReplyAll] = useQueryState(
+    "auto-open-reply-all",
+    parseAsBoolean,
+  );
+  const [composeRequest, setComposeRequest] = useQueryState(
+    "compose-request",
+    parseAsInteger.withDefault(0),
+  );
   const [autoOpenForwardForMessageId, setAutoOpenForwardForMessageId] =
     useQueryState("auto-open-forward-for-message-id");
   const [showReplyButton, setShowReplyButton] = useState(false);
@@ -18,9 +26,16 @@ export const useDisplayedEmail = () => {
         showReplyButton?: boolean;
         autoOpenReplyForMessageId?: string;
         autoOpenForwardForMessageId?: string;
+        replyAll?: boolean;
       } | null,
     ) => {
       setAutoOpenReplyForMessageId(options?.autoOpenReplyForMessageId || "");
+      setAutoOpenReplyAll(options?.replyAll ? true : null);
+      if (options?.autoOpenReplyForMessageId) {
+        setComposeRequest((current) => (current ?? 0) + 1);
+      } else if (!options) {
+        setComposeRequest(null);
+      }
       setAutoOpenForwardForMessageId(
         options?.autoOpenForwardForMessageId || "",
       );
@@ -30,7 +45,9 @@ export const useDisplayedEmail = () => {
     },
     [
       setAutoOpenForwardForMessageId,
+      setAutoOpenReplyAll,
       setAutoOpenReplyForMessageId,
+      setComposeRequest,
       setMessageId,
       setThreadId,
     ],
@@ -43,5 +60,7 @@ export const useDisplayedEmail = () => {
     showReplyButton,
     autoOpenForwardForMessageId,
     autoOpenReplyForMessageId,
+    autoOpenReplyAll: Boolean(autoOpenReplyAll),
+    composeRequest,
   };
 };

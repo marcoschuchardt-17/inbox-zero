@@ -298,6 +298,19 @@ describe("CommandK side-panel actions", () => {
     expect(displayedEmail.showEmail).toHaveBeenCalledWith(null);
   });
 
+  it("opens a reply to everyone for the latest side-panel message", () => {
+    render(<CommandK />);
+
+    act(() => shortcuts.handlers?.replyAll?.());
+
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith({
+      threadId: "thread-1",
+      autoOpenReplyForMessageId: "message-2",
+      replyAll: true,
+      showReplyButton: true,
+    });
+  });
+
   it("opens a forward composer for the latest side-panel message", () => {
     render(<CommandK />);
 

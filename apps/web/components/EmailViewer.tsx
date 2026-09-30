@@ -21,6 +21,8 @@ export function EmailViewer() {
     showReplyButton,
     autoOpenForwardForMessageId,
     autoOpenReplyForMessageId,
+    autoOpenReplyAll,
+    composeRequest,
   } = useDisplayedEmail();
 
   const { mutate } = useSWRConfig();
@@ -54,6 +56,8 @@ export function EmailViewer() {
                 ? (autoOpenReplyForMessageId ?? undefined)
                 : undefined
             }
+            autoOpenReplyAll={supportsViewerReplies && autoOpenReplyAll}
+            composeRequest={composeRequest}
             autoOpenForwardForMessageId={
               supportsViewerReplies
                 ? (autoOpenForwardForMessageId ?? undefined)
@@ -72,6 +76,8 @@ export function ThreadContent({
   threadId,
   showReplyButton,
   autoOpenReplyForMessageId,
+  autoOpenReplyAll,
+  composeRequest,
   autoOpenForwardForMessageId,
   expandMessageId,
   topRightComponent,
@@ -81,6 +87,8 @@ export function ThreadContent({
   threadId: string;
   showReplyButton: boolean;
   autoOpenReplyForMessageId?: string;
+  autoOpenReplyAll?: boolean;
+  composeRequest?: number;
   autoOpenForwardForMessageId?: string;
   expandMessageId?: string | null;
   topRightComponent?: React.ReactNode;
@@ -99,6 +107,8 @@ export function ThreadContent({
             refetch={mutate}
             showReplyButton={showReplyButton}
             autoOpenReplyForMessageId={autoOpenReplyForMessageId}
+            autoOpenReplyAll={autoOpenReplyAll}
+            composeRequest={composeRequest}
             autoOpenForwardForMessageId={autoOpenForwardForMessageId}
             expandMessageId={expandMessageId}
             topRightComponent={topRightComponent}
