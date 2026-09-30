@@ -4164,6 +4164,61 @@ describe("createImapProvider", () => {
     mailboxState.fromUids = [];
   });
 
+  it("returns the sender mail with the newest written date when that mail arrived earlier", async () => {
+    const fromSam = (
+      uid: number,
+      subject: string,
+      date: string,
+      internalDate: string,
+    ) => ({
+      uid,
+      flags: ["\\Seen"],
+      internalDate,
+      source: [
+        "From: Sam <sam@example.com>",
+        "To: owner@example.com",
+        `Subject: ${subject}`,
+        `Date: ${date}`,
+        `Message-ID: <sender-date-${uid}@example.com>`,
+        "",
+        subject,
+      ].join("\r\n"),
+    });
+    mailboxState.inboxMessages = [
+      fromSam(
+        1,
+        "Written later",
+        "Tue, 29 Sep 2026 12:00:00 +0000",
+        "2026-09-01T12:00:00.000Z",
+      ),
+      fromSam(
+        2,
+        "Earlier written",
+        "Wed, 02 Sep 2026 12:00:00 +0000",
+        "2026-09-20T12:00:00.000Z",
+      ),
+      fromSam(
+        3,
+        "Recent arrival",
+        "Thu, 03 Sep 2026 12:00:00 +0000",
+        "2026-09-21T12:00:00.000Z",
+      ),
+    ];
+    mailboxState.fromUids = [1, 2, 3];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const page = await provider.getMessagesFromSender({
+      senderEmail: "sam@example.com",
+      maxResults: 1,
+    });
+
+    expect(page.messages.map((message) => message.subject)).toEqual([
+      "Written later",
+    ]);
+    mailboxState.inboxMessages = [];
+    mailboxState.fromUids = [];
+  });
+
   it("returns unread mail from a sender when newer mail is already read", async () => {
     const fromSam = (
       uid: number,

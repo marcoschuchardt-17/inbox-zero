@@ -3420,14 +3420,31 @@ async function findImapMessagesFromSender({
           },
           { uid: true },
         );
-        const uids = Array.isArray(searched) ? searched : [];
-        const newest = [...uids]
-          .sort((a, b) => b - a)
-          .slice(0, Math.max(0, limit));
-        if (!newest.length) continue;
-        const wanted = new Set(newest.map(String));
+        const uids = (Array.isArray(searched) ? searched : []).filter(
+          (uid): uid is number => typeof uid === "number",
+        );
+        if (!uids.length) continue;
+        const dated: { uid: number; shown: number }[] = [];
         for await (const message of client.fetch(
-          newest.join(","),
+          uids.join(","),
+          { uid: true, envelope: true, internalDate: true },
+          { uid: true },
+        )) {
+          if (!message.uid) continue;
+          dated.push({
+            uid: message.uid,
+            shown: shownTimeFromListedMessage(message),
+          });
+        }
+        const chosen = dated
+          .sort(
+            (left, right) => right.shown - left.shown || right.uid - left.uid,
+          )
+          .slice(0, Math.max(0, limit));
+        if (!chosen.length) continue;
+        const wanted = new Set(chosen.map((item) => String(item.uid)));
+        for await (const message of client.fetch(
+          chosen.map((item) => item.uid).join(","),
           {
             uid: true,
             source: true,
@@ -3468,7 +3485,7 @@ async function findImapMessagesFromSender({
       }
     }
     return found.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      (left, right) => messageShownTime(right) - messageShownTime(left),
     );
   } catch (error) {
     logger.error("Failed reading IMAP messages from a sender", {
