@@ -1,3 +1,5 @@
+import { textStartsWithForwardedMessage } from "@/utils/email/forwarded-quote";
+
 const QUOTED_CONTENT_SELECTOR = [
   ".gmail_quote_container",
   "div.gmail_quote",
@@ -57,8 +59,21 @@ function findQuoteBoundary(doc: Document) {
     doc.querySelectorAll(`${QUOTED_CONTENT_SELECTOR}, div[style]`),
   ).find(
     (element) =>
-      element.matches(QUOTED_CONTENT_SELECTOR) ||
-      isOutlookDesktopReplyHeader(element),
+      !isForwardedQuoteElement(element) &&
+      (element.matches(QUOTED_CONTENT_SELECTOR) ||
+        isOutlookDesktopReplyHeader(element)),
+  );
+}
+
+function isForwardedQuoteElement(element: Element) {
+  const candidates: Element[] = [];
+  let current: Element | null = element;
+  while (current) {
+    candidates.push(current);
+    current = current.parentElement;
+  }
+  return candidates.some((node) =>
+    textStartsWithForwardedMessage(node.textContent || ""),
   );
 }
 

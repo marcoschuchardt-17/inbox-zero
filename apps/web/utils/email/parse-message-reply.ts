@@ -1,4 +1,6 @@
-import { load } from "cheerio";
+import { load, type CheerioAPI } from "cheerio";
+import type { AnyNode } from "domhandler";
+import { textStartsWithForwardedMessage } from "@/utils/email/forwarded-quote";
 import type { ParsedMessage } from "@/utils/types";
 import { convertEmailHtmlToText, parseReply } from "@/utils/mail";
 
@@ -33,7 +35,18 @@ export function stripQuotedHtmlContent(html: string): string {
       ".gmail_attr",
       "blockquote[type='cite']",
     ].join(", "),
-  ).remove();
+  )
+    .filter((_, element) => !isForwardedQuote($, element))
+    .remove();
 
   return $.root().html() || html;
+}
+
+// A forward is the message. A reply quote is history the thread already shows.
+function isForwardedQuote($: CheerioAPI, element: AnyNode) {
+  const candidates = [element, ...$(element).parents().toArray()];
+  return candidates.some((node) => {
+    if (node.type !== "tag") return false;
+    return textStartsWithForwardedMessage($(node).text());
+  });
 }
