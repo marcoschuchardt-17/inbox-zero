@@ -1750,14 +1750,15 @@ async function parseImapMessage(
       "content-type": attachment.mimeType,
     },
   }));
-  const historyId = String((internalDate || new Date()).getTime());
+  const arrivedAt = internalDate || new Date();
+  const historyId = String(arrivedAt.getTime());
   const threadKey = imapThreadKey(parsed, subject, uid);
 
   return {
     id: imapMessageId(mailbox, uid),
     threadId: threadKey,
     historyId,
-    date: (internalDate || new Date()).toISOString(),
+    date: arrivedAt.toISOString(),
     internalDate: historyId,
     subject,
     snippet: messageSnippet(textBody, htmlBody),
@@ -1775,9 +1776,7 @@ async function parseImapMessage(
       to,
       cc: cc || undefined,
       bcc: bcc || undefined,
-      date: parsed.date
-        ? new Date(parsed.date).toISOString()
-        : new Date().toISOString(),
+      date: headerDateIso(parsed.date, arrivedAt),
       subject,
       "reply-to": parsed.replyTo?.[0]?.address || undefined,
       "message-id": parsed.messageId || undefined,
@@ -1807,6 +1806,13 @@ function headerValue(
 
 function mailboxFrom(config: ImapConfig) {
   return formatEmailWithName(config.displayName, config.ownerEmail);
+}
+
+function headerDateIso(value: unknown, fallback: Date) {
+  if (typeof value !== "string" || !value.trim()) return fallback.toISOString();
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return fallback.toISOString();
+  return parsed.toISOString();
 }
 
 function messageSnippet(textBody: string, htmlBody: string) {

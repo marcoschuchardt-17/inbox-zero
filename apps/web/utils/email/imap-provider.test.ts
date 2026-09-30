@@ -701,6 +701,38 @@ describe("createImapProvider", () => {
     );
   });
 
+  it("lists mail when the Date header cannot be parsed", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 4,
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: owner@example.com",
+          "Subject: Broken date",
+          "Date: not a date",
+          "Message-ID: <broken-date@example.com>",
+          "",
+          "Still readable.",
+        ].join("\r\n"),
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const [message] = await provider.getInboxMessages(5);
+      expect(message?.subject).toBe("Broken date");
+      expect(message?.headers.date).toBe("2026-09-28T12:00:00.000Z");
+      expect(message?.snippet).toContain("Still readable.");
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("keeps a file on a rule draft", async () => {
     appended.length = 0;
     const provider = createImapProvider(imapConfig(), logger);
