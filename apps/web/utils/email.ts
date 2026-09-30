@@ -25,6 +25,18 @@ export function recipientDisplayNames(recipients: string) {
     .join(", ");
 }
 
+export function collapsedRecipientNames(fields: {
+  to?: string | null;
+  cc?: string | null;
+  bcc?: string | null;
+}) {
+  return recipientDisplayNames(
+    [fields.to, fields.cc, fields.bcc]
+      .filter((value): value is string => Boolean(value))
+      .join(", "),
+  );
+}
+
 export function storedAnalyticsAddresses(header: string) {
   return extractEmailAddresses(header).join(", ");
 }

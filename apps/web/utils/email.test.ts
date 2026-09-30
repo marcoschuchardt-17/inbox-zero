@@ -3,6 +3,7 @@ import {
   extractNameFromEmail,
   extractEmailAddress,
   extractEmailAddresses,
+  collapsedRecipientNames,
   recipientDisplayNames,
   storedAnalyticsAddresses,
   extractUniqueEmailAddresses,
@@ -37,6 +38,27 @@ describe("email utils", () => {
       expect(
         recipientDisplayNames("Sam <sam@example.com>, Ada <ada@example.com>"),
       ).toBe("Sam, Ada");
+    });
+  });
+
+  describe("collapsedRecipientNames", () => {
+    it("names people on Cc and Bcc with the people on To", () => {
+      expect(
+        collapsedRecipientNames({
+          to: "Sam <sam@example.com>",
+          cc: "Ada <ada@example.com>",
+          bcc: "Hidden <hidden@example.com>",
+        }),
+      ).toBe("Sam, Ada, Hidden");
+    });
+
+    it("skips an empty copy list", () => {
+      expect(
+        collapsedRecipientNames({
+          to: "Sam <sam@example.com>",
+          cc: "",
+        }),
+      ).toBe("Sam");
     });
   });
 
