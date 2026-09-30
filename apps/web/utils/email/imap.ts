@@ -1851,18 +1851,9 @@ async function parseImapMessage(
   const from = parsed.from?.address
     ? `${parsed.from.name ? `${parsed.from.name} ` : ""}<${parsed.from.address}>`
     : "";
-  const to = (parsed.to || [])
-    .map((entry) => entry.address)
-    .filter(Boolean)
-    .join(", ");
-  const cc = (parsed.cc || [])
-    .map((entry) => entry.address)
-    .filter(Boolean)
-    .join(", ");
-  const bcc = (parsed.bcc || [])
-    .map((entry) => entry.address)
-    .filter(Boolean)
-    .join(", ");
+  const to = formatAddressList(parsed.to);
+  const cc = formatAddressList(parsed.cc);
+  const bcc = formatAddressList(parsed.bcc);
   const attachments = (parsed.attachments || []).map((attachment, index) => {
     const content = attachment.content
       ? new Uint8Array(attachment.content)
@@ -1929,7 +1920,11 @@ async function parseImapMessage(
       bcc: bcc || undefined,
       date: headerDateIso(parsed.date, arrivedAt),
       subject,
-      "reply-to": parsed.replyTo?.[0]?.address || undefined,
+      "reply-to":
+        formatEmailWithName(
+          parsed.replyTo?.[0]?.name,
+          parsed.replyTo?.[0]?.address,
+        ) || undefined,
       "message-id": parsed.messageId || undefined,
       references: parsed.references || undefined,
       "in-reply-to": parsed.inReplyTo || undefined,
@@ -4715,4 +4710,13 @@ function messageShownTime(message: {
   if (!Number.isNaN(shown)) return shown;
   const arrived = new Date(message.date).getTime();
   return Number.isNaN(arrived) ? 0 : arrived;
+}
+
+function formatAddressList(
+  entries: { name?: string; address?: string }[] | null | undefined,
+) {
+  return (entries || [])
+    .map((entry) => formatEmailWithName(entry.name, entry.address))
+    .filter(Boolean)
+    .join(", ");
 }

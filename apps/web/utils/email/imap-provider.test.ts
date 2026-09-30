@@ -3673,6 +3673,31 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("keeps the recipient name on sent mail", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: Sam <sam@example.com>, digest@example.com",
+      "Cc: Ada <ada@example.com>",
+      "Reply-To: Support <support@example.com>",
+      "Subject: Named recipients",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <named-recipients@example.com>",
+      "",
+      "The names stay on the mail.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+    const headers = result.threads[0]?.messages[0]?.headers;
+
+    expect(headers?.to).toBe("Sam <sam@example.com>, digest@example.com");
+    expect(headers?.cc).toBe("Ada <ada@example.com>");
+    expect(headers?.["reply-to"]).toBe("Support <support@example.com>");
+    mailboxState.sentSource = "";
+  });
+
   it("uses the sent mailbox the server already has", async () => {
     const previous = mailboxState.listed;
     mailboxState.listed = [
