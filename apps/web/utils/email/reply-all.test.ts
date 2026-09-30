@@ -437,6 +437,44 @@ describe("buildReplyAllRecipients", () => {
     expect(result.cc).not.toContain("other-alias@example.com");
     expect(result.cc).toEqual(["manager@example.com", "colleague@example.com"]);
   });
+
+  it("does not copy the first of several recipients onto Cc", () => {
+    const headers: ParsedMessageHeaders = {
+      from: "Me <me@example.com>",
+      to: "Sam <sam@example.com>, Ada <ada@example.com>",
+      cc: "Pat <pat@example.com>",
+      subject: "Test",
+      date: "2024-01-01",
+    };
+
+    const result = buildReplyAllRecipients(
+      headers,
+      headers.to,
+      "me@example.com",
+    );
+
+    expect(result.to).toBe("Sam <sam@example.com>, Ada <ada@example.com>");
+    expect(result.cc).toEqual(["pat@example.com"]);
+  });
+
+  it("does not copy the first of two senders onto Cc", () => {
+    const headers: ParsedMessageHeaders = {
+      from: "Sam <sam@example.com>, Ada <ada@example.com>",
+      to: "Sam <sam@example.com>, user@company.com",
+      cc: "Pat <pat@example.com>",
+      subject: "Test",
+      date: "2024-01-01",
+    };
+
+    const result = buildReplyAllRecipients(
+      headers,
+      undefined,
+      "user@company.com",
+    );
+
+    expect(result.to).toBe("Sam <sam@example.com>, Ada <ada@example.com>");
+    expect(result.cc).toEqual(["pat@example.com"]);
+  });
 });
 
 describe("formatCcList", () => {

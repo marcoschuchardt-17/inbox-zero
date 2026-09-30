@@ -1,5 +1,9 @@
 import type { ParsedMessageHeaders } from "@/utils/types";
-import { extractEmailAddress, splitRecipientList } from "@/utils/email";
+import {
+  extractEmailAddress,
+  extractEmailAddresses,
+  splitRecipientList,
+} from "@/utils/email";
 
 export interface ReplyAllRecipients {
   cc: string[];
@@ -22,7 +26,9 @@ export function buildReplyAllRecipients(
 ): ReplyAllRecipients {
   // Determine the primary recipient (TO field)
   const replyToRaw = overrideTo || headers["reply-to"] || headers.from;
-  const replyTo = extractEmailAddress(replyToRaw);
+  const replyTargets = new Set(
+    extractEmailAddresses(replyToRaw).map((email) => email.toLowerCase()),
+  );
 
   const currentUserEmailSet = new Set(
     (Array.isArray(currentUserEmails) ? currentUserEmails : [currentUserEmails])
@@ -36,14 +42,14 @@ export function buildReplyAllRecipients(
 
   addHeaderRecipientsToCcSet({
     headerValue: headers.cc,
-    replyTo,
+    replyTargets,
     currentUserEmailSet,
     seenEmails,
     ccSet,
   });
   addHeaderRecipientsToCcSet({
     headerValue: headers.to,
-    replyTo,
+    replyTargets,
     currentUserEmailSet,
     seenEmails,
     ccSet,
@@ -96,13 +102,13 @@ export function mergeAndDedupeRecipients(
 
 function addHeaderRecipientsToCcSet({
   headerValue,
-  replyTo,
+  replyTargets,
   currentUserEmailSet,
   seenEmails,
   ccSet,
 }: {
   headerValue: string | undefined;
-  replyTo: string;
+  replyTargets: Set<string>;
   currentUserEmailSet: Set<string>;
   seenEmails: Set<string>;
   ccSet: Set<string>;
@@ -116,7 +122,7 @@ function addHeaderRecipientsToCcSet({
 
       const normalizedEmail = email.toLowerCase();
       return (
-        normalizedEmail !== replyTo.toLowerCase() &&
+        !replyTargets.has(normalizedEmail) &&
         !currentUserEmailSet.has(normalizedEmail)
       );
     });
