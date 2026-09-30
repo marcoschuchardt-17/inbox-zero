@@ -703,6 +703,26 @@ describe("email utils", () => {
         { email: "updates@example.com", fromName: null },
         "",
       ],
+      [
+        "a real name when another copy only has the address",
+        {
+          email: "billing@example.com",
+          fromName: "billing@example.com",
+          minFromName: "Billing",
+          maxFromName: "billing@example.com",
+        },
+        "Billing",
+      ],
+      [
+        "the address used as the only name",
+        {
+          email: "billing@example.com",
+          fromName: "billing@example.com",
+          minFromName: "billing@example.com",
+          maxFromName: "billing@example.com",
+        },
+        "",
+      ],
     ];
 
     it.each(cases)("handles %s", (_caseName, sender, expected) => {

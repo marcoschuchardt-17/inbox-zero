@@ -322,13 +322,14 @@ export function getNewsletterSenderDisplayName({
   minFromName?: string | null;
   maxFromName?: string | null;
 }) {
-  const hasMultipleDisplayNames =
-    !!minFromName && !!maxFromName && minFromName !== maxFromName;
+  const min = displayNameBesideAddress(minFromName, email);
+  const max = displayNameBesideAddress(maxFromName, email);
+  const hasMultipleDisplayNames = !!min && !!max && min !== max;
   const domain = extractDomainFromEmail(email);
 
   if (hasMultipleDisplayNames && domain) return domain;
 
-  return fromName?.trim() || "";
+  return max || min || displayNameBesideAddress(fromName, email);
 }
 
 // Public email providers where we should search by full email address
@@ -393,6 +394,19 @@ export function isSameOrganization(left: string, right: string): boolean {
 
 export function legacySubjectThreadKey(subject: string) {
   return subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
+}
+
+function displayNameBesideAddress(
+  name: string | null | undefined,
+  email: string,
+) {
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed) return "";
+  const display = extractNameFromEmail(trimmed);
+  // A header with no display name stores the address itself. That is not a
+  // second name, so it must not replace Billing with the domain.
+  if (!display || isSameEmailAddress(display, email)) return "";
+  return display;
 }
 
 function namesListedForEveryAddress(
