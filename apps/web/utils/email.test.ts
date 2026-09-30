@@ -136,6 +136,18 @@ describe("email utils", () => {
         }),
       ).toBe("sam@example.com");
     });
+
+    it("counts the copied person when sent mail is only addressed to the account", () => {
+      expect(
+        storedRecipientAddresses(
+          {
+            to: "Owner <owner@example.com>",
+            cc: "Ada Stats <ada-stats@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toBe("ada-stats@example.com");
+    });
   });
 
   describe("sentReplyRecipients", () => {

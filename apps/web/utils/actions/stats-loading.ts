@@ -202,6 +202,9 @@ export async function saveBatch({
       }
 
       const fromAddresses = extractEmailAddresses(m.headers.from);
+      const sent =
+        !!m.labelIds?.includes("SENT") ||
+        messageIsFromAccountOnly(m.headers.from, account?.email);
       return {
         threadId: m.threadId,
         messageId: m.id,
@@ -209,13 +212,14 @@ export async function saveBatch({
         from: storedAnalyticsAddresses(m.headers.from) || "Missing",
         fromName: recipientDisplayNames(m.headers.from),
         fromDomain: extractDomainFromEmail(fromAddresses[0] || ""),
-        to: storedRecipientAddresses(m.headers),
+        to: storedRecipientAddresses(
+          m.headers,
+          sent ? account?.email : undefined,
+        ),
         date,
         unsubscribeLink,
         read: !m.labelIds?.includes("UNREAD"),
-        sent:
-          !!m.labelIds?.includes("SENT") ||
-          messageIsFromAccountOnly(m.headers.from, account?.email),
+        sent,
         draft: !!m.labelIds?.includes("DRAFT"),
         inbox: !!m.labelIds?.includes("INBOX"),
         emailAccountId,

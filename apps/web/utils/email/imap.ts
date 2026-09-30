@@ -3143,7 +3143,7 @@ async function storeSentMessages({
     const from = fromAddresses.join(", ");
     const date = new Date(message.date);
     if (!from || Number.isNaN(date.getTime())) continue;
-    const to = storedRecipientAddresses(message.headers);
+    const to = storedRecipientAddresses(message.headers, config.ownerEmail);
     const fromName = recipientDisplayNames(message.headers.from || "") || null;
     await prisma.emailMessage.upsert({
       where: {

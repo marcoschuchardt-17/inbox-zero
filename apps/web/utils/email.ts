@@ -56,12 +56,22 @@ export function storedAnalyticsAddresses(header: string) {
   return extractEmailAddresses(header).join(", ");
 }
 
-export function storedRecipientAddresses(headers: {
-  to?: string | null;
-  cc?: string | null;
-  bcc?: string | null;
-}) {
-  for (const header of [headers.to, headers.cc, headers.bcc]) {
+export function storedRecipientAddresses(
+  headers: {
+    to?: string | null;
+    cc?: string | null;
+    bcc?: string | null;
+  },
+  accountEmail?: string | null,
+) {
+  const headersInOrder = [headers.to, headers.cc, headers.bcc];
+  for (const header of headersInOrder) {
+    if (replyHeaderReachesSomeoneElse(header, accountEmail)) {
+      return storedAnalyticsAddresses(header || "");
+    }
+  }
+  // A note sent only to this account still has that address.
+  for (const header of headersInOrder) {
     const addresses = storedAnalyticsAddresses(header || "");
     if (addresses) return addresses;
   }
