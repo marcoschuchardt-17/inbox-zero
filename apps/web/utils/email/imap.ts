@@ -1750,7 +1750,10 @@ async function parseImapMessage(
       "content-type": attachment.mimeType,
     },
   }));
-  const arrivedAt = internalDate || new Date();
+  const arrivedAt =
+    internalDate && !Number.isNaN(internalDate.getTime())
+      ? internalDate
+      : new Date();
   const historyId = String(arrivedAt.getTime());
   const threadKey = imapThreadKey(parsed, subject, uid);
 

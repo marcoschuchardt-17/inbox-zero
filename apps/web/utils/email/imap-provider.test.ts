@@ -701,6 +701,38 @@ describe("createImapProvider", () => {
     );
   });
 
+  it("lists mail when the server arrival time cannot be parsed", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 5,
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: owner@example.com",
+          "Subject: Broken arrival",
+          "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+          "Message-ID: <broken-arrival@example.com>",
+          "",
+          "Still listed.",
+        ].join("\r\n"),
+        flags: ["\\Seen"],
+        internalDate: "not-a-date",
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const [message] = await provider.getInboxMessages(5);
+      expect(message?.subject).toBe("Broken arrival");
+      expect(message?.headers.date).toBe("2026-09-28T12:00:00.000Z");
+      expect(message?.snippet).toContain("Still listed.");
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("lists mail when the Date header cannot be parsed", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 1;
