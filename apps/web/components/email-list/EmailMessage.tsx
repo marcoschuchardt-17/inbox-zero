@@ -496,7 +496,7 @@ function MessageHeader({
       {expanded ? (
         <>
           <span className="hidden min-w-0 truncate text-muted-foreground text-xs sm:block">
-            {recipientSummary(message.headers.to, userEmail)}
+            {recipientSummary(message.headers, userEmail)}
           </span>
           <Button
             aria-label={showDetails ? "Hide details" : "Show details"}
@@ -764,8 +764,15 @@ function resolveComposeMode(
 }
 
 /** "to me", "to Dana", "to me and 3 others" — who a message went out to. */
-function recipientSummary(to: string | undefined, userEmail: string) {
-  const recipients = splitRecipientList(to ?? "");
+function recipientSummary(
+  headers: { to?: string; cc?: string; bcc?: string },
+  userEmail: string,
+) {
+  const recipients = uniqueRecipients([
+    ...splitRecipientList(headers.to ?? ""),
+    ...splitRecipientList(headers.cc ?? ""),
+    ...splitRecipientList(headers.bcc ?? ""),
+  ]);
   if (recipients.length === 0) return "";
 
   // "me" leads whenever the account is in there at all, however it was addressed.
@@ -876,4 +883,15 @@ function prepareDraftReplyEmail(draft: ParsedMessage): ReplyingToEmail {
     }),
     quotedContentHtml: splitHtml.originalHtml,
   };
+}
+
+function uniqueRecipients(recipients: string[]) {
+  const unique: string[] = [];
+  for (const recipient of recipients) {
+    if (unique.some((existing) => isSameEmailAddress(existing, recipient))) {
+      continue;
+    }
+    unique.push(recipient);
+  }
+  return unique;
 }

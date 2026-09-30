@@ -222,6 +222,55 @@ describe("EmailMessage reply", () => {
   });
 });
 
+describe("EmailMessage recipients", () => {
+  afterEach(cleanup);
+
+  it("counts people who were only copied", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "News <news@example.com>",
+            subject: "Shared desks",
+            to: "Sam <sam@example.com>, Ada <ada@example.com>",
+            cc: "Pat <pat@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("to Sam and 2 others")).toBeTruthy();
+  });
+
+  it("counts the account when it was only copied", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "News <news@example.com>",
+            subject: "Copied desks",
+            to: "Sam <sam@example.com>",
+            cc: "Me <user@example.com>",
+            bcc: "Pat <pat@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("to me and 2 others")).toBeTruthy();
+  });
+});
+
 describe("EmailMessage reply address", () => {
   afterEach(cleanup);
 
