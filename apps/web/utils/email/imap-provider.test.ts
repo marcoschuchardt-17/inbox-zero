@@ -1921,6 +1921,44 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("keeps mail with the newest date on it when newer mail from that person arrived earlier", async () => {
+    const previous = {
+      inboxSearchUids: [...mailboxState.inboxSearchUids],
+      inboxMessages: mailboxState.inboxMessages,
+    };
+    mailboxState.inboxSearchUids = Array.from(
+      { length: 41 },
+      (_, index) => index + 1,
+    );
+    mailboxState.inboxMessages = mailboxState.inboxSearchUids.map((uid) => ({
+      uid,
+      flags: ["\\Seen"],
+      internalDate:
+        uid === 1 ? "2026-09-01T12:00:00.000Z" : "2026-09-29T12:00:00.000Z",
+      source: datedInboxMessage(
+        uid === 1 ? "Written later" : `Arrived later ${uid}`,
+        `<person-${uid}@example.com>`,
+        uid === 1
+          ? "Tue, 29 Sep 2026 12:00:00 +0000"
+          : "Tue, 01 Sep 2026 12:00:00 +0000",
+      ),
+    }));
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const threads = await provider.getThreadsWithParticipant({
+        participantEmail: "sam@example.com",
+        maxThreads: 1,
+      });
+
+      expect(threads.map((thread) => thread.messages[0]?.subject)).toEqual([
+        "Written later",
+      ]);
+    } finally {
+      mailboxState.inboxSearchUids = previous.inboxSearchUids;
+      mailboxState.inboxMessages = previous.inboxMessages;
+    }
+  });
+
   it("returns recent mail that has a file and skips mail without one", async () => {
     const previous = {
       exists: mailboxState.exists,

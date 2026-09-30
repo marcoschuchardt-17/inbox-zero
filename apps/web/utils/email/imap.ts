@@ -4105,15 +4105,31 @@ async function fetchMailboxParticipantMatches({
         },
         { uid: true },
       );
-      const uids = (Array.isArray(searched) ? searched : [])
-        .filter((uid): uid is number => typeof uid === "number")
-        .sort((left, right) => right - left)
-        .slice(0, 40);
+      const uids = (Array.isArray(searched) ? searched : []).filter(
+        (uid): uid is number => typeof uid === "number",
+      );
       if (!uids.length) return [];
-      const wanted = new Set(uids.map(String));
-      const messages: ParsedImapMessage[] = [];
+      const dated: { uid: number; shown: number }[] = [];
       for await (const message of client.fetch(
         uids.join(","),
+        { uid: true, envelope: true, internalDate: true },
+        { uid: true },
+      )) {
+        if (!message.uid) continue;
+        dated.push({
+          uid: message.uid,
+          shown: shownTimeFromListedMessage(message),
+        });
+      }
+      dated.sort(
+        (left, right) => right.shown - left.shown || right.uid - left.uid,
+      );
+      const chosen = dated.slice(0, 40);
+      if (!chosen.length) return [];
+      const wanted = new Set(chosen.map((item) => String(item.uid)));
+      const messages: ParsedImapMessage[] = [];
+      for await (const message of client.fetch(
+        chosen.map((item) => item.uid).join(","),
         {
           uid: true,
           source: true,
