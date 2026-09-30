@@ -1,4 +1,5 @@
 import { formatEmailDate } from "@/utils/gmail/reply";
+import { splitRecipientList } from "@/utils/email";
 import type { ParsedMessage } from "@/utils/types";
 import { escapeHtml, textToHtmlParagraphs } from "@/utils/string";
 
@@ -22,7 +23,7 @@ export const forwardEmailHtml = ({
 From: ${formatFromEmailWithName(message.headers.from)}<br>
 Date: ${quotedDate}<br>
 Subject: ${escapeHtml(message.headers.subject)}<br>
-To: ${formatToEmailWithName(message.headers.to)}<br>
+To: ${formatAddressListHtml(message.headers.to)}<br>${copiedRecipientsLine(message.headers.cc)}
 </div><br><br>
 ${messageContent}
 </div></div>`.trim();
@@ -40,7 +41,7 @@ export const forwardEmailText = ({
 From: ${message.headers.from}
 Date: ${message.headers.date}
 Subject: ${message.headers.subject}
-To: ${message.headers.to}
+To: ${message.headers.to}${message.headers.cc?.trim() ? `\nCc: ${message.headers.cc}` : ""}
 
 ${message.textPlain}`;
 
@@ -54,6 +55,18 @@ const formatFromEmailWithName = (emailHeader: string) => {
 
   return `<strong class="gmail_sendername" dir="auto">${safeName}</strong> <span dir="auto">&lt;<a href="mailto:${safeEmail}">${safeEmail}</a>&gt;</span>`;
 };
+
+function copiedRecipientsLine(cc: string | undefined) {
+  const copied = cc?.trim();
+  if (!copied) return "";
+  return `\nCc: ${formatAddressListHtml(copied)}<br>`;
+}
+
+function formatAddressListHtml(emailHeader: string) {
+  const recipients = splitRecipientList(emailHeader);
+  if (!recipients.length) return escapeHtml(emailHeader || "");
+  return recipients.map(formatToEmailWithName).join(", ");
+}
 
 const formatToEmailWithName = (emailHeader: string) => {
   const match = emailHeader?.match(/(.*?)\s*<([^>]+)>/);

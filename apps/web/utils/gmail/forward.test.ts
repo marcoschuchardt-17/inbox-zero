@@ -202,6 +202,31 @@ ${message.textHtml}
     expect(html).not.toContain("</script>");
   });
 
+  it("keeps every recipient when the message lists more than one", () => {
+    const message: Pick<ParsedMessage, "headers" | "textPlain"> = {
+      headers: {
+        from: "News <news@example.com>",
+        date: testDate.toISOString(),
+        subject: "Shared desks",
+        to: "Sam <sam@example.com>, Ada <ada@example.com>",
+        cc: "Pat <pat@example.com>",
+      },
+      textPlain: "Please bring both desks.",
+    };
+
+    const html = forwardEmailHtml({
+      content: "",
+      message: message as ParsedMessage,
+    });
+
+    expect(html).toContain(
+      'To: Sam &lt;<a href="mailto:sam@example.com">sam@example.com</a>&gt;, Ada &lt;<a href="mailto:ada@example.com">ada@example.com</a>&gt;<br>',
+    );
+    expect(html).toContain(
+      'Cc: Pat &lt;<a href="mailto:pat@example.com">pat@example.com</a>&gt;<br>',
+    );
+  });
+
   it("escapes email header when no angle brackets present", () => {
     const message: Pick<ParsedMessage, "headers" | "textHtml"> = {
       headers: {
