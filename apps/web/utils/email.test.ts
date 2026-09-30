@@ -371,6 +371,34 @@ describe("email utils", () => {
     ])("returns participant when %s", (_caseName, userEmail, expected) => {
       expect(participant(message, userEmail)).toBe(expected);
     });
+
+    it("keeps the other sender when the account is also listed", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Sam <sam@example.com>, Owner <owner@example.com>",
+              to: "Ada <ada@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Sam <sam@example.com>, Owner <owner@example.com>");
+    });
+
+    it("does not treat a shorter address inside the sender as the account", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Sam <sam@example.com>",
+              to: "Ada <ada@example.com>",
+            },
+          },
+          "am@example.com",
+        ),
+      ).toBe("Sam <sam@example.com>");
+    });
   });
 
   describe("normalizeEmailAddress", () => {

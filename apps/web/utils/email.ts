@@ -177,7 +177,11 @@ export function participant(
   userEmail: string,
 ) {
   if (!userEmail) return message.headers.from;
-  if (message.headers.from.includes(userEmail)) return message.headers.to;
+  const fromAddresses = extractEmailAddresses(message.headers.from);
+  const sentByAccount =
+    fromAddresses.length > 0 &&
+    fromAddresses.every((address) => isSameEmailAddress(address, userEmail));
+  if (sentByAccount) return message.headers.to;
   return message.headers.from;
 }
 
