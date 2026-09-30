@@ -465,6 +465,33 @@ describe("EmailMessage reply address", () => {
     );
   });
 
+  it("offers the public profile when this account is the first sender", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>, Sam Participant <sam.participant@gmail.com>",
+            subject: "Account first",
+            to: "Ada Participant <ada.participant@acme.example>",
+          },
+        }}
+        onOpenSenderContext={vi.fn()}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "View public profile for Starttls, Sam Participant",
+      }),
+    ).toBeTruthy();
+  });
+
   it("includes the other recipients when replying to everyone", () => {
     render(
       <EmailMessage

@@ -416,8 +416,7 @@ function MessageHeader({
   const canResearchSender =
     Boolean(onOpenSenderContext) &&
     !isSent &&
-    Boolean(senderEmail) &&
-    !isSameEmailAddress(senderEmail, userEmail);
+    fromPeople.some((person) => !isSameEmailAddress(person, userEmail));
 
   // Collapsing is the thread's call, so a row is only interactive once it has
   // been handed a toggle.
