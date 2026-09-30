@@ -83,10 +83,10 @@ export function SenderContextPanel({
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0">
-        <div className="truncate font-title font-medium text-base text-foreground">
+        <div className="break-words font-title font-medium text-base text-foreground">
           {senderName}
         </div>
-        <div className="truncate text-muted-foreground text-sm">
+        <div className="break-words text-muted-foreground text-sm">
           {senderEmail}
         </div>
       </div>

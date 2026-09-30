@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getThreadParticipantNames } from "./thread-participants";
+import {
+  getMessageSenderProfile,
+  getThreadParticipantNames,
+} from "./thread-participants";
 
 describe("getThreadParticipantNames", () => {
   it("lists each sender once and labels the account owner as me", () => {
@@ -128,6 +131,17 @@ describe("getThreadParticipantNames", () => {
         "owner@example.com",
       ),
     ).toEqual(["Hidden"]);
+  });
+});
+
+describe("getMessageSenderProfile", () => {
+  it("lists every sender on the public profile", () => {
+    expect(
+      getMessageSenderProfile("Sam <sam@example.com>, Ada <ada@example.com>"),
+    ).toEqual({
+      senderName: "Sam, Ada",
+      senderEmail: "sam@example.com, ada@example.com",
+    });
   });
 });
 

@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useSWRConfig } from "swr";
+import { getMessageSenderProfile } from "@/app/(app)/[emailAccountId]/mail/thread-participants";
+import { SenderContextPanel } from "@/app/(app)/[emailAccountId]/mail/SenderContextPanel";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { EmailThread } from "@/components/email-list/EmailThread";
@@ -96,6 +98,14 @@ export function ThreadContent({
   onConversationGone?: () => void;
 }) {
   const { data, isLoading, error, mutate } = useThread({ id: threadId });
+  const [senderContext, setSenderContext] = useState<{
+    threadId: string;
+    messageId: string;
+    senderName: string;
+    senderEmail: string;
+  } | null>(null);
+  const openSender =
+    senderContext?.threadId === threadId ? senderContext : null;
 
   return (
     <ErrorBoundary extra={{ component: "ThreadContent", threadId }}>
@@ -114,10 +124,28 @@ export function ThreadContent({
             topRightComponent={topRightComponent}
             onSendSuccess={onSendSuccess}
             onConversationGone={onConversationGone}
+            onOpenSenderContext={(message) => {
+              const profile = getMessageSenderProfile(message.headers.from);
+              setSenderContext({
+                threadId,
+                messageId: message.id,
+                senderEmail: profile.senderEmail,
+                senderName: profile.senderName || profile.senderEmail,
+              });
+            }}
             withHeader
           />
         )}
       </LoadingContent>
+      {openSender ? (
+        <SenderContextPanel
+          messageId={openSender.messageId}
+          onClose={() => setSenderContext(null)}
+          senderEmail={openSender.senderEmail}
+          senderName={openSender.senderName}
+          variant="sheet"
+        />
+      ) : null}
     </ErrorBoundary>
   );
 }

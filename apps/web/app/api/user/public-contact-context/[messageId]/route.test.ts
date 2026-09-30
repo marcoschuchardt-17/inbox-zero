@@ -79,6 +79,29 @@ describe("GET /api/user/public-contact-context/[messageId]", () => {
     );
   });
 
+  it("researches the first sender when the message lists more than one", async () => {
+    getMessageMock.mockResolvedValue({
+      headers: {
+        from: "Sam <sam@example.com>, Ada <ada@example.com>",
+        to: "owner@inboxzero.com",
+      },
+    });
+
+    const response = await GET(
+      new NextRequest(
+        "http://localhost:3000/api/user/public-contact-context/message-1",
+      ),
+      { params: Promise.resolve({ messageId: "message-1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(getPublicContactContextMock).toHaveBeenCalledWith({
+      email: "sam@example.com",
+      name: "Sam",
+      emailAccount: { id: "account-1" },
+    });
+  });
+
   it("does not research the authenticated user's own address", async () => {
     getMessageMock.mockResolvedValue({
       headers: {

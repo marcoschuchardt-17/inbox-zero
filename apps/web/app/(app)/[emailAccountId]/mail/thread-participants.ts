@@ -1,5 +1,6 @@
 import {
   canonicalizeEmailAddress,
+  extractEmailAddress,
   extractNameFromEmail,
   splitRecipientList,
 } from "@/utils/email";
@@ -10,6 +11,21 @@ type ParticipantMessage = {
   headers: Pick<ParsedMessageHeaders, "from" | "to" | "cc" | "bcc">;
   labelIds?: string[] | null;
 };
+
+export function getMessageSenderProfile(from: string) {
+  const people = splitRecipientList(from);
+  const senderName = people
+    .map(
+      (person) => extractNameFromEmail(person) || extractEmailAddress(person),
+    )
+    .filter(Boolean)
+    .join(", ");
+  const senderEmail = people
+    .map((person) => extractEmailAddress(person))
+    .filter(Boolean)
+    .join(", ");
+  return { senderName, senderEmail };
+}
 
 export function getThreadParticipantNames(
   messages: ParticipantMessage[],
