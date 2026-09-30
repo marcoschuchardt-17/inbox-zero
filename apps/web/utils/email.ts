@@ -37,6 +37,21 @@ export function collapsedRecipientNames(fields: {
   );
 }
 
+export function collapsedReplyRecipientNames(fields: {
+  to?: string | null;
+  cc?: string | null;
+  bcc?: string | null;
+  savedTo?: string | null;
+  savedCc?: string | null;
+  savedBcc?: string | null;
+}) {
+  return collapsedRecipientNames({
+    to: fields.to ?? fields.savedTo,
+    cc: fields.cc ?? fields.savedCc,
+    bcc: fields.bcc ?? fields.savedBcc,
+  });
+}
+
 export function storedAnalyticsAddresses(header: string) {
   return extractEmailAddresses(header).join(", ");
 }

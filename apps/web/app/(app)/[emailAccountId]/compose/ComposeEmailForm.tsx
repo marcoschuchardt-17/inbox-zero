@@ -95,7 +95,7 @@ import {
   extractEmailAddress,
   extractNameFromEmail,
   isValidEmail,
-  collapsedRecipientNames,
+  collapsedReplyRecipientNames,
   splitRecipientList,
 } from "@/utils/email";
 import type { StoredReplyDraft } from "@/utils/mail-engine/reply-drafts";
@@ -1453,10 +1453,13 @@ function ComposeEmailFormContent({
             </span>
             <span className="min-w-0 truncate">
               to{" "}
-              {collapsedRecipientNames({
-                to: watch("to") || replyingToEmail?.to,
-                cc: watch("cc") || replyingToEmail?.cc,
-                bcc: watch("bcc") || replyingToEmail?.bcc,
+              {collapsedReplyRecipientNames({
+                to: watch("to"),
+                cc: watch("cc"),
+                bcc: watch("bcc"),
+                savedTo: replyingToEmail?.to,
+                savedCc: replyingToEmail?.cc,
+                savedBcc: replyingToEmail?.bcc,
               }) || "recipients"}
             </span>
             <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />

@@ -4,6 +4,7 @@ import {
   extractEmailAddress,
   extractEmailAddresses,
   collapsedRecipientNames,
+  collapsedReplyRecipientNames,
   recipientDisplayNames,
   storedAnalyticsAddresses,
   extractUniqueEmailAddresses,
@@ -59,6 +60,27 @@ describe("email utils", () => {
           cc: "",
         }),
       ).toBe("Sam");
+    });
+  });
+
+  describe("collapsedReplyRecipientNames", () => {
+    it("keeps a cleared copy list off the line", () => {
+      expect(
+        collapsedReplyRecipientNames({
+          to: "Sam <sam@example.com>",
+          cc: "",
+          savedCc: "Ada <ada@example.com>",
+        }),
+      ).toBe("Sam");
+    });
+
+    it("uses the saved copy list when the field is not filled yet", () => {
+      expect(
+        collapsedReplyRecipientNames({
+          to: "Sam <sam@example.com>",
+          savedCc: "Ada <ada@example.com>",
+        }),
+      ).toBe("Sam, Ada");
     });
   });
 
