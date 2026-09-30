@@ -5278,6 +5278,50 @@ describe("createImapProvider", () => {
     mailboxState.fromUids = [];
   });
 
+  it("returns a message when the looked-up person is the first of two senders", async () => {
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T14:00:00.000Z",
+        source: [
+          "From: Sam <sam@example.com>, Ada <ada@example.com>",
+          "To: owner@example.com",
+          "Subject: Two senders",
+          "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+          "Message-ID: <two-senders-lookup@example.com>",
+          "",
+          "A note from both of them.",
+        ].join("\r\n"),
+      },
+    ];
+    mailboxState.fromUids = [1];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const first = await provider.getMessagesFromSender({
+      senderEmail: "sam@example.com",
+      maxResults: 5,
+    });
+    const second = await provider.getMessagesFromSender({
+      senderEmail: "ada@example.com",
+      maxResults: 5,
+    });
+    const neither = await provider.getMessagesFromSender({
+      senderEmail: "other@example.com",
+      maxResults: 5,
+    });
+
+    expect(first.messages.map((message) => message.subject)).toEqual([
+      "Two senders",
+    ]);
+    expect(second.messages.map((message) => message.subject)).toEqual([
+      "Two senders",
+    ]);
+    expect(neither.messages).toEqual([]);
+    mailboxState.inboxMessages = [];
+    mailboxState.fromUids = [];
+  });
+
   it("returns an older message from a sender when newer mail is outside the date window", async () => {
     const fromSam = (
       uid: number,

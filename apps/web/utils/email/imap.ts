@@ -3545,7 +3545,9 @@ async function findImapMessagesFromSender({
           });
           if (!parsed) continue;
           if (
-            extractEmailAddress(parsed.headers.from).toLowerCase() !== sender
+            !extractEmailAddresses(parsed.headers.from).some(
+              (address) => address.toLowerCase() === sender,
+            )
           ) {
             continue;
           }
