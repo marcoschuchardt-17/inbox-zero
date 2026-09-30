@@ -3936,6 +3936,44 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("leaves an unclosed style block out of an HTML-only snippet", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Invoice preview",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <unclosed-style-snippet@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<html>",
+      "<title>Hidden title</title>",
+      "<style>p { color: red; }",
+      "<p>Please keep the invoice.</p>",
+      "<script>alert(1)",
+      "<p>And the rest.</p>",
+      "<!--[if mso]>",
+      "<p>Outlook only text</p>",
+      "<![endif]-->",
+      "</html>",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+    const snippet = result.threads[0]?.messages[0]?.snippet || "";
+
+    expect(snippet).toContain("Please keep the invoice.");
+    expect(snippet).toContain("And the rest.");
+    expect(snippet).not.toContain("color");
+    expect(snippet).not.toContain("red");
+    expect(snippet).not.toContain("alert");
+    expect(snippet).not.toContain("Hidden title");
+    expect(snippet).not.toContain("Outlook");
+    mailboxState.sentSource = "";
+  });
+
   it("uses the HTML preview when the plain part is blank", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",

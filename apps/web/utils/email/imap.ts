@@ -2007,9 +2007,13 @@ function messageSnippet(textBody: string, htmlBody: string) {
 
 function htmlSnippet(htmlBody: string) {
   const visible = htmlBody
+    .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, " ")
+    .replace(/<style\b[^>]*>[^<]*/gi, " ")
+    .replace(/<script\b[^>]*>[^<]*/gi, " ");
   return he
     .decode(visible.replace(/<[^>]+>/g, " "))
     .replace(/\u200C|\u200D|\uFEFF/g, "");
