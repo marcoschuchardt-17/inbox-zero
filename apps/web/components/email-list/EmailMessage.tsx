@@ -799,7 +799,13 @@ const prepareReplyingToEmail = (
   content = "",
   options?: { replyAll?: boolean; userEmail?: string },
 ): ReplyingToEmail => {
-  const sentFromUser = messageWasSentByAccount(message, options?.userEmail);
+  // A co-sender is still mail this account sent. Reply to the recipients,
+  // not back to the account.
+  const sentFromUser =
+    messageWasSentByAccount(message, options?.userEmail) ||
+    splitRecipientList(message.headers.from || "").some((person) =>
+      isSameEmailAddress(person, options?.userEmail || ""),
+    );
   const sentRecipients = sentReplyRecipients(message.headers);
 
   const { html } = createReplyContent({ message });
