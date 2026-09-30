@@ -754,6 +754,18 @@ function ReplyPanel({
 
 /** Two letters at most: initials from a display name, or the address's first letters. */
 function initialsFor(name: string) {
+  const people = name
+    .split(",")
+    .map((person) => person.trim())
+    .filter(Boolean);
+  if (people.length > 1) {
+    return people
+      .slice(0, 2)
+      .map((person) => person[0])
+      .join("")
+      .toUpperCase();
+  }
+
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return "?";
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();

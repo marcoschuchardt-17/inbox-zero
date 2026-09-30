@@ -490,6 +490,29 @@ describe("EmailMessage reply address", () => {
         name: "View public profile for Starttls, Sam Participant",
       }),
     ).toBeTruthy();
+    expect(screen.getByText("SS", { exact: true, hidden: true })).toBeTruthy();
+  });
+
+  it("keeps both initials of one sender", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam Participant <sam.participant@gmail.com>",
+            subject: "One sender",
+            to: "Ada Participant <ada.participant@acme.example>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByText("SP", { exact: true, hidden: true })).toBeTruthy();
   });
 
   it("includes the other recipients when replying to everyone", () => {
