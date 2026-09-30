@@ -3911,6 +3911,51 @@ describe("createImapProvider", () => {
     mailboxState.fromUids = [];
   });
 
+  it("returns the next page of mail from one sender", async () => {
+    const fromSam = (uid: number, subject: string, date: string) => ({
+      uid,
+      flags: ["\\Seen"],
+      internalDate: new Date(date).toISOString(),
+      source: [
+        "From: Sam <sam@example.com>",
+        "To: owner@example.com",
+        `Subject: ${subject}`,
+        `Date: ${date}`,
+        `Message-ID: <sender-${uid}@example.com>`,
+        "",
+        subject,
+      ].join("\r\n"),
+    });
+    mailboxState.inboxMessages = [
+      fromSam(1, "Oldest note", "Tue, 01 Sep 2026 12:00:00 +0000"),
+      ...Array.from({ length: 50 }, (_, index) =>
+        fromSam(index + 2, "Newer note", "Thu, 15 Oct 2026 12:00:00 +0000"),
+      ),
+    ];
+    mailboxState.fromUids = mailboxState.inboxMessages.map(
+      (message) => message.uid,
+    );
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const first = await provider.getMessagesFromSender({
+      senderEmail: "sam@example.com",
+      maxResults: 50,
+    });
+    const second = await provider.getMessagesFromSender({
+      senderEmail: "sam@example.com",
+      maxResults: 50,
+      pageToken: first.nextPageToken,
+    });
+
+    expect(first.messages).toHaveLength(50);
+    expect(first.nextPageToken).toBe("50");
+    expect(second.messages.map((message) => message.subject)).toEqual([
+      "Oldest note",
+    ]);
+    mailboxState.inboxMessages = [];
+    mailboxState.fromUids = [];
+  });
+
   it("returns recent subjects from one sender", async () => {
     mailboxState.fromUids = [1];
     const provider = createImapProvider(imapConfig(), logger);

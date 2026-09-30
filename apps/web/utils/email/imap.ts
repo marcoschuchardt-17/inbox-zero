@@ -310,12 +310,14 @@ export function createImapProvider(
         : undefined;
       const fromEmail = query?.fromEmail?.trim();
       if (fromEmail && !mailbox && query?.type !== "sent") {
+        const offset = pageOffset(pageToken);
         const fromSender = await findImapMessagesFromSender({
           config,
           logger,
           senderEmail: fromEmail,
           before: query?.before,
           after: query?.after,
+          limit: offset + maxResults + 1,
         });
         const matched = fromSender.filter((message) => {
           if (query?.isUnread && !message.labelIds?.includes("UNREAD")) {
@@ -326,7 +328,6 @@ export function createImapProvider(
           }
           return true;
         });
-        const offset = pageOffset(pageToken);
         return {
           threads: groupToThreads(matched.slice(offset, offset + maxResults)),
           nextPageToken:
@@ -439,14 +440,15 @@ export function createImapProvider(
       before,
       after,
     }) => {
+      const offset = Number(pageToken || "0") || 0;
       const messages = await findImapMessagesFromSender({
         config,
         logger,
         senderEmail,
         before,
         after,
+        limit: offset + maxResults + 1,
       });
-      const offset = Number(pageToken || "0") || 0;
       const page = messages.slice(offset, offset + maxResults);
       return {
         messages: page,
@@ -473,6 +475,7 @@ export function createImapProvider(
           config,
           logger,
           senderEmail,
+          limit: Math.max(0, threshold),
         });
         return Math.min(messages.length, Math.max(0, threshold));
       } catch (error) {
@@ -3328,12 +3331,14 @@ async function findImapMessagesFromSender({
   senderEmail,
   before,
   after,
+  limit = 50,
 }: {
   config: ImapConfig;
   logger: Logger;
   senderEmail: string;
   before?: Date;
   after?: Date;
+  limit?: number;
 }) {
   const sender = extractEmailAddress(senderEmail).toLowerCase();
   if (!sender) return [];
@@ -3387,8 +3392,9 @@ async function findImapMessagesFromSender({
           { uid: true },
         );
         const uids = Array.isArray(searched) ? searched : [];
-        // Newest UIDs are enough for unsubscribe and sender history lookups.
-        const newest = [...uids].sort((a, b) => b - a).slice(0, 50);
+        const newest = [...uids]
+          .sort((a, b) => b - a)
+          .slice(0, Math.max(0, limit));
         if (!newest.length) continue;
         const wanted = new Set(newest.map(String));
         for await (const message of client.fetch(
