@@ -17,7 +17,10 @@ vi.mock("@/utils/middleware", () => ({
     (request: NextRequest) =>
       handler(
         Object.assign(request, {
-          auth: { emailAccountId: "email-account-id" },
+          auth: {
+            emailAccountId: "email-account-id",
+            email: "owner@example.com",
+          },
           emailProvider: {
             name: provider.name,
             getMessagesWithPagination: mockGetMessagesWithPagination,
@@ -55,6 +58,47 @@ describe("GET /api/messages", () => {
       "inbox",
       "sent-in-inbox",
       "archive",
+    ]);
+  });
+
+  it("leaves archived mail from this account out of previous mail", async () => {
+    mockGetMessagesWithPagination.mockResolvedValue({
+      messages: [
+        {
+          id: "incoming",
+          labelIds: ["ARCHIVE"],
+          headers: { from: "Sam <sam@example.com>" },
+        },
+        {
+          id: "archived-sent",
+          labelIds: ["ARCHIVE"],
+          headers: { from: "Owner <owner@example.com>" },
+        },
+        {
+          id: "inbox-copy",
+          labelIds: ["INBOX"],
+          headers: { from: "Owner <owner@example.com>" },
+        },
+        {
+          id: "co-sender",
+          labelIds: ["ARCHIVE"],
+          headers: {
+            from: "Sam <sam@example.com>, Owner <owner@example.com>",
+          },
+        },
+      ],
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost:3000/api/messages"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.messages.map((message: { id: string }) => message.id)).toEqual([
+      "incoming",
+      "inbox-copy",
+      "co-sender",
     ]);
   });
 });
