@@ -4034,6 +4034,7 @@ async function findImapMessagesWithAttachments({
 
   found.sort(
     (left, right) =>
+      messageShownTime(right) - messageShownTime(left) ||
       Number(right.internalDate || "0") - Number(left.internalDate || "0"),
   );
   return {

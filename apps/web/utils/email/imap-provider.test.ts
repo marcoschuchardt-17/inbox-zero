@@ -1959,6 +1959,68 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("returns the file with the newest date on the mail when that mail arrived earlier", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+      archiveSource: mailboxState.archiveSource,
+      trashSource: mailboxState.trashSource,
+    };
+    const writtenLater = archivedAttachment()
+      .replace("Subject: File", "Subject: Written later")
+      .replace(
+        "Message-ID: <file@example.com>",
+        "Message-ID: <written-later@example.com>",
+      )
+      .replace(
+        "Date: Mon, 28 Sep 2026 18:00:00 +0000",
+        "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+      );
+    const arrivedLater = archivedAttachment()
+      .replace("Subject: File", "Subject: Arrived later")
+      .replace(
+        "Message-ID: <file@example.com>",
+        "Message-ID: <arrived-later@example.com>",
+      )
+      .replace(
+        "Date: Mon, 28 Sep 2026 18:00:00 +0000",
+        "Date: Tue, 01 Sep 2026 12:00:00 +0000",
+      );
+    mailboxState.exists = 2;
+    mailboxState.archiveSource = "";
+    mailboxState.trashSource = "";
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        source: writtenLater,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+      },
+      {
+        uid: 2,
+        source: arrivedLater,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T12:00:00.000Z",
+      },
+    ];
+
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const page = await provider.getMessagesWithAttachments({
+        maxResults: 1,
+      });
+
+      expect(page.messages.map((message) => message.subject)).toEqual([
+        "Written later",
+      ]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+      mailboxState.archiveSource = previous.archiveSource;
+      mailboxState.trashSource = previous.trashSource;
+    }
+  });
+
   it("reads the conversation messages used to draft a reply", async () => {
     const provider = createImapProvider(imapConfig(), logger);
     const [message] = await provider.getInboxMessages(5);
