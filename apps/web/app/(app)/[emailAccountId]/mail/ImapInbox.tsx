@@ -37,6 +37,7 @@ import {
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
 import { syncImapMailboxAction } from "@/utils/actions/imap-sync";
+import { imapConnectionErrorMessage } from "@/utils/email/imap-connection-error";
 
 const folders = [
   { id: "inbox", label: "Inbox", query: "/api/threads?limit=30&view=list" },
@@ -681,27 +682,6 @@ export function ImapInbox() {
       </div>
     </LoadingContent>
   );
-}
-
-const IMAP_CONNECTION_ERROR =
-  "IMAP connection failed. Check host, port, TLS, and credentials.";
-
-function imapConnectionErrorMessage(error: unknown) {
-  if (!error || typeof error !== "object") return null;
-  const info = "info" in error ? error.info : undefined;
-  const infoMessage =
-    info &&
-    typeof info === "object" &&
-    "error" in info &&
-    typeof info.error === "string"
-      ? info.error
-      : null;
-  const message =
-    infoMessage ||
-    ("message" in error && typeof error.message === "string"
-      ? error.message
-      : null);
-  return message === IMAP_CONNECTION_ERROR ? message : null;
 }
 
 function ImapConnectionError({

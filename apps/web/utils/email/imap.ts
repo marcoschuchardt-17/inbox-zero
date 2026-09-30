@@ -15,6 +15,7 @@ import {
   getSearchTermForSender,
   legacySubjectThreadKey,
 } from "@/utils/email";
+import { IMAP_CONNECTION_ERROR } from "@/utils/email/imap-connection-error";
 import { SafeError } from "@/utils/error";
 import {
   imapFlagsToLabelIds,
@@ -3071,9 +3072,6 @@ function messageIsInMailbox(
   const role = mailboxRoleLabel(mailbox);
   return Boolean(role && role !== "INBOX" && message.labelIds?.includes(role));
 }
-
-const IMAP_CONNECTION_ERROR =
-  "IMAP connection failed. Check host, port, TLS, and credentials.";
 
 async function connectImapClient(client: ImapFlow) {
   try {
