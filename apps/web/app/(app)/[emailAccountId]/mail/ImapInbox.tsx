@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useQueryState } from "nuqs";
 import Link from "next/link";
 import useSWR from "swr";
@@ -37,7 +37,13 @@ import {
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
 import { syncImapMailboxAction } from "@/utils/actions/imap-sync";
+import {
+  createLabelAction,
+  deleteMailboxItemAction,
+  updateMailboxItemAction,
+} from "@/utils/actions/mail";
 import { imapConnectionErrorMessage } from "@/utils/email/imap-connection-error";
+import { getActionErrorMessage } from "@/utils/error";
 
 const folders = [
   { id: "inbox", label: "Inbox", query: "/api/threads?limit=30&view=list" },
@@ -71,7 +77,8 @@ export function ImapInbox() {
   const [search, setSearch] = useState(queryParam ?? "");
   const submittedSearch = queryParam?.trim() ?? "";
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
-  const { data: labelList } = useSWR<LabelsResponse>("/api/labels");
+  const { data: labelList, mutate: mutateLabels } =
+    useSWR<LabelsResponse>("/api/labels");
   const labelNames = new Map(
     (labelList?.labels ?? []).map((label) => [label.id, label.name]),
   );
@@ -378,6 +385,11 @@ export function ImapInbox() {
             </Button>
           ))}
         </div>
+        <ImapLabelManager
+          emailAccountId={emailAccountId}
+          labels={labelList?.labels ?? []}
+          onChanged={mutateLabels}
+        />
         {archiveError ? (
           <p className="mt-3 text-sm text-destructive">{archiveError}</p>
         ) : null}
@@ -703,6 +715,179 @@ function ImapConnectionError({
           </Button>
         </EmptyContent>
       </Empty>
+    </div>
+  );
+}
+
+function ImapLabelManager({
+  emailAccountId,
+  labels,
+  onChanged,
+}: {
+  emailAccountId: string;
+  labels: { id: string; name: string }[];
+  onChanged: () => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ordered = [...labels].sort((a, b) => a.name.localeCompare(b.name));
+
+  async function createLabel(event: FormEvent) {
+    event.preventDefault();
+    const next = name.trim();
+    if (!next || busy) return;
+    setBusy(true);
+    setError("");
+    const result = await createLabelAction(emailAccountId, { name: next });
+    setBusy(false);
+    if (result?.serverError || result?.validationErrors) {
+      setError(getActionErrorMessage(result));
+      return;
+    }
+    setName("");
+    await onChanged();
+  }
+
+  async function renameLabel(id: string) {
+    const next = editName.trim();
+    if (!next || busy) return;
+    setBusy(true);
+    setError("");
+    const result = await updateMailboxItemAction(emailAccountId, {
+      kind: "label",
+      id,
+      name: next,
+    });
+    setBusy(false);
+    if (result?.serverError || result?.validationErrors) {
+      setError(getActionErrorMessage(result));
+      return;
+    }
+    setEditingId(null);
+    await onChanged();
+  }
+
+  async function deleteLabel(id: string) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const result = await deleteMailboxItemAction(emailAccountId, {
+      kind: "label",
+      id,
+    });
+    setBusy(false);
+    if (result?.serverError || result?.validationErrors) {
+      setError(getActionErrorMessage(result));
+      return;
+    }
+    setConfirmDeleteId(null);
+    await onChanged();
+  }
+
+  return (
+    <div className="mt-3">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        Labels
+      </Button>
+      {open ? (
+        <div className="mt-2 max-w-md rounded-md border p-3">
+          <form className="flex gap-2" onSubmit={createLabel}>
+            <input
+              aria-label="New label name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Label name"
+              className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+            />
+            <Button type="submit" size="sm" disabled={busy || !name.trim()}>
+              Add
+            </Button>
+          </form>
+          {error ? (
+            <p className="mt-2 text-sm text-destructive">{error}</p>
+          ) : null}
+          <ul className="mt-2 flex flex-col gap-1">
+            {ordered.map((label) => (
+              <li key={label.id} className="flex items-center gap-2 text-sm">
+                {editingId === label.id ? (
+                  <>
+                    <input
+                      aria-label={`Label name for ${label.name}`}
+                      value={editName}
+                      onChange={(event) => setEditName(event.target.value)}
+                      className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={busy || !editName.trim()}
+                      onClick={() => {
+                        renameLabel(label.id).catch(() => undefined);
+                      }}
+                    >
+                      Save label
+                    </Button>
+                  </>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate">{label.name}</span>
+                )}
+                {editingId === label.id ? null : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditingId(label.id);
+                      setEditName(label.name);
+                      setConfirmDeleteId(null);
+                    }}
+                  >
+                    {`Rename ${label.name}`}
+                  </Button>
+                )}
+                {confirmDeleteId === label.id ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      deleteLabel(label.id).catch(() => undefined);
+                    }}
+                  >
+                    {`Delete ${label.name} now`}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirmDeleteId(label.id);
+                      setEditingId(null);
+                    }}
+                  >
+                    {`Delete ${label.name}`}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
