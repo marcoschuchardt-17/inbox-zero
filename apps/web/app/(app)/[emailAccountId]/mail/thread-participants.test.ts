@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getMessageSenderProfile,
   getThreadParticipantNames,
+  initialsForSenderList,
 } from "./thread-participants";
 
 describe("getThreadParticipantNames", () => {
@@ -131,6 +132,13 @@ describe("getThreadParticipantNames", () => {
         "owner@example.com",
       ),
     ).toEqual(["Hidden"]);
+  });
+});
+
+describe("initialsForSenderList", () => {
+  it("uses one initial for each sender", () => {
+    expect(initialsForSenderList("Sam Replyall, Ada Replyall")).toBe("SA");
+    expect(initialsForSenderList("Sam Participant")).toBeNull();
   });
 });
 

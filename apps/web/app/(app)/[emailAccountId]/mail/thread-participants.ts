@@ -12,6 +12,18 @@ type ParticipantMessage = {
   labelIds?: string[] | null;
 };
 
+export function initialsForSenderList(value: string) {
+  const people = value
+    .split(",")
+    .map((person) => person.trim())
+    .filter(Boolean);
+  if (people.length < 2) return null;
+  return people
+    .slice(0, 2)
+    .map((person) => person[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export function getMessageSenderProfile(from: string) {
   const people = splitRecipientList(from);
   const senderName = people

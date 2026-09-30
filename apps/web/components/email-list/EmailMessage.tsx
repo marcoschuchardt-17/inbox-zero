@@ -20,6 +20,7 @@ import {
   splitRecipientList,
 } from "@/utils/email";
 import { formatShortDate } from "@/utils/date";
+import { initialsForSenderList } from "@/app/(app)/[emailAccountId]/mail/thread-participants";
 import { ComposeEmailFormLazy } from "@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -754,17 +755,8 @@ function ReplyPanel({
 
 /** Two letters at most: initials from a display name, or the address's first letters. */
 function initialsFor(name: string) {
-  const people = name
-    .split(",")
-    .map((person) => person.trim())
-    .filter(Boolean);
-  if (people.length > 1) {
-    return people
-      .slice(0, 2)
-      .map((person) => person[0])
-      .join("")
-      .toUpperCase();
-  }
+  const listed = initialsForSenderList(name);
+  if (listed) return listed;
 
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return "?";
