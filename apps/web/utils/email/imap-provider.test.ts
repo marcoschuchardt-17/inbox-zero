@@ -4979,6 +4979,34 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("keeps a linked address together in an HTML-only snippet", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: forward-to@example.com",
+      "Subject: Fwd: Please reply",
+      "Date: Mon, 28 Sep 2026 18:31:37 +0000",
+      "Message-ID: <forward-snippet@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Passing this along.</p>",
+      '<div>From: <strong class="gmail_sendername">Digest</strong> <span>&lt;<a href="mailto:digest@example.com">digest@example.com</a>&gt;</span></div>',
+      "<p>Can you reply to this?</p>",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+    const snippet = result.threads[0]?.messages[0]?.snippet || "";
+
+    expect(snippet).toContain("Passing this along.");
+    expect(snippet).toContain("Digest <digest@example.com>");
+    expect(snippet).toContain("Can you reply to this?");
+    expect(snippet).not.toContain("< digest@example.com >");
+    mailboxState.sentSource = "";
+  });
+
   it("leaves style and script out of an HTML-only snippet", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",

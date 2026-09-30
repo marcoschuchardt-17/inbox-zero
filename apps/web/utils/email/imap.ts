@@ -2081,8 +2081,14 @@ function htmlSnippet(htmlBody: string) {
     .replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, " ")
     .replace(/<style\b[^>]*>[^<]*/gi, " ")
     .replace(/<script\b[^>]*>[^<]*/gi, " ");
+  // A link or bold tag around an address is not a word break. Replacing
+  // it with a space turns "<digest@example.com>" into "< digest@example.com >".
+  const text = visible.replace(
+    /<\/?(?:a|abbr|b|cite|em|font|i|small|span|strong|sub|sup|u|wbr)\b[^>]*>/gi,
+    "",
+  );
   return he
-    .decode(visible.replace(/<[^>]+>/g, " "))
+    .decode(text.replace(/<[^>]+>/g, " "))
     .replace(/\u200C|\u200D|\uFEFF/g, "");
 }
 
