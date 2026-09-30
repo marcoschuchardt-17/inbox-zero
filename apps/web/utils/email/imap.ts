@@ -166,24 +166,22 @@ export function createImapProvider(
       before?: Date;
       after?: Date;
     }) => {
-      if (!pageToken) {
-        await reconcileStoredInbox(config);
-        await storeSentMailbox({ config, logger });
-      }
       const needle = query?.trim();
       if (needle) {
-        const page = await searchImapMessages({
+        // Rule tests drop sent mail after the page is built. A newer sent
+        // match would take the slot and hide the incoming message.
+        return loadImapTextSearchPage({
           config,
           logger,
           needle,
           maxResults,
           pageToken,
+          skipSent: true,
         });
-        await dropStaleThreadCopies({
-          emailAccountId: config.emailAccountId,
-          messages: page.messages,
-        });
-        return page;
+      }
+      if (!pageToken) {
+        await reconcileStoredInbox(config);
+        await storeSentMailbox({ config, logger });
       }
       if (before || after) {
         const page = await fetchDatedMessagesAcrossMailboxes({
@@ -288,7 +286,20 @@ export function createImapProvider(
       query,
       maxResults = DEFAULT_PAGE_SIZE,
       pageToken,
-    }) => core.getMessagesWithPagination({ query, maxResults, pageToken }),
+    }) => {
+      const needle = query?.trim();
+      if (!needle) {
+        return core.getMessagesWithPagination({ query, maxResults, pageToken });
+      }
+      return loadImapTextSearchPage({
+        config,
+        logger,
+        needle,
+        maxResults,
+        pageToken,
+        skipSent: false,
+      });
+    },
     getThreadsWithQuery: async ({
       query,
       maxResults = DEFAULT_PAGE_SIZE,
@@ -491,7 +502,7 @@ export function createImapProvider(
       maxResults = DEFAULT_PAGE_SIZE,
       pageToken,
     }) => {
-      const { messages, nextPageToken } = await core.getMessagesWithPagination({
+      const { messages, nextPageToken } = await core.searchMessages({
         query,
         maxResults,
         pageToken,
@@ -4116,24 +4127,61 @@ function messageIncludesParticipant(
     .some((address) => address.toLowerCase() === participant);
 }
 
-async function searchImapMessages({
+async function loadImapTextSearchPage({
   config,
   logger,
   needle,
   maxResults,
   pageToken,
+  skipSent,
 }: {
   config: ImapConfig;
   logger: Logger;
   needle: string;
   maxResults: number;
   pageToken?: string;
+  skipSent: boolean;
+}) {
+  if (!pageToken) {
+    await reconcileStoredInbox(config);
+    await storeSentMailbox({ config, logger });
+  }
+  const page = await searchImapMessages({
+    config,
+    logger,
+    needle,
+    maxResults,
+    pageToken,
+    skipSent,
+  });
+  await dropStaleThreadCopies({
+    emailAccountId: config.emailAccountId,
+    messages: page.messages,
+  });
+  return page;
+}
+
+async function searchImapMessages({
+  config,
+  logger,
+  needle,
+  maxResults,
+  pageToken,
+  skipSent,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  needle: string;
+  maxResults: number;
+  pageToken?: string;
+  skipSent: boolean;
 }): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
   const offset = pageOffset(pageToken);
   const mailboxes = await mailboxNamesForRead({ config, logger });
   const dated: { mailbox: string; uid: number; shown: number }[] = [];
   for (const [index, mailbox] of mailboxes.entries()) {
     if (!isSearchableMailbox(mailbox)) continue;
+    if (skipSent && isSentFolder(mailbox, mailbox)) continue;
     try {
       const hits = await listMailboxTextMatchTimes({
         config,
