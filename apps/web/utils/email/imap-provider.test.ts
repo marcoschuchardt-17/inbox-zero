@@ -123,11 +123,22 @@ vi.mock("imapflow", () => ({
     }) {
       if (query?.from) {
         if (
-          (query.since || query.before) &&
-          mailboxState.inboxMessages.length
+          mailboxState.inboxMessages.length &&
+          (query.since || query.before || query.seen === false)
         ) {
           return mailboxState.inboxMessages
-            .filter((message) => imapDateMatches(message, query))
+            .filter((message) => {
+              if (
+                (query.since || query.before) &&
+                !imapDateMatches(message, query)
+              ) {
+                return false;
+              }
+              if (query.seen === false && message.flags.includes("\\Seen")) {
+                return false;
+              }
+              return true;
+            })
             .map((message) => message.uid);
         }
         return mailboxState.fromUids;
@@ -3952,6 +3963,46 @@ describe("createImapProvider", () => {
     expect(second.messages.map((message) => message.subject)).toEqual([
       "Oldest note",
     ]);
+    mailboxState.inboxMessages = [];
+    mailboxState.fromUids = [];
+  });
+
+  it("returns unread mail from a sender when newer mail is already read", async () => {
+    const fromSam = (
+      uid: number,
+      subject: string,
+      date: string,
+      flags: string[],
+    ) => ({
+      uid,
+      flags,
+      internalDate: new Date(date).toISOString(),
+      source: [
+        "From: Sam <sam@example.com>",
+        "To: owner@example.com",
+        `Subject: ${subject}`,
+        `Date: ${date}`,
+        `Message-ID: <sender-${uid}@example.com>`,
+        "",
+        subject,
+      ].join("\r\n"),
+    });
+    mailboxState.inboxMessages = [
+      fromSam(1, "Still unread", "Tue, 01 Sep 2026 12:00:00 +0000", []),
+      fromSam(2, "Read middle", "Tue, 15 Sep 2026 12:00:00 +0000", ["\\Seen"]),
+      fromSam(3, "Read newest", "Sun, 20 Sep 2026 12:00:00 +0000", ["\\Seen"]),
+    ];
+    mailboxState.fromUids = [1, 2, 3];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      maxResults: 1,
+      query: { fromEmail: "sam@example.com", isUnread: true },
+    });
+
+    expect(result.threads.map((thread) => thread.messages[0]?.subject)).toEqual(
+      ["Still unread"],
+    );
     mailboxState.inboxMessages = [];
     mailboxState.fromUids = [];
   });

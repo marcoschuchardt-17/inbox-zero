@@ -317,6 +317,7 @@ export function createImapProvider(
           senderEmail: fromEmail,
           before: query?.before,
           after: query?.after,
+          isUnread: query?.isUnread,
           limit: offset + maxResults + 1,
         });
         const matched = fromSender.filter((message) => {
@@ -3331,6 +3332,7 @@ async function findImapMessagesFromSender({
   senderEmail,
   before,
   after,
+  isUnread,
   limit = 50,
 }: {
   config: ImapConfig;
@@ -3338,6 +3340,7 @@ async function findImapMessagesFromSender({
   senderEmail: string;
   before?: Date;
   after?: Date;
+  isUnread?: boolean;
   limit?: number;
 }) {
   const sender = extractEmailAddress(senderEmail).toLowerCase();
@@ -3388,6 +3391,7 @@ async function findImapMessagesFromSender({
             from: senderEmail,
             ...(window.since ? { since: window.since } : {}),
             ...(window.before ? { before: window.before } : {}),
+            ...(isUnread ? { seen: false } : {}),
           },
           { uid: true },
         );
