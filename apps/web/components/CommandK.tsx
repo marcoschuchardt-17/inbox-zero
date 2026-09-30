@@ -359,6 +359,21 @@ function CommandPaletteContent({
             }
           }
         : undefined,
+    reply:
+      threadId && displayedThread?.thread.id === threadId
+        ? () => {
+            const messageId = messageIdForShortcut(
+              displayedThread.thread.messages,
+              focusedMessageId,
+            );
+            if (!messageId) return;
+            showEmail({
+              threadId,
+              autoOpenReplyForMessageId: messageId,
+              showReplyButton: true,
+            });
+          }
+        : undefined,
     forward:
       threadId && displayedThread?.thread.id === threadId
         ? () => {
