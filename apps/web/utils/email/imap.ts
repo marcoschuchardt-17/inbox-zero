@@ -1921,11 +1921,7 @@ async function parseImapMessage(
       bcc: bcc || undefined,
       date: headerDateIso(parsed.date, arrivedAt),
       subject,
-      "reply-to":
-        formatEmailWithName(
-          parsed.replyTo?.[0]?.name,
-          parsed.replyTo?.[0]?.address,
-        ) || undefined,
+      "reply-to": formatAddressList(parsed.replyTo) || undefined,
       sender:
         formatEmailWithName(parsed.sender?.name, parsed.sender?.address) ||
         headerValue(parsed.headers, "sender"),
