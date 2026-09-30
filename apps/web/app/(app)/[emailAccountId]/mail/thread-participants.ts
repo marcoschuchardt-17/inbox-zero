@@ -22,7 +22,9 @@ export function getThreadParticipantNames(
   );
 
   for (const message of nonDraftMessages) {
-    addParticipant(senders, message.headers.from, normalizedUserEmail);
+    for (const sender of splitRecipientList(message.headers.from)) {
+      addParticipant(senders, sender, normalizedUserEmail);
+    }
   }
 
   const hasOnlyAccountOwnerAsSender =

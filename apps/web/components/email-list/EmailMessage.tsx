@@ -381,10 +381,17 @@ function MessageHeader({
   const { emailAccount, emailAccountId, userEmail } = useAccount();
 
   const isSent = message.labelIds?.includes(GmailLabel.SENT) ?? false;
-  const senderEmail = extractEmailAddress(message.headers.from);
+  const fromPeople = splitRecipientList(message.headers.from);
+  const senderEmail = extractEmailAddress(fromPeople[0] || "");
   const senderName = isSent
     ? "Me"
-    : extractNameFromEmail(message.headers.from) || senderEmail;
+    : fromPeople
+        .map(
+          (person) =>
+            extractNameFromEmail(person) || extractEmailAddress(person),
+        )
+        .filter(Boolean)
+        .join(", ") || senderEmail;
   const { data: contacts } = useSWR<ContactsResponse>(
     expanded &&
       env.NEXT_PUBLIC_CONTACTS_ENABLED &&

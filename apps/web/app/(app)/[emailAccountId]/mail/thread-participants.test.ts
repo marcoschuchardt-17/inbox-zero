@@ -101,6 +101,20 @@ describe("getThreadParticipantNames", () => {
     ).toEqual(["Ada Copy"]);
   });
 
+  it("names every person who sent the message", () => {
+    expect(
+      getThreadParticipantNames(
+        [
+          message({
+            from: "Sam <sam@example.com>, Ada <ada@example.com>",
+            to: "owner@example.com",
+          }),
+        ],
+        "owner@example.com",
+      ),
+    ).toEqual(["Sam", "Ada"]);
+  });
+
   it("names a blind-copy person when the outgoing mail has no other recipient", () => {
     expect(
       getThreadParticipantNames(

@@ -3121,6 +3121,45 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("keeps every sender when the message lists more than one", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T20:00:00.000Z",
+        source: [
+          "From: Sam <sam@example.com>, Ada <ada@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Two senders",
+          "Date: Tue, 29 Sep 2026 20:00:00 +0000",
+          "Message-ID: <two-senders@example.com>",
+          "",
+          "A short note from both.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const messages = await provider.getInboxMessages(5);
+      const found = await provider.searchThreads({
+        query: "ada@example.com",
+        maxResults: 20,
+      });
+
+      expect(messages[0]?.headers.from).toContain("sam@example.com");
+      expect(messages[0]?.headers.from).toContain("ada@example.com");
+      expect(
+        found.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Two senders"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("finds a message id when that id is not written in the message", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 1;

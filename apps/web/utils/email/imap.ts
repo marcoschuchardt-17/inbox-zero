@@ -1849,9 +1849,11 @@ async function parseImapMessage(
       : Buffer.isBuffer(parsed.text)
         ? parsed.text.toString("utf8")
         : "";
-  const from = parsed.from?.address
-    ? `${parsed.from.name ? `${parsed.from.name} ` : ""}<${parsed.from.address}>`
-    : "";
+  const from =
+    headerValue(parsed.headers, "from") ||
+    (parsed.from?.address
+      ? `${parsed.from.name ? `${parsed.from.name} ` : ""}<${parsed.from.address}>`
+      : "");
   const to = formatAddressList(parsed.to);
   const cc = formatAddressList(parsed.cc);
   const bcc = formatAddressList(parsed.bcc);

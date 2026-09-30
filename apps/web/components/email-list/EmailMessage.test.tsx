@@ -269,6 +269,27 @@ describe("EmailMessage recipients", () => {
 
     expect(screen.getByText("to me and 2 others")).toBeTruthy();
   });
+
+  it("names every person who sent the message", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>, Ada <ada@example.com>",
+            subject: "Two senders",
+            to: "user@example.com",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Sam, Ada")).toBeTruthy();
+  });
 });
 
 describe("EmailMessage reply address", () => {
