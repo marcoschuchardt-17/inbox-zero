@@ -2172,8 +2172,16 @@ async function findDraftMessages({
   logger: Logger;
   draftId: string;
 }) {
-  const direct = parseImapMessageRef(draftId)
-    ? await fetchMessageById({ config, logger, messageId: draftId })
+  // Rule drafts are stored under the Drafts uid. The same number can name a
+  // different message in the inbox.
+  const ref = parseImapMessageRef(draftId);
+  const draftsUid = ref && !ref.mailbox ? `Drafts/${ref.uid}` : null;
+  const direct = ref
+    ? await fetchMessageById({
+        config,
+        logger,
+        messageId: draftsUid || draftId,
+      })
     : null;
   const needle = messageIdNeedle(draftId);
   const messages = needle
@@ -2195,6 +2203,7 @@ async function findDraftMessages({
     const matches =
       message.threadId === draftId ||
       message.id === draftId ||
+      (draftsUid !== null && message.id === draftsUid) ||
       message.headers["message-id"] === draftId ||
       messageMatchesThreadId(message, draftId);
     if (!matches) return false;

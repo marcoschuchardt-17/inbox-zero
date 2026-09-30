@@ -1179,6 +1179,50 @@ describe("createImapProvider", () => {
     expect(parsed.html).toContain("The mailbox is ready.");
   });
 
+  it("finds and deletes a rule draft by the id draftEmail returns", async () => {
+    appended.length = 0;
+    deleted.length = 0;
+    mailboxState.inboxMessages = [];
+    mailboxState.draftMessages = [];
+    mailboxState.draftSource = "";
+    const provider = createImapProvider(imapConfig(), logger);
+    const [message] = await provider.getInboxMessages(5);
+    if (!message) throw new Error("Missing message");
+
+    const result = await provider.draftEmail(
+      message,
+      { content: "Thanks, I will reply." },
+      "owner@example.com",
+    );
+
+    // The same uid can exist in the inbox. The returned id still names the draft.
+    mailboxState.inboxMessages = [
+      {
+        uid: 7,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: rawMessage,
+      },
+    ];
+    mailboxState.draftMessages = [
+      {
+        uid: 7,
+        flags: ["\\Draft"],
+        internalDate: "2026-09-28T16:00:00.000Z",
+        source: String(appended[0]?.raw),
+      },
+    ];
+
+    const draft = await provider.getDraft(result.draftId);
+    expect(draft?.textHtml).toContain("Thanks, I will reply.");
+
+    await expect(provider.deleteDraft(result.draftId)).resolves.toBe(true);
+    expect(deleted).toEqual([{ mailbox: "Drafts", uid: 7 }]);
+
+    mailboxState.inboxMessages = [];
+    mailboxState.draftMessages = [];
+  });
+
   it("keeps the other recipients on a rule draft", async () => {
     appended.length = 0;
     const provider = createImapProvider(imapConfig(), logger);
