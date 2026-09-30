@@ -1902,13 +1902,18 @@ function headerDateIso(value: unknown, fallback: Date) {
 }
 
 function messageSnippet(textBody: string, htmlBody: string) {
-  const source = textBody || htmlSnippet(htmlBody);
+  const plain = textBody.replace(/\s+/g, " ").trim();
+  const source = plain || htmlSnippet(htmlBody);
   return source.replace(/\s+/g, " ").trim().slice(0, 280);
 }
 
 function htmlSnippet(htmlBody: string) {
+  const visible = htmlBody
+    .replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
   return he
-    .decode(htmlBody.replace(/<[^>]+>/g, " "))
+    .decode(visible.replace(/<[^>]+>/g, " "))
     .replace(/\u200C|\u200D|\uFEFF/g, "");
 }
 

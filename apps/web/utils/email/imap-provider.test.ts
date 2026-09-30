@@ -3004,6 +3004,65 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("leaves style and script out of an HTML-only snippet", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Invoice preview",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <styled-snippet@example.com>",
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<html><head><title>Hidden title</title><style>p { color: red; }</style></head>",
+      "<body><script>alert(1)</script><p>Please keep the invoice.</p></body></html>",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+    const snippet = result.threads[0]?.messages[0]?.snippet || "";
+
+    expect(snippet).toContain("Please keep the invoice.");
+    expect(snippet).not.toContain("color: red");
+    expect(snippet).not.toContain("alert");
+    expect(snippet).not.toContain("Hidden title");
+    mailboxState.sentSource = "";
+  });
+
+  it("uses the HTML preview when the plain part is blank", async () => {
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Blank plain part",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <blank-plain-snippet@example.com>",
+      "MIME-Version: 1.0",
+      'Content-Type: multipart/alternative; boundary="bound"',
+      "",
+      "--bound",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      " ",
+      "--bound",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      "<p>Please keep the invoice.</p>",
+      "--bound--",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      query: { type: "sent" },
+    });
+
+    expect(result.threads[0]?.messages[0]?.snippet).toContain(
+      "Please keep the invoice.",
+    );
+    mailboxState.sentSource = "";
+  });
+
   it("keeps a plain-text snippet exactly as written", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
