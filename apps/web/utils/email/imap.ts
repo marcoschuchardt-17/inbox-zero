@@ -14,6 +14,7 @@ import {
   recipientDisplayNames,
   getSearchTermForSender,
   legacySubjectThreadKey,
+  splitRecipientList,
   messageWasSentByAccount,
   sentReplyRecipients,
   storedRecipientAddresses,
@@ -3871,8 +3872,8 @@ async function hasEarlierImapCorrespondence({
   date: Date;
   messageId: string;
 }): Promise<boolean> {
-  const searchTerm = getSearchTermForSender(from).trim();
-  if (!searchTerm) return false;
+  const searchTerms = correspondenceSearchTerms(from);
+  if (!searchTerms.length) return false;
 
   const client = createImapClient(config);
   await connectImapClient(client);
@@ -3883,67 +3884,69 @@ async function hasEarlierImapCorrespondence({
       const lock = await client.getMailboxLock(folder).catch(() => null);
       if (!lock) continue;
       try {
-        const found = await client.search(
-          {
-            or: [
-              { from: searchTerm },
-              { to: searchTerm },
-              { cc: searchTerm },
-              { bcc: searchTerm },
-              { header: { "reply-to": searchTerm } },
-              { header: { sender: searchTerm } },
-            ],
-          },
-          { uid: true },
-        );
-        const candidates = uidsToCheck(
-          Array.isArray(found) ? found : [],
-          folder === syncFolder ? messageId : undefined,
-        );
-        if (!candidates.length) continue;
-        const wanted = new Set(candidates.map(String));
-        for await (const message of client.fetch(
-          candidates.join(","),
-          {
-            uid: true,
-            source: true,
-            flags: true,
-            internalDate: true,
-          },
-          { uid: true },
-        )) {
-          if (!wanted.has(String(message.uid)) || !message.source) continue;
-          if (
-            folder === syncFolder &&
-            message.uid === parseImapMessageRef(messageId)?.uid
-          ) {
-            continue;
-          }
-          const parsed = await parseListedImapMessage({
-            uid: message.uid,
-            source: message.source,
-            flags: message.flags,
-            internalDate: messageInternalDate(message.internalDate),
-            mailbox: folder,
-            logger,
-          });
-          if (!parsed) continue;
-          const sentAt = new Date(parsed.date);
-          if (Number.isNaN(sentAt.getTime()) || sentAt >= date) continue;
-          if (
-            addressesMatchSearchTerm(
-              [
-                parsed.headers.from,
-                parsed.headers.to,
-                parsed.headers.cc || "",
-                parsed.headers.bcc || "",
-                parsed.headers["reply-to"] || "",
-                parsed.headers.sender || "",
+        for (const searchTerm of searchTerms) {
+          const found = await client.search(
+            {
+              or: [
+                { from: searchTerm },
+                { to: searchTerm },
+                { cc: searchTerm },
+                { bcc: searchTerm },
+                { header: { "reply-to": searchTerm } },
+                { header: { sender: searchTerm } },
               ],
-              searchTerm,
-            )
-          ) {
-            return true;
+            },
+            { uid: true },
+          );
+          const candidates = uidsToCheck(
+            Array.isArray(found) ? found : [],
+            folder === syncFolder ? messageId : undefined,
+          );
+          if (!candidates.length) continue;
+          const wanted = new Set(candidates.map(String));
+          for await (const message of client.fetch(
+            candidates.join(","),
+            {
+              uid: true,
+              source: true,
+              flags: true,
+              internalDate: true,
+            },
+            { uid: true },
+          )) {
+            if (!wanted.has(String(message.uid)) || !message.source) continue;
+            if (
+              folder === syncFolder &&
+              message.uid === parseImapMessageRef(messageId)?.uid
+            ) {
+              continue;
+            }
+            const parsed = await parseListedImapMessage({
+              uid: message.uid,
+              source: message.source,
+              flags: message.flags,
+              internalDate: messageInternalDate(message.internalDate),
+              mailbox: folder,
+              logger,
+            });
+            if (!parsed) continue;
+            const sentAt = new Date(parsed.date);
+            if (Number.isNaN(sentAt.getTime()) || sentAt >= date) continue;
+            if (
+              addressesMatchSearchTerm(
+                [
+                  parsed.headers.from,
+                  parsed.headers.to,
+                  parsed.headers.cc || "",
+                  parsed.headers.bcc || "",
+                  parsed.headers["reply-to"] || "",
+                  parsed.headers.sender || "",
+                ],
+                searchTerm,
+              )
+            ) {
+              return true;
+            }
           }
         }
       } finally {
@@ -3960,6 +3963,18 @@ async function hasEarlierImapCorrespondence({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+function correspondenceSearchTerms(from: string) {
+  const people = splitRecipientList(from);
+  const sources = people.length > 0 ? people : [from];
+  return [
+    ...new Set(
+      sources
+        .map((person) => getSearchTermForSender(person).trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function correspondenceFolders(

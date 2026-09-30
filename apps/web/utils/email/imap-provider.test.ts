@@ -4397,6 +4397,48 @@ describe("createImapProvider", () => {
     mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
   });
 
+  it("counts earlier mail from the first of two senders", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Sent", name: "Sent" },
+    ];
+    mailboxState.sentMessages = [
+      {
+        uid: 11,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T10:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: Sam <sam@example.com>",
+          "Subject: Please keep this",
+          "Date: Tue, 01 Sep 2026 10:00:00 +0000",
+          "Message-ID: <sam-earlier@example.com>",
+          "",
+          "Earlier note.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const firstSender =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "Sam <sam@example.com>, New Person <new.person@gmail.com>",
+        date: new Date("2026-09-30T12:00:00.000Z"),
+        messageId: "1",
+      });
+    const onlyTheNewPerson =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "New Person <new.person@gmail.com>",
+        date: new Date("2026-09-30T12:00:00.000Z"),
+        messageId: "1",
+      });
+
+    expect(firstSender).toBe(true);
+    expect(onlyTheNewPerson).toBe(false);
+    mailboxState.sentMessages = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+  });
+
   it("includes a sent reply in the thread and archives only the inbox copy", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",

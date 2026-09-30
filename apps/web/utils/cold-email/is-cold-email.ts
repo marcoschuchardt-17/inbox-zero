@@ -120,7 +120,7 @@ export async function checkColdEmailGuards({
 
   const hasPreviousEmail = await hasPriorContactOrAssumeYes({
     provider,
-    from: extractEmailAddress(email.from) || email.from,
+    from: email.from,
     date: email.date,
     messageId: email.id,
     logger,
