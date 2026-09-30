@@ -2163,6 +2163,62 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("keeps incoming mail on the first page when newer mail was sent", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+      sentMessages: mailboxState.sentMessages,
+      sentSource: mailboxState.sentSource,
+    };
+    mailboxState.exists = 1;
+    mailboxState.sentSource = "";
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Incoming note",
+          "<incoming-note@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    mailboxState.sentMessages = [
+      {
+        uid: 8,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: sam@example.com",
+          "Subject: Newer sent note",
+          "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+          "Message-ID: <newer-sent-note@example.com>",
+          "",
+          "Sent later.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const listed = await provider.getMessagesWithPagination({
+        query: "",
+        maxResults: 1,
+      });
+
+      expect(listed.messages.map((message) => message.subject)).toEqual([
+        "Incoming note",
+      ]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+      mailboxState.sentMessages = previous.sentMessages;
+      mailboxState.sentSource = previous.sentSource;
+    }
+  });
+
   it("finds inbox mail that is older than the newest page", async () => {
     mailboxState.exists = 3;
     mailboxState.archiveSource = "";

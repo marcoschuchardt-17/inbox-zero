@@ -4319,7 +4319,11 @@ async function fetchSearchableMailboxMessages({
   const mailboxes = await mailboxNamesForRead({ config, logger });
   const collected: ParsedImapMessage[] = [];
   for (const [index, mailbox] of mailboxes.entries()) {
-    if (!isSearchableMailbox(mailbox)) continue;
+    // Rule tests drop mail this account sent after the page is built. Those
+    // copies would fill the first page and hide incoming mail.
+    if (!isSearchableMailbox(mailbox) || isSentFolder(mailbox, mailbox)) {
+      continue;
+    }
     try {
       const messages = await fetchMailboxMessages({
         config,
