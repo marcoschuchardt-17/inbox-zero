@@ -7,7 +7,7 @@ import { Tooltip } from "@/components/Tooltip";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { useThread } from "@/hooks/useThread";
 import { snippetRemoveReply } from "@/utils/gmail/snippet";
-import { extractNameFromEmail } from "@/utils/email";
+import { recipientDisplayNames } from "@/utils/email";
 import { useEmail } from "@/providers/EmailProvider";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useMemo } from "react";
@@ -67,7 +67,7 @@ export function EmailMessageCell({
     <div className="min-w-0 break-words text-sm text-slate-700 dark:text-foreground">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="order-1 max-w-[240px] shrink-0 truncate font-semibold">
-          {extractNameFromEmail(sender)}
+          {recipientDisplayNames(sender)}
         </span>
         <span className="order-4 min-w-0 max-w-full basis-full truncate sm:order-2 sm:max-w-md sm:basis-auto">
           {subject}
