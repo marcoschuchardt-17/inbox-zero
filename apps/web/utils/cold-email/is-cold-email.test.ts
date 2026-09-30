@@ -450,6 +450,32 @@ describe("isColdEmail", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it("does not classify a whitelisted sender listed first of two senders as cold", async () => {
+    const result = await checkColdEmailGuards({
+      logger,
+      email: {
+        id: "msg-whitelist-first",
+        from: "Welcome <welcome@service.example>, New Person <new.person@gmail.com>",
+        to: "user@example.com",
+        subject: "Application sender first",
+        content: "Your workspace is ready.",
+        date: new Date("2026-08-01T12:00:00.000Z"),
+      },
+      emailAccount: getEmailAccount({
+        id: "test-account-id",
+        email: "user@example.com",
+      }),
+      provider: mockProvider as never,
+      coldEmailRule: { instructions: "test instructions", groupId: "group-id" },
+    });
+
+    expect(result).toEqual({ isColdEmail: false, reason: "applicationSender" });
+    expect(prisma.groupItem.findFirst).not.toHaveBeenCalled();
+    expect(
+      mockProvider.hasPreviousCommunicationsWithSenderOrDomain,
+    ).not.toHaveBeenCalled();
+  });
+
   it("keeps a learned cold sender when that person is listed first", async () => {
     vi.mocked(prisma.groupItem.findFirst).mockImplementation(async (args) => {
       const value = (args as { where?: { value?: string } })?.where?.value;
