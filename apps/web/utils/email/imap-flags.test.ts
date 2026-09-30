@@ -93,6 +93,17 @@ describe("imap message mailbox", () => {
     expect(imapListLocation("Sent")).toBe("sent");
   });
 
+  it("recognizes the mailbox names a server already uses", () => {
+    expect(imapListLocation("Gesendet")).toBe("sent");
+    expect(imapListLocation("Entwürfe")).toBe("drafts");
+    expect(imapListLocation("Archiv")).toBe("archive");
+    expect(imapSearchRestoreAction("Archiv/3")).toBe("unarchive");
+    expect(imapListLocation("Papierkorb")).toBe("trash");
+    expect(imapSearchRestoreAction("Papierkorb/1")).toBe("untrash");
+    expect(imapListLocation("Sent to clients")).toBe("folder");
+    expect(imapListLocation("Receipts")).toBe("folder");
+  });
+
   it("ignores an id that is not a mailbox uid", () => {
     expect(imapMessageMailbox("")).toBe("");
     expect(imapMessageMailbox("not-an-id")).toBe("");
@@ -105,6 +116,9 @@ describe("imapListMessage", () => {
     expect(imapListMessage([{ id: "INBOX/22" }, { id: "Sent/9" }])?.id).toBe(
       "INBOX/22",
     );
+    expect(
+      imapListMessage([{ id: "INBOX/22" }, { id: "Gesendet/9" }])?.id,
+    ).toBe("INBOX/22");
     expect(imapListMessage([{ id: "Receipts/4" }, { id: "Sent/4" }])?.id).toBe(
       "Receipts/4",
     );

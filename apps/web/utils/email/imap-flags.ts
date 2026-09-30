@@ -1,3 +1,5 @@
+import { specialUse } from "imapflow/lib/special-use";
+
 const SYSTEM_FLAG = "\\";
 const ROW_SYSTEM_LABELS = new Set([
   "UNREAD",
@@ -70,40 +72,24 @@ export function imapMessageMailbox(messageId: string | null | undefined) {
   return messageId.slice(0, slash);
 }
 
+const LIST_LOCATION_BY_FLAG: Record<
+  string,
+  "sent" | "drafts" | "trash" | "archive" | "junk"
+> = {
+  "\\Sent": "sent",
+  "\\Drafts": "drafts",
+  "\\Trash": "trash",
+  "\\Archive": "archive",
+  "\\Junk": "junk",
+};
+
 export function imapListLocation(mailbox: string) {
-  const name = mailbox.trim().toLowerCase();
-  const leaf = name.split("/").at(-1) || name;
-  if (name === "inbox" || leaf === "inbox") return "inbox";
-  if (
-    name === "sent" ||
-    leaf === "sent" ||
-    name === "sent items" ||
-    leaf === "sent items" ||
-    name === "[gmail]/sent mail"
-  ) {
-    return "sent";
-  }
-  if (name === "drafts" || leaf === "drafts" || leaf === "draft") {
-    return "drafts";
-  }
-  if (name === "archive" || leaf === "archive") return "archive";
-  if (
-    name === "trash" ||
-    leaf === "trash" ||
-    leaf === "deleted" ||
-    leaf === "deleted items"
-  ) {
-    return "trash";
-  }
-  if (
-    name === "junk" ||
-    leaf === "junk" ||
-    leaf === "spam" ||
-    leaf === "junk e-mail"
-  ) {
-    return "junk";
-  }
-  return "folder";
+  const trimmed = mailbox.trim();
+  const name = trimmed.toLowerCase();
+  const leaf = trimmed.split("/").at(-1) || trimmed;
+  if (name === "inbox" || leaf.toLowerCase() === "inbox") return "inbox";
+  const flag = specialUse(false, { flags: new Set<string>(), name: leaf }).flag;
+  return (flag && LIST_LOCATION_BY_FLAG[flag]) || "folder";
 }
 
 export function imapListMessage<T extends { id: string }>(
