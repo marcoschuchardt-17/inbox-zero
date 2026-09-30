@@ -67,6 +67,7 @@ vi.mock("@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy", () => ({
       data-testid="composer"
       data-inline-reply="true"
       data-thread-id={replyingToEmail?.threadId}
+      data-to={replyingToEmail?.to}
       data-forwarded-message-id={replyingToEmail?.forwardedMessageId}
       data-forwarded-attachments={replyingToEmail?.forwardedAttachments
         ?.map((attachment) => attachment.filename)
@@ -216,6 +217,63 @@ describe("EmailMessage reply", () => {
       />,
     );
     expect(screen.getByRole("textbox", { name: "Email message" })).toBeTruthy();
+  });
+});
+
+describe("EmailMessage reply address", () => {
+  afterEach(cleanup);
+
+  it("replies to the Reply-To address when the sender set one", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Newsletter <news@example.com>",
+            subject: "Subject",
+            to: "user@example.com",
+            "reply-to": "replies@example.com",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "replies@example.com",
+    );
+  });
+
+  it("replies to the original recipients of a message the account sent", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["SENT"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "user@example.com",
+            subject: "Subject",
+            to: "Sam <sam@example.com>",
+            "reply-to": "elsewhere@example.com",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Sam <sam@example.com>",
+    );
   });
 });
 
