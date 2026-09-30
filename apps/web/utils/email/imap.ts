@@ -4102,18 +4102,17 @@ async function searchImapMessages({
 }): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
   const offset = pageOffset(pageToken);
   const mailboxes = await mailboxNamesForRead({ config, logger });
-  const collected: ParsedImapMessage[] = [];
+  const dated: { mailbox: string; uid: number; shown: number }[] = [];
   for (const [index, mailbox] of mailboxes.entries()) {
     if (!isSearchableMailbox(mailbox)) continue;
     try {
-      const messages = await fetchMailboxTextMatches({
+      const hits = await listMailboxTextMatchTimes({
         config,
         logger,
         mailbox,
         needle,
-        limit: offset + maxResults + 1,
       });
-      collected.push(...messages);
+      for (const hit of hits) dated.push({ mailbox, ...hit });
     } catch (error) {
       if (index === 0) throw error;
       if (isMissingImapMailbox(error)) continue;
@@ -4123,78 +4122,72 @@ async function searchImapMessages({
       });
     }
   }
-  const filtered = collected
-    .filter((message) =>
-      imapMessageHaystack(message).includes(needle.toLowerCase()),
-    )
-    .sort(
-      (left, right) =>
-        new Date(right.date).getTime() - new Date(left.date).getTime(),
-    );
+  dated.sort((left, right) => right.shown - left.shown || right.uid - left.uid);
+  const needleText = needle.toLowerCase();
+  const needed = offset + maxResults + 1;
+  const matches: ParsedImapMessage[] = [];
+  let index = 0;
+  while (matches.length < needed && index < dated.length) {
+    const batch = dated.slice(index, index + 100);
+    index += batch.length;
+    const parsed = await fetchMailboxTextMatches({
+      config,
+      logger,
+      matches: batch,
+    });
+    const byId = new Map(parsed.map((message) => [message.id, message]));
+    for (const item of batch) {
+      const message = byId.get(imapMessageId(item.mailbox, item.uid));
+      if (!message || !imapMessageHaystack(message).includes(needleText)) {
+        continue;
+      }
+      matches.push(message);
+      if (matches.length >= needed) break;
+    }
+  }
   return {
-    messages: filtered.slice(offset, offset + maxResults),
+    messages: matches.slice(offset, offset + maxResults),
     nextPageToken:
-      offset + maxResults < filtered.length
+      matches.length > offset + maxResults
         ? String(offset + maxResults)
         : undefined,
   };
 }
 
-async function fetchMailboxTextMatches({
+async function listMailboxTextMatchTimes({
   config,
   logger,
   mailbox,
   needle,
-  limit,
 }: {
   config: ImapConfig;
   logger: Logger;
   mailbox: string;
   needle: string;
-  limit: number;
-}): Promise<ParsedImapMessage[]> {
+}) {
   const client = createImapClient(config);
   await connectImapClient(client);
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
       const searched = await client.search({ text: needle }, { uid: true });
-      const uids = (Array.isArray(searched) ? searched : [])
-        .filter((uid): uid is number => typeof uid === "number")
-        .sort((left, right) => right - left)
-        .slice(0, Math.max(0, limit));
+      const uids = (Array.isArray(searched) ? searched : []).filter(
+        (uid): uid is number => typeof uid === "number",
+      );
       if (!uids.length) return [];
-      const wanted = new Set(uids.map(String));
-      const messages: ParsedImapMessage[] = [];
+      const dated: { uid: number; shown: number }[] = [];
       for await (const message of client.fetch(
         uids.join(","),
-        {
-          uid: true,
-          source: true,
-          flags: true,
-          internalDate: true,
-        },
+        { uid: true, envelope: true, internalDate: true },
         { uid: true },
       )) {
-        if (!wanted.has(String(message.uid)) || !message.source) continue;
-        const parsed = await parseListedImapMessage({
+        if (!message.uid) continue;
+        dated.push({
           uid: message.uid,
-          source: message.source,
-          flags: message.flags,
-          internalDate: message.internalDate,
-          mailbox,
-          logger,
+          shown: shownTimeFromListedMessage(message),
         });
-        if (!parsed) continue;
-        if (
-          isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
-          !parsed.labelIds?.includes("INBOX")
-        ) {
-          parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
-        }
-        messages.push(parsed);
       }
-      return messages;
+      return dated;
     } finally {
       lock.release();
     }
@@ -4210,6 +4203,67 @@ async function fetchMailboxTextMatches({
   } finally {
     await client.logout().catch(() => undefined);
   }
+}
+
+async function fetchMailboxTextMatches({
+  config,
+  logger,
+  matches,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  matches: { mailbox: string; uid: number }[];
+}) {
+  const byMailbox = new Map<string, number[]>();
+  for (const match of matches) {
+    const uids = byMailbox.get(match.mailbox) ?? [];
+    uids.push(match.uid);
+    byMailbox.set(match.mailbox, uids);
+  }
+  const messages: ParsedImapMessage[] = [];
+  for (const [mailbox, uids] of byMailbox) {
+    const client = createImapClient(config);
+    await connectImapClient(client);
+    try {
+      const lock = await client.getMailboxLock(mailbox);
+      try {
+        const wanted = new Set(uids.map(String));
+        for await (const message of client.fetch(
+          uids.join(","),
+          {
+            uid: true,
+            source: true,
+            flags: true,
+            internalDate: true,
+          },
+          { uid: true },
+        )) {
+          if (!wanted.has(String(message.uid)) || !message.source) continue;
+          const parsed = await parseListedImapMessage({
+            uid: message.uid,
+            source: message.source,
+            flags: message.flags,
+            internalDate: message.internalDate,
+            mailbox,
+            logger,
+          });
+          if (!parsed) continue;
+          if (
+            isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
+            !parsed.labelIds?.includes("INBOX")
+          ) {
+            parsed.labelIds = [...(parsed.labelIds || []), "INBOX"];
+          }
+          messages.push(parsed);
+        }
+      } finally {
+        lock.release();
+      }
+    } finally {
+      await client.logout().catch(() => undefined);
+    }
+  }
+  return messages;
 }
 
 function imapMessageHaystack(message: ParsedImapMessage) {

@@ -2216,6 +2216,58 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("returns the search match with the newest written date when that mail arrived earlier", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 3;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Written later match",
+          "<written-later-match@example.com>",
+          "Tue, 29 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Earlier written match",
+          "<earlier-written-match@example.com>",
+          "Wed, 02 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 3,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-21T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Recent arrival match",
+          "<recent-arrival-match@example.com>",
+          "Thu, 03 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const page = await provider.getMessagesWithPagination({
+        query: "match",
+        maxResults: 1,
+      });
+
+      expect(page.messages.map((message) => message.subject)).toEqual([
+        "Written later match",
+      ]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("keeps only inbox mail inside the requested dates", async () => {
     const previous = {
       exists: mailboxState.exists,
