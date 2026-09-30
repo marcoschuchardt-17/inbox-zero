@@ -45,13 +45,25 @@ describe("collectImapPollMessages", () => {
     expect(highestImapUid(messages)).toBe(40);
   });
 
-  it("reads the newest page when the mailbox has never been synced", async () => {
-    const getMailboxSyncPage = vi.fn(async () => ({
-      upsertedMessages: [message("INBOX/8")],
-    }));
+  it("reads older inbox mail when the mailbox has never been synced", async () => {
+    const getThreadsWithQuery = vi.fn(
+      async ({ pageToken }: { pageToken?: string }) => {
+        if (pageToken) {
+          return {
+            threads: [{ messages: [message("INBOX/1")] }],
+            nextPageToken: undefined,
+          };
+        }
+        return {
+          threads: [{ messages: [message("INBOX/40")] }],
+          nextPageToken: "30",
+        };
+      },
+    );
+    const getMailboxSyncPage = vi.fn();
     const provider = {
       getMailboxSyncPage,
-      getThreadsWithQuery: vi.fn(),
+      getThreadsWithQuery,
     } as unknown as Pick<
       EmailProvider,
       "getMailboxSyncPage" | "getThreadsWithQuery"
@@ -62,8 +74,13 @@ describe("collectImapPollMessages", () => {
       limit: 30,
     });
 
-    expect(messages.map((item) => item.id)).toEqual(["INBOX/8"]);
-    expect(getMailboxSyncPage).toHaveBeenCalledWith({ limit: 30 });
+    expect(messages.map((item) => item.id)).toEqual(["INBOX/40", "INBOX/1"]);
+    expect(getMailboxSyncPage).not.toHaveBeenCalled();
+    expect(getThreadsWithQuery).toHaveBeenCalledWith({
+      query: { type: "inbox" },
+      maxResults: 30,
+      pageToken: undefined,
+    });
   });
 });
 

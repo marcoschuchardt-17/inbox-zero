@@ -4,7 +4,7 @@ import type { ParsedMessage } from "@/utils/types";
 const MAX_POLL_PAGES = 50;
 
 export async function collectImapPollMessages(
-  provider: Pick<EmailProvider, "getMailboxSyncPage" | "getThreadsWithQuery">,
+  provider: Pick<EmailProvider, "getThreadsWithQuery">,
   {
     after,
     limit,
@@ -13,16 +13,11 @@ export async function collectImapPollMessages(
     limit: number;
   },
 ): Promise<ParsedMessage[]> {
-  if (!after) {
-    const page = await provider.getMailboxSyncPage({ limit });
-    return page.upsertedMessages;
-  }
-
   const messages: ParsedMessage[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < MAX_POLL_PAGES; page++) {
     const result = await provider.getThreadsWithQuery({
-      query: { after, type: "inbox" },
+      query: after ? { after, type: "inbox" } : { type: "inbox" },
       maxResults: limit,
       pageToken,
     });

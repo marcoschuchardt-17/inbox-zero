@@ -41,16 +41,19 @@ describe("pollImapAccount", () => {
 
   it("applies static mailbox rules to mail that has not been synced", async () => {
     createEmailProvider.mockResolvedValue({
-      getMailboxSyncPage: vi.fn(async () => ({
-        upsertedMessages: [
+      getThreadsWithQuery: vi.fn(async () => ({
+        threads: [
           {
-            id: "INBOX/22",
-            threadId: "keep",
-            headers: { from: "Sam <sam@example.com>" },
+            messages: [
+              {
+                id: "INBOX/22",
+                threadId: "keep",
+                headers: { from: "Sam <sam@example.com>" },
+              },
+            ],
           },
         ],
       })),
-      getThreadsWithQuery: vi.fn(),
     });
 
     const result = await pollImapAccount({
