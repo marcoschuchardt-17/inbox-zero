@@ -1382,13 +1382,15 @@ async function fetchMailboxMessagePage({
         internalDate: true,
       })) {
         if (!message.source) continue;
-        const parsed = await parseImapMessage(
-          message.uid,
-          message.source,
-          message.flags,
-          message.internalDate,
-          selectedMailbox,
-        );
+        const parsed = await parseListedImapMessage({
+          uid: message.uid,
+          source: message.source,
+          flags: message.flags,
+          internalDate: message.internalDate,
+          mailbox: selectedMailbox,
+          logger,
+        });
+        if (!parsed) continue;
         if (
           isInboxMailbox(selectedMailbox, config.syncFolder || "INBOX") &&
           !parsed.labelIds?.includes("INBOX")
@@ -1586,13 +1588,15 @@ async function fetchMailboxMessagesByDate({
           { uid: true },
         )) {
           if (!wanted.has(String(message.uid)) || !message.source) continue;
-          const parsed = await parseImapMessage(
-            message.uid,
-            message.source,
-            message.flags,
-            message.internalDate,
-            selectedMailbox,
-          );
+          const parsed = await parseListedImapMessage({
+            uid: message.uid,
+            source: message.source,
+            flags: message.flags,
+            internalDate: message.internalDate,
+            mailbox: selectedMailbox,
+            logger,
+          });
+          if (!parsed) continue;
           if (
             isInboxMailbox(selectedMailbox, config.syncFolder || "INBOX") &&
             !parsed.labelIds?.includes("INBOX")
@@ -1846,6 +1850,39 @@ function mailboxFrom(config: ImapConfig) {
 function outgoingMessageId(ownerEmail: string) {
   const domain = ownerEmail.split("@")[1] || "localhost";
   return `<smtp-${crypto.randomUUID()}@${domain}>`;
+}
+
+async function parseListedImapMessage({
+  uid,
+  source,
+  flags,
+  internalDate,
+  mailbox,
+  logger,
+}: {
+  uid: number;
+  source: Buffer;
+  flags: Set<string> | undefined;
+  internalDate: Date | undefined;
+  mailbox: string;
+  logger: Logger;
+}) {
+  try {
+    return await parseImapMessage(
+      uid,
+      source,
+      flags ?? new Set(),
+      internalDate,
+      mailbox,
+    );
+  } catch (error) {
+    logger.warn("Skipped an IMAP message that could not be read", {
+      error,
+      uid,
+      mailbox,
+    });
+    return null;
+  }
 }
 
 function headerDateIso(value: unknown, fallback: Date) {
@@ -2889,13 +2926,15 @@ async function fetchMailboxThreadMatches({
         { uid: true },
       )) {
         if (!wanted.has(String(message.uid)) || !message.source) continue;
-        const parsed = await parseImapMessage(
-          message.uid,
-          message.source,
-          message.flags,
-          message.internalDate,
+        const parsed = await parseListedImapMessage({
+          uid: message.uid,
+          source: message.source,
+          flags: message.flags,
+          internalDate: message.internalDate,
           mailbox,
-        );
+          logger,
+        });
+        if (!parsed) continue;
         if (
           isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
           !parsed.labelIds?.includes("INBOX")
@@ -3099,13 +3138,15 @@ async function hasSentMailTo({
           { uid: true },
         )) {
           if (!wanted.has(String(message.uid)) || !message.source) continue;
-          const parsed = await parseImapMessage(
-            message.uid,
-            message.source,
-            message.flags ?? new Set(),
-            messageInternalDate(message.internalDate),
+          const parsed = await parseListedImapMessage({
+            uid: message.uid,
+            source: message.source,
+            flags: message.flags,
+            internalDate: messageInternalDate(message.internalDate),
             mailbox,
-          );
+            logger,
+          });
+          if (!parsed) continue;
           const recipients = extractEmailAddresses(parsed.headers.to);
           if (recipients.some((address) => address.toLowerCase() === sender)) {
             return true;
@@ -3266,13 +3307,15 @@ async function findImapMessagesFromSender({
           { uid: true },
         )) {
           if (!wanted.has(String(message.uid)) || !message.source) continue;
-          const parsed = await parseImapMessage(
-            message.uid,
-            message.source,
-            message.flags ?? new Set(),
-            messageInternalDate(message.internalDate),
-            folder,
-          );
+          const parsed = await parseListedImapMessage({
+            uid: message.uid,
+            source: message.source,
+            flags: message.flags,
+            internalDate: messageInternalDate(message.internalDate),
+            mailbox: folder,
+            logger,
+          });
+          if (!parsed) continue;
           if (
             extractEmailAddress(parsed.headers.from).toLowerCase() !== sender
           ) {
@@ -3375,13 +3418,15 @@ async function hasEarlierImapCorrespondence({
           ) {
             continue;
           }
-          const parsed = await parseImapMessage(
-            message.uid,
-            message.source,
-            message.flags ?? new Set(),
-            messageInternalDate(message.internalDate),
-            folder,
-          );
+          const parsed = await parseListedImapMessage({
+            uid: message.uid,
+            source: message.source,
+            flags: message.flags,
+            internalDate: messageInternalDate(message.internalDate),
+            mailbox: folder,
+            logger,
+          });
+          if (!parsed) continue;
           const sentAt = new Date(parsed.date);
           if (Number.isNaN(sentAt.getTime()) || sentAt >= date) continue;
           if (
@@ -3806,6 +3851,7 @@ async function findImapMessagesWithParticipant({
     try {
       const messages = await fetchMailboxParticipantMatches({
         config,
+        logger,
         mailbox,
         participant,
       });
@@ -3828,10 +3874,12 @@ async function findImapMessagesWithParticipant({
 
 async function fetchMailboxParticipantMatches({
   config,
+  logger,
   mailbox,
   participant,
 }: {
   config: ImapConfig;
+  logger: Logger;
   mailbox: string;
   participant: string;
 }): Promise<ParsedImapMessage[]> {
@@ -3864,13 +3912,15 @@ async function fetchMailboxParticipantMatches({
         { uid: true },
       )) {
         if (!wanted.has(String(message.uid)) || !message.source) continue;
-        const parsed = await parseImapMessage(
-          message.uid,
-          message.source,
-          message.flags,
-          messageInternalDate(message.internalDate),
+        const parsed = await parseListedImapMessage({
+          uid: message.uid,
+          source: message.source,
+          flags: message.flags,
+          internalDate: messageInternalDate(message.internalDate),
           mailbox,
-        );
+          logger,
+        });
+        if (!parsed) continue;
         if (!messageIncludesParticipant(parsed, participant)) continue;
         if (
           isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
@@ -3995,13 +4045,15 @@ async function fetchMailboxTextMatches({
         { uid: true },
       )) {
         if (!wanted.has(String(message.uid)) || !message.source) continue;
-        const parsed = await parseImapMessage(
-          message.uid,
-          message.source,
-          message.flags,
-          message.internalDate,
+        const parsed = await parseListedImapMessage({
+          uid: message.uid,
+          source: message.source,
+          flags: message.flags,
+          internalDate: message.internalDate,
           mailbox,
-        );
+          logger,
+        });
+        if (!parsed) continue;
         if (
           isInboxMailbox(mailbox, config.syncFolder || "INBOX") &&
           !parsed.labelIds?.includes("INBOX")

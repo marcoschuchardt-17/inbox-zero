@@ -753,6 +753,44 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("keeps the rest of the inbox when one message cannot be read", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        source: nestedMimeMessage(),
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+      },
+      {
+        uid: 2,
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: owner@example.com",
+          "Subject: Please keep this",
+          "Date: Mon, 28 Sep 2026 12:05:00 +0000",
+          "Message-ID: <please-keep@example.com>",
+          "",
+          "Please keep this note.",
+        ].join("\r\n"),
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:05:00.000Z",
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const messages = await provider.getInboxMessages(5);
+      expect(messages.map((message) => message.subject)).toEqual([
+        "Please keep this",
+      ]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("lists mail when the Date header cannot be parsed", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 1;
@@ -3526,6 +3564,23 @@ function utcDay(value: Date) {
     value.getUTCMonth(),
     value.getUTCDate(),
   );
+}
+
+function nestedMimeMessage() {
+  const lines = [
+    "From: Bad <bad@example.com>",
+    "To: owner@example.com",
+    "Subject: Too deep",
+    "MIME-Version: 1.0",
+    "Content-Type: multipart/mixed; boundary=b0",
+    "",
+  ];
+  for (let depth = 0; depth < 300; depth++) {
+    lines.push(`--b${depth}`);
+    lines.push(`Content-Type: multipart/mixed; boundary=b${depth + 1}`);
+    lines.push("");
+  }
+  return lines.join("\r\n");
 }
 
 function fetchTargets(
