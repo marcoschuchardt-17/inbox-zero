@@ -68,18 +68,22 @@ export function storedRecipientAddresses(headers: {
   return "Missing";
 }
 
-export function sentReplyRecipients(headers: {
-  to?: string | null;
-  cc?: string | null;
-  bcc?: string | null;
-}) {
-  if (storedAnalyticsAddresses(headers.to || "")) {
+export function sentReplyRecipients(
+  headers: {
+    to?: string | null;
+    cc?: string | null;
+    bcc?: string | null;
+  },
+  accountEmail?: string | null,
+) {
+  // A header that only names this account is not who the reply should reach.
+  if (replyHeaderReachesSomeoneElse(headers.to, accountEmail)) {
     return { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
   }
-  if (storedAnalyticsAddresses(headers.cc || "")) {
+  if (replyHeaderReachesSomeoneElse(headers.cc, accountEmail)) {
     return { to: headers.cc || "", cc: undefined, bcc: headers.bcc };
   }
-  if (storedAnalyticsAddresses(headers.bcc || "")) {
+  if (replyHeaderReachesSomeoneElse(headers.bcc, accountEmail)) {
     return { to: headers.bcc || "", cc: undefined, bcc: undefined };
   }
   return { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
@@ -431,6 +435,15 @@ function displayNameBesideAddress(
   // second name, so it must not replace Billing with the domain.
   if (!display || isSameEmailAddress(display, email)) return "";
   return display;
+}
+
+function replyHeaderReachesSomeoneElse(
+  header: string | null | undefined,
+  accountEmail?: string | null,
+) {
+  const addresses = extractEmailAddresses(header || "");
+  if (!addresses.length) return false;
+  return addressesOtherThanAccount(addresses, accountEmail).length > 0;
 }
 
 function namesListedForEveryAddress(

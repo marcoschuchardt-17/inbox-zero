@@ -858,7 +858,10 @@ export function createImapProvider(
     },
     replyToEmail: async (email, content, options) => {
       const sentFromUser = messageWasSentByAccount(email, config.ownerEmail);
-      const sentRecipients = sentReplyRecipients(email.headers);
+      const sentRecipients = sentReplyRecipients(
+        email.headers,
+        config.ownerEmail,
+      );
       const headerMessageId = email.headers["message-id"] || "";
       const references = [email.headers.references, headerMessageId]
         .filter(Boolean)

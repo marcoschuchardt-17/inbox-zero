@@ -165,6 +165,22 @@ describe("email utils", () => {
         bcc: "hidden@example.com",
       });
     });
+
+    it("addresses the copied person when sent mail is only addressed to the account", () => {
+      expect(
+        sentReplyRecipients(
+          {
+            to: "Owner <owner@example.com>",
+            cc: "Ada Beside <ada-beside@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Ada Beside <ada-beside@example.com>",
+        cc: undefined,
+        bcc: undefined,
+      });
+    });
   });
 
   describe("messageWasSentByAccount", () => {

@@ -403,6 +403,37 @@ describe("EmailMessage reply address", () => {
     expect(screen.getByTestId("composer").dataset.subject).toBe("Copied only");
   });
 
+  it("replies to the copied person when sent mail is only addressed to the account", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Reply beside me",
+            to: "Starttls <user@example.com>",
+            cc: "Ada Beside <ada-beside@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Beside <ada-beside@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBeUndefined();
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Reply beside me",
+    );
+  });
+
   it("replies to the other person when the account is also a sender", () => {
     render(
       <EmailMessage

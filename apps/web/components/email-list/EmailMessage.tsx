@@ -810,7 +810,10 @@ const prepareReplyingToEmail = (
     splitRecipientList(message.headers.from || "").some((person) =>
       isSameEmailAddress(person, options?.userEmail || ""),
     );
-  const sentRecipients = sentReplyRecipients(message.headers);
+  const sentRecipients = sentReplyRecipients(
+    message.headers,
+    options?.userEmail,
+  );
 
   const { html } = createReplyContent({ message });
   const everyone =
