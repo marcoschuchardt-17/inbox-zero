@@ -157,7 +157,49 @@ vi.mock("imapflow", () => ({
         return mailboxState.allUids;
       }
       if (query?.or) {
-        if (mailboxState.opened !== "Sent") return mailboxState.inboxSearchUids;
+        if (mailboxState.opened !== "Sent") {
+          if (mailboxState.inboxMessages.length && Array.isArray(query.or)) {
+            return mailboxState.inboxMessages
+              .filter((message) =>
+                query.or?.some((clause) => {
+                  if (!clause || typeof clause !== "object") return false;
+                  const record = clause as {
+                    to?: string;
+                    cc?: string;
+                    bcc?: string;
+                    from?: string;
+                  };
+                  if (
+                    record.to &&
+                    headerLineIncludes(message.source, "To", record.to)
+                  ) {
+                    return true;
+                  }
+                  if (
+                    record.cc &&
+                    headerLineIncludes(message.source, "Cc", record.cc)
+                  ) {
+                    return true;
+                  }
+                  if (
+                    record.bcc &&
+                    headerLineIncludes(message.source, "Bcc", record.bcc)
+                  ) {
+                    return true;
+                  }
+                  if (
+                    record.from &&
+                    headerLineIncludes(message.source, "From", record.from)
+                  ) {
+                    return true;
+                  }
+                  return false;
+                }),
+              )
+              .map((message) => message.uid);
+          }
+          return mailboxState.inboxSearchUids;
+        }
         if (mailboxState.sentMessages.length && Array.isArray(query.or)) {
           return mailboxState.sentMessages
             .filter((message) =>
@@ -166,6 +208,7 @@ vi.mock("imapflow", () => ({
                 const record = clause as {
                   to?: string;
                   cc?: string;
+                  bcc?: string;
                   from?: string;
                 };
                 if (
@@ -177,6 +220,12 @@ vi.mock("imapflow", () => ({
                 if (
                   record.cc &&
                   headerLineIncludes(message.source, "Cc", record.cc)
+                ) {
+                  return true;
+                }
+                if (
+                  record.bcc &&
+                  headerLineIncludes(message.source, "Bcc", record.bcc)
                 ) {
                   return true;
                 }
@@ -1930,6 +1979,39 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("finds a person who is only on the blind copy", async () => {
+    const previous = mailboxState.inboxMessages;
+    mailboxState.inboxMessages = [
+      {
+        uid: 4,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: [
+          "From: News <news@example.com>",
+          "To: starttls.imap@example.com",
+          "Bcc: Hidden <hidden@example.com>",
+          "Subject: Quiet note",
+          "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+          "Message-ID: <quiet-note@example.com>",
+          "",
+          "You were copied quietly.",
+        ].join("\r\n"),
+      },
+    ];
+    try {
+      const provider = createImapProvider(imapConfig(), logger);
+      const threads = await provider.getThreadsWithParticipant({
+        participantEmail: "hidden@example.com",
+      });
+
+      expect(threads.map((thread) => thread.messages[0]?.subject)).toEqual([
+        "Quiet note",
+      ]);
+    } finally {
+      mailboxState.inboxMessages = previous;
+    }
+  });
+
   it("keeps mail with the newest date on it when newer mail from that person arrived earlier", async () => {
     const previous = {
       inboxSearchUids: [...mailboxState.inboxSearchUids],
@@ -3557,6 +3639,78 @@ describe("createImapProvider", () => {
     mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
   });
 
+  it("treats a copied address as earlier mail with that person", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Sent", name: "Sent" },
+    ];
+    mailboxState.sentMessages = [
+      {
+        uid: 11,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T10:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: other@example.com",
+          "Cc: Quiet <quiet@acme.example>",
+          "Subject: Quiet copy",
+          "Date: Mon, 28 Sep 2026 10:00:00 +0000",
+          "Message-ID: <quiet-copy@example.com>",
+          "",
+          "You were copied.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const copiedEarlier =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "introducer@acme.example",
+        date: new Date("2026-09-28T15:00:00.000Z"),
+        messageId: "1",
+      });
+
+    expect(copiedEarlier).toBe(true);
+    mailboxState.sentMessages = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+  });
+
+  it("treats a blind copy as earlier mail with that person", async () => {
+    mailboxState.listed = [
+      { path: "INBOX", name: "INBOX" },
+      { path: "Sent", name: "Sent" },
+    ];
+    mailboxState.sentMessages = [
+      {
+        uid: 11,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T10:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: other@example.com",
+          "Bcc: Quiet <quiet@acme.example>",
+          "Subject: Quiet blind copy",
+          "Date: Mon, 28 Sep 2026 10:00:00 +0000",
+          "Message-ID: <quiet-blind@example.com>",
+          "",
+          "You were copied quietly.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const copiedEarlier =
+      await provider.hasPreviousCommunicationsWithSenderOrDomain({
+        from: "introducer@acme.example",
+        date: new Date("2026-09-28T15:00:00.000Z"),
+        messageId: "1",
+      });
+
+    expect(copiedEarlier).toBe(true);
+    mailboxState.sentMessages = [];
+    mailboxState.listed = [{ path: "INBOX", name: "INBOX" }];
+  });
+
   it("matches a public-email sender by the full address", async () => {
     mailboxState.listed = [
       { path: "INBOX", name: "INBOX" },
@@ -4774,6 +4928,27 @@ describe("createImapProvider", () => {
     await expect(provider.checkIfReplySent("other@example.com")).resolves.toBe(
       false,
     );
+    mailboxState.sentMessages = [
+      {
+        uid: 12,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T14:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: other@example.com",
+          "Bcc: hidden@example.com",
+          "Subject: Quiet sent copy",
+          "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+          "Message-ID: <quiet-sent@example.com>",
+          "",
+          "Sent with a blind copy.",
+        ].join("\r\n"),
+      },
+    ];
+    await expect(provider.checkIfReplySent("hidden@example.com")).resolves.toBe(
+      true,
+    );
+    mailboxState.sentMessages = [];
     await expect(
       provider.countReceivedMessages("sam@example.com", 5),
     ).resolves.toBe(1);

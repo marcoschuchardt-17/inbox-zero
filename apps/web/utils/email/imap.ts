@@ -3255,7 +3255,13 @@ async function hasSentMailTo({
       if (!lock) continue;
       try {
         const searched = await client.search(
-          { or: [{ to: senderEmail }, { cc: senderEmail }] },
+          {
+            or: [
+              { to: senderEmail },
+              { cc: senderEmail },
+              { bcc: senderEmail },
+            ],
+          },
           { uid: true },
         );
         const uids = (Array.isArray(searched) ? searched : [])
@@ -3289,6 +3295,7 @@ async function hasSentMailTo({
             const recipients = [
               ...extractEmailAddresses(parsed.headers.to),
               ...extractEmailAddresses(parsed.headers.cc || ""),
+              ...extractEmailAddresses(parsed.headers.bcc || ""),
             ];
             if (
               recipients.some((address) => address.toLowerCase() === sender)
@@ -3610,7 +3617,14 @@ async function hasEarlierImapCorrespondence({
       if (!lock) continue;
       try {
         const found = await client.search(
-          { or: [{ from: searchTerm }, { to: searchTerm }] },
+          {
+            or: [
+              { from: searchTerm },
+              { to: searchTerm },
+              { cc: searchTerm },
+              { bcc: searchTerm },
+            ],
+          },
           { uid: true },
         );
         const candidates = uidsToCheck(
@@ -3649,7 +3663,12 @@ async function hasEarlierImapCorrespondence({
           if (Number.isNaN(sentAt.getTime()) || sentAt >= date) continue;
           if (
             addressesMatchSearchTerm(
-              [parsed.headers.from, parsed.headers.to],
+              [
+                parsed.headers.from,
+                parsed.headers.to,
+                parsed.headers.cc || "",
+                parsed.headers.bcc || "",
+              ],
               searchTerm,
             )
           ) {
@@ -4108,7 +4127,12 @@ async function fetchMailboxParticipantMatches({
     try {
       const searched = await client.search(
         {
-          or: [{ from: participant }, { to: participant }, { cc: participant }],
+          or: [
+            { from: participant },
+            { to: participant },
+            { cc: participant },
+            { bcc: participant },
+          ],
         },
         { uid: true },
       );
