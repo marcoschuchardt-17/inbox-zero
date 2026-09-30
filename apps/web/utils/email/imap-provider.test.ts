@@ -3069,6 +3069,58 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("finds a mailing list when the list name is not in the message", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T18:00:00.000Z",
+        source: [
+          "From: News <news@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Desk note",
+          "Date: Tue, 29 Sep 2026 18:00:00 +0000",
+          "Message-ID: <desk-note@example.com>",
+          "List-Id: Ada Team <ada-team.lists.example.com>",
+          "List-Post: <mailto:post-ada@lists.example.com>",
+          "",
+          "A short note for the desk.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const byName = await provider.searchThreads({
+        query: "Ada Team",
+        maxResults: 20,
+      });
+      const byList = await provider.searchThreads({
+        query: "ada-team.lists.example.com",
+        maxResults: 20,
+      });
+      const byPost = await provider.searchThreads({
+        query: "post-ada@lists.example.com",
+        maxResults: 20,
+      });
+
+      expect(
+        byName.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Desk note"]);
+      expect(
+        byList.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Desk note"]);
+      expect(
+        byPost.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Desk note"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("returns the search match with the newest written date when that mail arrived earlier", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 3;

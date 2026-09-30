@@ -2,7 +2,7 @@ import { Readable } from "node:stream";
 import { ImapFlow } from "imapflow";
 import { specialUse } from "imapflow/lib/special-use";
 import he from "he";
-import PostalMime from "postal-mime";
+import PostalMime, { decodeWords } from "postal-mime";
 import nodemailer from "nodemailer";
 import { ActionType } from "@/generated/prisma/enums";
 import { shouldSkipAutoDraft } from "@/utils/auto-draft";
@@ -1928,6 +1928,8 @@ async function parseImapMessage(
       "message-id": parsed.messageId || undefined,
       references: parsed.references || undefined,
       "in-reply-to": parsed.inReplyTo || undefined,
+      "list-id": headerValue(parsed.headers, "list-id"),
+      "list-post": headerValue(parsed.headers, "list-post"),
       "list-unsubscribe": headerValue(parsed.headers, "list-unsubscribe"),
       "list-unsubscribe-post": headerValue(
         parsed.headers,
@@ -1947,7 +1949,7 @@ function headerValue(
 ) {
   const values = (headers || [])
     .filter((header) => header.key === name)
-    .map((header) => header.value.trim())
+    .map((header) => decodeWords(header.value).trim())
     .filter(Boolean);
   return values.length ? values.join(", ") : undefined;
 }
@@ -4485,6 +4487,8 @@ function imapMessageHaystack(message: ParsedImapMessage) {
     message.headers.bcc || "",
     message.headers["reply-to"] || "",
     message.headers.sender || "",
+    message.headers["list-id"] || "",
+    message.headers["list-post"] || "",
     message.headers["list-unsubscribe"] || "",
     message.headers["list-unsubscribe-post"] || "",
     ...(message.attachments ?? []).map((attachment) => attachment.filename),
