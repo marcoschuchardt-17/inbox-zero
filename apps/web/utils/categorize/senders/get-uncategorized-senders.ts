@@ -1,4 +1,8 @@
-import { extractEmailAddresses } from "@/utils/email";
+import {
+  addressesOtherThanAccount,
+  extractEmailAddresses,
+  isSameEmailAddress,
+} from "@/utils/email";
 import { getSenders } from "./get-senders";
 import prisma from "@/utils/prisma";
 import type { Sender } from "@/utils/categorize/senders/batch-validation";
@@ -16,6 +20,10 @@ export async function getUncategorizedSenders({
 }) {
   let uncategorizedSenders: Sender[] = [];
   let currentOffset = offset;
+  const account = await prisma.emailAccount.findUnique({
+    where: { id: emailAccountId },
+    select: { email: true },
+  });
 
   while (uncategorizedSenders.length === 0 && currentOffset < MAX_ITERATIONS) {
     const result = await getSenders({
@@ -27,9 +35,18 @@ export async function getUncategorizedSenders({
     const senderMap = new Map<string, string | null>();
     for (const sender of result) {
       const addresses = extractEmailAddresses(sender.from);
-      const people = addresses.length ? addresses : [sender.from];
+      const people = addressesOtherThanAccount(
+        addresses.length ? addresses : [sender.from],
+        account?.email,
+      );
+      if (!people.length) continue;
       for (const email of people) {
-        const name = people.length === 1 ? sender.fromName : null;
+        const name = senderNameForAddress(
+          sender.fromName,
+          addresses,
+          people,
+          email,
+        );
         if (!senderMap.has(email) || (!senderMap.get(email) && name)) {
           senderMap.set(email, name);
         }
@@ -67,4 +84,19 @@ export async function getUncategorizedSenders({
     return { uncategorizedSenders, nextOffset: currentOffset };
   }
   return { uncategorizedSenders };
+}
+
+function senderNameForAddress(
+  fromName: string | null,
+  addresses: string[],
+  people: string[],
+  email: string,
+) {
+  if (
+    people.length === 1 &&
+    (!addresses.length || isSameEmailAddress(addresses[0] || "", email))
+  ) {
+    return fromName;
+  }
+  return null;
 }
