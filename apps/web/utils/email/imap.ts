@@ -22,6 +22,7 @@ import {
   imapKeyword,
   imapListLocation,
   imapListMessage,
+  imapRowLabelIds,
 } from "@/utils/email/imap-flags";
 import {
   buildReplyAllRecipients,
@@ -4333,9 +4334,20 @@ async function listMailboxTextMatchTimes({
     const lock = await client.getMailboxLock(mailbox);
     try {
       const searched = await client.search({ text: needle }, { uid: true });
-      const uids = (Array.isArray(searched) ? searched : []).filter(
-        (uid): uid is number => typeof uid === "number",
-      );
+      const keyword = imapSearchKeyword(needle);
+      const labeled = keyword
+        ? await client.search({ keyword }, { uid: true })
+        : [];
+      const seenUids = new Set<number>();
+      const uids: number[] = [];
+      for (const uid of [
+        ...(Array.isArray(searched) ? searched : []),
+        ...(Array.isArray(labeled) ? labeled : []),
+      ]) {
+        if (typeof uid !== "number" || seenUids.has(uid)) continue;
+        seenUids.add(uid);
+        uids.push(uid);
+      }
       if (!uids.length) return [];
       const dated: { uid: number; shown: number }[] = [];
       for await (const message of client.fetch(
@@ -4428,6 +4440,15 @@ async function fetchMailboxTextMatches({
   return messages;
 }
 
+function imapSearchKeyword(needle: string) {
+  const keyword = needle
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^\p{L}\p{N}_-]/gu, "");
+  if (!keyword || keyword.startsWith("\\") || keyword.length > 64) return;
+  return keyword;
+}
+
 function imapMessageHaystack(message: ParsedImapMessage) {
   return [
     message.subject,
@@ -4438,6 +4459,10 @@ function imapMessageHaystack(message: ParsedImapMessage) {
     message.headers.cc || "",
     message.headers.bcc || "",
     ...(message.attachments ?? []).map((attachment) => attachment.filename),
+    ...imapRowLabelIds(message.labelIds).flatMap((label) => [
+      label,
+      label.replace(/_/g, " "),
+    ]),
   ]
     .join("\n")
     .toLowerCase();

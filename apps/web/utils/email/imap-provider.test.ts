@@ -119,6 +119,7 @@ vi.mock("imapflow", () => ({
       before?: Date;
       seen?: boolean;
       text?: string;
+      keyword?: string;
       header?: Record<string, string>;
     }) {
       if (query?.from) {
@@ -231,6 +232,14 @@ vi.mock("imapflow", () => ({
         const needle = value.toLowerCase().replace(/^<|>$/g, "");
         return sourcesForOpenedMailbox()
           .filter((message) => message.source.toLowerCase().includes(needle))
+          .map((message) => message.uid);
+      }
+      if (query?.keyword) {
+        const keyword = query.keyword.toLowerCase();
+        return sourcesForOpenedMailbox()
+          .filter((message) =>
+            message.flags.some((flag) => flag.toLowerCase() === keyword),
+          )
           .map((message) => message.uid);
       }
       return mailboxState.unseen;
@@ -2720,6 +2729,63 @@ describe("createImapProvider", () => {
       expect(
         byCopy.threads.map((thread) => thread.messages[0]?.subject),
       ).toEqual(["File"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
+  it("finds a labeled message when the label is not in the preview", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen", "FYI"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: [
+          "From: Billing <billing@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Rechnung 2026-09",
+          "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+          "Message-ID: <labeled-invoice@example.com>",
+          "",
+          "Bitte begleiche die Rechnung.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen", "To_Reply"],
+        internalDate: "2026-09-27T12:00:00.000Z",
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Question",
+          "Date: Sun, 27 Sep 2026 12:00:00 +0000",
+          "Message-ID: <labeled-question@example.com>",
+          "",
+          "Please answer.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const byLabel = await provider.searchThreads({
+        query: "FYI",
+        maxResults: 20,
+      });
+      const byName = await provider.searchThreads({
+        query: "To Reply",
+        maxResults: 20,
+      });
+
+      expect(
+        byLabel.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Rechnung 2026-09"]);
+      expect(
+        byName.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Question"]);
     } finally {
       mailboxState.inboxMessages = [];
       mailboxState.exists = previousExists;
