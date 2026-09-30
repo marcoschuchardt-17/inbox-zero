@@ -1623,19 +1623,35 @@ async function fetchMailboxMessagesByDate({
         Object.keys(criteria).length > 0 ? criteria : { all: true },
         { uid: true },
       );
-      const uids = (Array.isArray(searched) ? searched : [])
-        .filter((uid): uid is number => typeof uid === "number")
-        .sort((left, right) => right - left);
+      const uids = (Array.isArray(searched) ? searched : []).filter(
+        (uid): uid is number => typeof uid === "number",
+      );
+      if (!uids.length) return { messages: [] };
+      const dated: { uid: number; shown: number }[] = [];
+      for await (const message of client.fetch(
+        uids.join(","),
+        { uid: true, envelope: true, internalDate: true },
+        { uid: true },
+      )) {
+        if (!message.uid) continue;
+        dated.push({
+          uid: message.uid,
+          shown: shownTimeFromListedMessage(message),
+        });
+      }
+      dated.sort(
+        (left, right) => right.shown - left.shown || right.uid - left.uid,
+      );
       const messages: ParsedImapMessage[] = [];
       let index = pageOffset(pageToken);
-      // SEARCH dates are whole days, so the first UIDs can sit outside the
+      // SEARCH dates are whole days, so the first matches can sit outside the
       // exact cutoff. Keep reading until the page is full or the window ends.
-      while (messages.length < maxResults && index < uids.length) {
-        const batch = uids.slice(index, index + maxResults);
-        const wanted = new Set(batch.map(String));
+      while (messages.length < maxResults && index < dated.length) {
+        const batch = dated.slice(index, index + maxResults);
+        const wanted = new Set(batch.map((item) => String(item.uid)));
         const fetched = new Map<number, ParsedImapMessage>();
         for await (const message of client.fetch(
-          batch.join(","),
+          batch.map((item) => item.uid).join(","),
           {
             uid: true,
             envelope: true,
@@ -1663,9 +1679,9 @@ async function fetchMailboxMessagesByDate({
           }
           fetched.set(message.uid, parsed);
         }
-        for (const uid of batch) {
+        for (const item of batch) {
           index += 1;
-          const message = fetched.get(uid);
+          const message = fetched.get(item.uid);
           if (!message || !messageInsideDateWindow(message, after, before)) {
             continue;
           }
@@ -1674,12 +1690,8 @@ async function fetchMailboxMessagesByDate({
         }
       }
       return {
-        messages: messages.sort(
-          (left, right) =>
-            Number(left.internalDate || "0") -
-            Number(right.internalDate || "0"),
-        ),
-        nextPageToken: index < uids.length ? String(index) : undefined,
+        messages,
+        nextPageToken: index < dated.length ? String(index) : undefined,
       };
     } finally {
       lock.release();

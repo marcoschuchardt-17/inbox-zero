@@ -3087,6 +3087,66 @@ describe("createImapProvider", () => {
     mailboxState.exists = 1;
   });
 
+  it("returns the unread mail with the newest written date when that mail arrived earlier", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 3;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: [],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Written later",
+          "<written-later-unread@example.com>",
+          "Tue, 29 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: [],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Earlier written",
+          "<earlier-written-unread@example.com>",
+          "Wed, 02 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 3,
+        flags: [],
+        internalDate: "2026-09-21T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Recent arrival",
+          "<recent-arrival-unread@example.com>",
+          "Thu, 03 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const first = await provider.getThreadsWithQuery({
+        maxResults: 1,
+        query: { type: "inbox", isUnread: true },
+      });
+      const second = await provider.getThreadsWithQuery({
+        maxResults: 1,
+        pageToken: first.nextPageToken,
+        query: { type: "inbox", isUnread: true },
+      });
+
+      expect(
+        first.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Written later"]);
+      expect(
+        second.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Recent arrival"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("returns the next page of older inbox mail", async () => {
     mailboxState.exists = 3;
     mailboxState.inboxMessages = [
