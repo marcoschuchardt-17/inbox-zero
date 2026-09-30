@@ -3132,36 +3132,46 @@ async function hasSentMailTo({
       if (!lock) continue;
       try {
         const searched = await client.search(
-          { to: senderEmail },
+          { or: [{ to: senderEmail }, { cc: senderEmail }] },
           { uid: true },
         );
-        const uids = Array.isArray(searched) ? searched : [];
-        const newest = [...uids].sort((a, b) => b - a).slice(0, 8);
-        if (!newest.length) continue;
-        const wanted = new Set(newest.map(String));
-        for await (const message of client.fetch(
-          newest.join(","),
-          {
-            uid: true,
-            source: true,
-            flags: true,
-            internalDate: true,
-          },
-          { uid: true },
-        )) {
-          if (!wanted.has(String(message.uid)) || !message.source) continue;
-          const parsed = await parseListedImapMessage({
-            uid: message.uid,
-            source: message.source,
-            flags: message.flags,
-            internalDate: messageInternalDate(message.internalDate),
-            mailbox,
-            logger,
-          });
-          if (!parsed) continue;
-          const recipients = extractEmailAddresses(parsed.headers.to);
-          if (recipients.some((address) => address.toLowerCase() === sender)) {
-            return true;
+        const uids = (Array.isArray(searched) ? searched : [])
+          .filter((uid): uid is number => typeof uid === "number")
+          .sort((left, right) => right - left);
+        if (!uids.length) continue;
+        const batchSize = 20;
+        for (let index = 0; index < uids.length; index += batchSize) {
+          const batch = uids.slice(index, index + batchSize);
+          const wanted = new Set(batch.map(String));
+          for await (const message of client.fetch(
+            batch.join(","),
+            {
+              uid: true,
+              source: true,
+              flags: true,
+              internalDate: true,
+            },
+            { uid: true },
+          )) {
+            if (!wanted.has(String(message.uid)) || !message.source) continue;
+            const parsed = await parseListedImapMessage({
+              uid: message.uid,
+              source: message.source,
+              flags: message.flags,
+              internalDate: messageInternalDate(message.internalDate),
+              mailbox,
+              logger,
+            });
+            if (!parsed) continue;
+            const recipients = [
+              ...extractEmailAddresses(parsed.headers.to),
+              ...extractEmailAddresses(parsed.headers.cc || ""),
+            ];
+            if (
+              recipients.some((address) => address.toLowerCase() === sender)
+            ) {
+              return true;
+            }
           }
         }
       } finally {

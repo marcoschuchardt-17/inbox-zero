@@ -123,9 +123,11 @@ vi.mock("imapflow", () => ({
     }) {
       if (query?.from) return mailboxState.fromUids;
       if (query?.to) {
-        return mailboxState.opened === "Sent"
-          ? mailboxState.sentSearchUids
-          : [];
+        if (mailboxState.opened !== "Sent") return [];
+        if (mailboxState.sentMessages.length) {
+          return sentUidsWithHeader(mailboxState.sentMessages, "To", query.to);
+        }
+        return mailboxState.sentSearchUids;
       }
       if (query?.all) {
         const folderUids = mailboxState.folderDateUids[mailboxState.opened];
@@ -133,9 +135,41 @@ vi.mock("imapflow", () => ({
         return mailboxState.allUids;
       }
       if (query?.or) {
-        return mailboxState.opened === "Sent"
-          ? mailboxState.sentSearchUids
-          : mailboxState.inboxSearchUids;
+        if (mailboxState.opened !== "Sent") return mailboxState.inboxSearchUids;
+        if (mailboxState.sentMessages.length && Array.isArray(query.or)) {
+          return mailboxState.sentMessages
+            .filter((message) =>
+              query.or?.some((clause) => {
+                if (!clause || typeof clause !== "object") return false;
+                const record = clause as {
+                  to?: string;
+                  cc?: string;
+                  from?: string;
+                };
+                if (
+                  record.to &&
+                  headerLineIncludes(message.source, "To", record.to)
+                ) {
+                  return true;
+                }
+                if (
+                  record.cc &&
+                  headerLineIncludes(message.source, "Cc", record.cc)
+                ) {
+                  return true;
+                }
+                if (
+                  record.from &&
+                  headerLineIncludes(message.source, "From", record.from)
+                ) {
+                  return true;
+                }
+                return false;
+              }),
+            )
+            .map((message) => message.uid);
+        }
+        return mailboxState.sentSearchUids;
       }
       if (query?.since || query?.before) {
         const folderUids = mailboxState.folderDateUids[mailboxState.opened];
@@ -3622,6 +3656,63 @@ describe("createImapProvider", () => {
     mailboxState.fromUids = [];
   });
 
+  it("finds an older sent reply when newer mail only shares part of the address", async () => {
+    const sentTo = (uid: number, to: string) => ({
+      uid,
+      flags: ["\\Seen"],
+      internalDate: "2026-09-28T14:00:00.000Z",
+      source: [
+        "From: Owner <owner@example.com>",
+        `To: ${to}`,
+        "Subject: Sent note",
+        "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+        `Message-ID: <sent-${uid}@example.com>`,
+        "",
+        "Sent note.",
+      ].join("\r\n"),
+    });
+    mailboxState.sentMessages = [
+      sentTo(1, "sam@example.com"),
+      ...[2, 3, 4, 5, 6, 7, 8, 9].map((uid) =>
+        sentTo(uid, "notsam@example.com"),
+      ),
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await expect(provider.checkIfReplySent("sam@example.com")).resolves.toBe(
+      true,
+    );
+
+    mailboxState.sentMessages = [];
+  });
+
+  it("finds a sent reply when the person is only on Cc", async () => {
+    mailboxState.sentMessages = [
+      {
+        uid: 4,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T14:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: list@example.com",
+          "Cc: Sam <sam@example.com>",
+          "Subject: Copied Sam",
+          "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+          "Message-ID: <cc-sam@example.com>",
+          "",
+          "Copied Sam.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await expect(provider.checkIfReplySent("sam@example.com")).resolves.toBe(
+      true,
+    );
+
+    mailboxState.sentMessages = [];
+  });
+
   it("returns messages from one sender and skips a different address", async () => {
     mailboxState.fromUids = [1];
     const provider = createImapProvider(imapConfig(), logger);
@@ -3964,6 +4055,28 @@ function replySource(
       references: "<older@example.com>",
     },
   };
+}
+
+function sentUidsWithHeader(
+  messages: { uid: number; source: string }[],
+  name: string,
+  value: string,
+) {
+  return messages
+    .filter((message) => headerLineIncludes(message.source, name, value))
+    .map((message) => message.uid);
+}
+
+function headerLineIncludes(source: string, name: string, value: string) {
+  const needle = value.toLowerCase();
+  return source.split(/\r?\n/).some((line) => {
+    const match = line.match(/^([^:]+):\s*(.*)$/);
+    if (!match) return false;
+    return (
+      match[1]?.toLowerCase() === name.toLowerCase() &&
+      match[2]?.toLowerCase().includes(needle)
+    );
+  });
 }
 
 function imapConfig() {
