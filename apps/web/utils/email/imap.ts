@@ -10,8 +10,8 @@ import {
   extractDomainFromEmail,
   extractEmailAddress,
   extractEmailAddresses,
-  extractNameFromEmail,
   formatEmailWithName,
+  recipientDisplayNames,
   getSearchTermForSender,
   legacySubjectThreadKey,
   messageWasSentByAccount,
@@ -3103,6 +3103,7 @@ async function storeSentMessages({
     const date = new Date(message.date);
     if (!from || Number.isNaN(date.getTime())) continue;
     const to = storedRecipientAddresses(message.headers);
+    const fromName = recipientDisplayNames(message.headers.from || "") || null;
     await prisma.emailMessage.upsert({
       where: {
         emailAccountId_threadId_messageId: {
@@ -3117,7 +3118,7 @@ async function storeSentMessages({
         messageId: sentMessageId(message.id),
         date,
         from,
-        fromName: extractNameFromEmail(message.headers.from || "") || null,
+        fromName,
         fromDomain: extractDomainFromEmail(fromAddresses[0] || ""),
         to,
         read: true,
@@ -3128,6 +3129,7 @@ async function storeSentMessages({
       update: {
         date,
         from,
+        fromName,
         to,
         read: true,
         sent: true,

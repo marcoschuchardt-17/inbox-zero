@@ -42,6 +42,107 @@ describe("getSenderEmailStats", () => {
       "sam-chart@example.com",
     ]);
     expect(senders.every((sender) => sender.count === 1)).toBe(true);
+    expect(senders.every((sender) => sender.fromName == null)).toBe(true);
+  });
+
+  it("names each sender when the stored name lists every person", async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        from: "sam-chart@example.com, ada-chart@example.com",
+        fromName: "Sam Chart, Ada Chart",
+        minFromName: "Sam Chart, Ada Chart",
+        count: 1,
+        inboxEmails: 1,
+        readEmails: 0,
+        unsubscribeLink: null,
+      },
+    ]);
+
+    const senders = await getSenderEmailStats({
+      emailAccountId: "account-1",
+      logger: createScopedLogger("sender-stats-test"),
+    });
+
+    expect(senders).toEqual([
+      expect.objectContaining({
+        from: "ada-chart@example.com",
+        fromName: "Ada Chart",
+        minFromName: "Ada Chart",
+      }),
+      expect.objectContaining({
+        from: "sam-chart@example.com",
+        fromName: "Sam Chart",
+        minFromName: "Sam Chart",
+      }),
+    ]);
+  });
+
+  it("keeps a solo name when an earlier shared row has no name to split", async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        from: "sam@example.com, ada@example.com",
+        fromName: "Sam",
+        minFromName: "Sam",
+        count: 2,
+        inboxEmails: 0,
+        readEmails: 2,
+        unsubscribeLink: null,
+      },
+      {
+        from: "ada@example.com",
+        fromName: "Ada",
+        minFromName: "Ada",
+        count: 1,
+        inboxEmails: 0,
+        readEmails: 1,
+        unsubscribeLink: null,
+      },
+    ]);
+
+    const senders = await getSenderEmailStats({
+      emailAccountId: "account-1",
+      logger: createScopedLogger("sender-stats-test"),
+    });
+
+    expect(senders).toEqual([
+      expect.objectContaining({
+        from: "ada@example.com",
+        fromName: "Ada",
+        count: 3,
+      }),
+      expect.objectContaining({
+        from: "sam@example.com",
+        fromName: null,
+        count: 2,
+      }),
+    ]);
+  });
+
+  it("names the other sender when this account is listed first", async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        from: "starttls.imap@example.com, ada@example.com",
+        fromName: "Starttls, Ada",
+        minFromName: "Starttls, Ada",
+        count: 1,
+        inboxEmails: 0,
+        readEmails: 1,
+        unsubscribeLink: null,
+      },
+    ]);
+
+    const senders = await getSenderEmailStats({
+      emailAccountId: "account-1",
+      accountEmail: "starttls.imap@example.com",
+      logger: createScopedLogger("sender-stats-test"),
+    });
+
+    expect(senders).toEqual([
+      expect.objectContaining({
+        from: "ada@example.com",
+        fromName: "Ada",
+      }),
+    ]);
   });
 
   it("leaves the account off the list, including when it is one of two senders", async () => {

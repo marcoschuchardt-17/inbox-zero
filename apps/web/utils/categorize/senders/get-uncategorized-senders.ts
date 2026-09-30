@@ -1,7 +1,7 @@
 import {
   addressesOtherThanAccount,
   extractEmailAddresses,
-  isSameEmailAddress,
+  senderDisplayNameForAddress,
 } from "@/utils/email";
 import { getSenders } from "./get-senders";
 import prisma from "@/utils/prisma";
@@ -41,12 +41,12 @@ export async function getUncategorizedSenders({
       );
       if (!people.length) continue;
       for (const email of people) {
-        const name = senderNameForAddress(
+        const name = senderDisplayNameForAddress(
           sender.fromName,
           addresses,
           people,
           email,
-        );
+        ).name;
         if (!senderMap.has(email) || (!senderMap.get(email) && name)) {
           senderMap.set(email, name);
         }
@@ -84,19 +84,4 @@ export async function getUncategorizedSenders({
     return { uncategorizedSenders, nextOffset: currentOffset };
   }
   return { uncategorizedSenders };
-}
-
-function senderNameForAddress(
-  fromName: string | null,
-  addresses: string[],
-  people: string[],
-  email: string,
-) {
-  if (
-    people.length === 1 &&
-    (!addresses.length || isSameEmailAddress(addresses[0] || "", email))
-  ) {
-    return fromName;
-  }
-  return null;
 }

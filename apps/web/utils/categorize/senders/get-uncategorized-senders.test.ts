@@ -39,4 +39,21 @@ describe("getUncategorizedSenders", () => {
       { email: "ada@example.com", name: null },
     ]);
   });
+
+  it("names the other sender when the stored name lists this account first", async () => {
+    prisma.emailMessage.findMany.mockResolvedValue([
+      {
+        from: "starttls.imap@example.com, ada@example.com",
+        fromName: "Starttls, Ada",
+      },
+    ] as never);
+
+    const result = await getUncategorizedSenders({
+      emailAccountId: "account-1",
+    });
+
+    expect(result.uncategorizedSenders).toEqual([
+      { email: "ada@example.com", name: "Ada" },
+    ]);
+  });
 });

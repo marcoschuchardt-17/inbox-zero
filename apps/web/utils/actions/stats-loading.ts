@@ -8,9 +8,9 @@ import { isDefined } from "@/utils/types";
 import {
   extractDomainFromEmail,
   extractEmailAddresses,
-  extractNameFromEmail,
   legacySubjectThreadKey,
   messageIsFromAccountOnly,
+  recipientDisplayNames,
   storedAnalyticsAddresses,
   storedRecipientAddresses,
 } from "@/utils/email";
@@ -207,7 +207,7 @@ export async function saveBatch({
         messageId: m.id,
         subject: m.subject || "",
         from: storedAnalyticsAddresses(m.headers.from) || "Missing",
-        fromName: extractNameFromEmail(m.headers.from),
+        fromName: recipientDisplayNames(m.headers.from),
         fromDomain: extractDomainFromEmail(fromAddresses[0] || ""),
         to: storedRecipientAddresses(m.headers),
         date,

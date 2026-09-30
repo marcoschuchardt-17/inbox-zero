@@ -156,6 +156,31 @@ export function addressesOtherThanAccount(
   );
 }
 
+export function senderDisplayNameForAddress(
+  fromName: string | null | undefined,
+  addresses: readonly string[],
+  people: readonly string[],
+  address: string,
+) {
+  const names = namesListedForEveryAddress(fromName, addresses);
+  if (names) {
+    const index = addresses.findIndex((item) =>
+      isSameEmailAddress(item, address),
+    );
+    return {
+      name: index >= 0 ? names[index] || null : null,
+      split: true,
+    };
+  }
+  if (
+    people.length === 1 &&
+    (!addresses.length || isSameEmailAddress(addresses[0] || "", address))
+  ) {
+    return { name: fromName ?? null, split: false };
+  }
+  return { name: null, split: false };
+}
+
 export function messageIsFromAccountOnly(
   from: string,
   accountEmail?: string | null,
@@ -368,4 +393,17 @@ export function isSameOrganization(left: string, right: string): boolean {
 
 export function legacySubjectThreadKey(subject: string) {
   return subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
+}
+
+function namesListedForEveryAddress(
+  fromName: string | null | undefined,
+  addresses: readonly string[],
+) {
+  if (!fromName || addresses.length < 2) return null;
+  const names = fromName
+    .split(", ")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (names.length !== addresses.length) return null;
+  return names;
 }

@@ -1,7 +1,7 @@
 import {
   addressesOtherThanAccount,
   extractEmailAddresses,
-  isSameEmailAddress,
+  senderDisplayNameForAddress,
 } from "@/utils/email";
 import prisma from "@/utils/prisma";
 import { Prisma } from "@/generated/prisma/client";
@@ -174,17 +174,31 @@ function expandSenderAddresses(
     );
     if (!people.length) continue;
     for (const address of people) {
-      const fromName =
-        people.length === 1 &&
-        (!addresses.length || isSameEmailAddress(addresses[0], address))
-          ? result.fromName
-          : null;
+      const assigned = senderDisplayNameForAddress(
+        result.fromName,
+        addresses,
+        people,
+        address,
+      );
+      const fromName = assigned.name;
+      let minFromName: string | null = null;
+      if (fromName && assigned.split) {
+        minFromName =
+          senderDisplayNameForAddress(
+            result.minFromName,
+            addresses,
+            people,
+            address,
+          ).name || fromName;
+      } else if (fromName) {
+        minFromName = result.minFromName;
+      }
       const existing = merged.get(address);
       if (!existing) {
         merged.set(address, {
           from: address,
           fromName,
-          minFromName: fromName ? result.minFromName : null,
+          minFromName,
           count: asNumber(result.count),
           inboxEmails: asNumber(result.inboxEmails),
           readEmails: asNumber(result.readEmails),
@@ -195,6 +209,10 @@ function expandSenderAddresses(
       existing.count += asNumber(result.count);
       existing.inboxEmails += asNumber(result.inboxEmails);
       existing.readEmails += asNumber(result.readEmails);
+      if (!existing.fromName && fromName) {
+        existing.fromName = fromName;
+        existing.minFromName = minFromName;
+      }
       if (!existing.unsubscribeLink && result.unsubscribeLink) {
         existing.unsubscribeLink = result.unsubscribeLink;
       }
