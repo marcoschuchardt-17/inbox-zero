@@ -302,13 +302,18 @@ export function participant(
     fromAddresses.length > 0 &&
     fromAddresses.every((address) => isSameEmailAddress(address, userEmail));
   if (!sentByAccount) return message.headers.from;
-  // Mail the account sent with an empty To still went to the copied people.
+  // Mail addressed only to this account still went to the copied people.
   for (const header of [
     message.headers.to,
     message.headers.cc,
     message.headers.bcc,
   ]) {
-    if (header && extractEmailAddresses(header).length) return header;
+    if (
+      header &&
+      addressesOtherThanAccount(extractEmailAddresses(header), userEmail).length
+    ) {
+      return header;
+    }
   }
   return message.headers.to;
 }

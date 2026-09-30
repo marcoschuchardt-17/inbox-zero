@@ -559,6 +559,21 @@ describe("email utils", () => {
         ),
       ).toBe("Ada Copy <ada-copy@example.com>");
     });
+
+    it("names the copied person when sent mail is only addressed to the account", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Owner <owner@example.com>",
+              to: "Owner <owner@example.com>",
+              cc: "Ada Beside <ada-beside@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Ada Beside <ada-beside@example.com>");
+    });
   });
 
   describe("normalizeEmailAddress", () => {
