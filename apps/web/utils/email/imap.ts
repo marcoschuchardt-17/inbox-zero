@@ -21,6 +21,7 @@ import {
   imapFlagsToLabelIds,
   imapKeyword,
   imapListLocation,
+  imapListMessage,
 } from "@/utils/email/imap-flags";
 import {
   buildReplyAllRecipients,
@@ -507,7 +508,10 @@ export function createImapProvider(
         maxResults,
         pageToken,
       });
-      return { threads: groupToThreads(messages), nextPageToken };
+      return {
+        threads: threadsInListOrder(messages),
+        nextPageToken,
+      };
     },
     getMailboxSyncPage: async ({ after, limit, cursor }) => {
       const cursorDate = cursor ? new Date(cursor) : after;
@@ -1987,6 +1991,19 @@ function htmlSnippet(htmlBody: string) {
   return he
     .decode(visible.replace(/<[^>]+>/g, " "))
     .replace(/\u200C|\u200D|\uFEFF/g, "");
+}
+
+function threadsInListOrder(messages: ParsedMessage[]) {
+  return groupToThreads(messages).sort(
+    (left, right) =>
+      listMessageShownTime(right.messages) -
+      listMessageShownTime(left.messages),
+  );
+}
+
+function listMessageShownTime(messages: ParsedMessage[]) {
+  const message = imapListMessage(messages);
+  return message ? messageShownTime(message) : 0;
 }
 
 function groupToThreads(messages: ParsedMessage[]): EmailThread[] {

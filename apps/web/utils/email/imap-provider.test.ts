@@ -2284,6 +2284,78 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("orders a search by the incoming message when a newer sent reply matches", async () => {
+    const previous = {
+      exists: mailboxState.exists,
+      inboxMessages: mailboxState.inboxMessages,
+      sentMessages: mailboxState.sentMessages,
+      sentSource: mailboxState.sentSource,
+    };
+    mailboxState.exists = 2;
+    mailboxState.sentSource = "";
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: `${datedInboxMessage(
+          "Older incoming",
+          "<older-incoming@example.com>",
+          "Tue, 01 Sep 2026 12:00:00 +0000",
+        )}\r\nrankword in the inbox`,
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: `${datedInboxMessage(
+          "Middle incoming",
+          "<middle-incoming@example.com>",
+          "Sun, 20 Sep 2026 12:00:00 +0000",
+        )}\r\nrankword in the later note`,
+      },
+    ];
+    mailboxState.sentMessages = [
+      {
+        uid: 8,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: sam@example.com",
+          "Subject: Sent reply",
+          "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+          "Message-ID: <sent-reply@example.com>",
+          "In-Reply-To: <older-incoming@example.com>",
+          "References: <older-incoming@example.com>",
+          "",
+          "rankword in the sent reply",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const threads = await provider.searchThreads({
+        query: "rankword",
+        maxResults: 5,
+      });
+      const rows = threads.threads.map((thread) => {
+        const incoming = [...thread.messages]
+          .reverse()
+          .find((message) => !message.id.startsWith("Sent/"));
+        return (incoming ?? thread.messages.at(-1))?.subject;
+      });
+
+      expect(rows).toEqual(["Middle incoming", "Older incoming"]);
+    } finally {
+      mailboxState.exists = previous.exists;
+      mailboxState.inboxMessages = previous.inboxMessages;
+      mailboxState.sentMessages = previous.sentMessages;
+      mailboxState.sentSource = previous.sentSource;
+    }
+  });
+
   it("finds inbox mail that is older than the newest page", async () => {
     mailboxState.exists = 3;
     mailboxState.archiveSource = "";
