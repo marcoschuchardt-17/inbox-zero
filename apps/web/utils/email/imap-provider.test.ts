@@ -50,6 +50,7 @@ const {
     missingMailboxes: [] as string[],
     inboxSearchUids: [] as number[],
     sentSearchUids: [] as number[],
+    searchFailsWhenBefore: false,
     listed: [{ path: "INBOX", name: "INBOX" }] as {
       path: string;
       name: string;
@@ -269,6 +270,13 @@ vi.mock("imapflow", () => ({
         return mailboxState.sentSearchUids;
       }
       if (query?.since || query?.before) {
+        if (
+          mailboxState.searchFailsWhenBefore &&
+          query.before &&
+          query.before.getTime() >= Date.now()
+        ) {
+          return false;
+        }
         const folderUids = mailboxState.folderDateUids[mailboxState.opened];
         if (folderUids) return folderUids;
         const opened = sourcesForOpenedMailbox();
@@ -3969,6 +3977,38 @@ describe("createImapProvider", () => {
     });
     expect(outsideRange.messages).toEqual([]);
     mailboxState.sentSource = "";
+  });
+
+  it("lists sent mail when the range ends now", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-30T18:00:00.000Z"));
+    mailboxState.searchFailsWhenBefore = true;
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: sam@example.com",
+      "Subject: Re: Please keep this",
+      "Date: Mon, 28 Sep 2026 14:00:00 +0000",
+      "Message-ID: <reply-now@example.com>",
+      "",
+      "Sent from the mailbox.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const result = await provider.getSentMessageIds({
+        maxResults: 10,
+        after: new Date("2026-08-31T18:00:00.000Z"),
+        before: new Date("2026-09-30T18:00:00.000Z"),
+      });
+
+      expect(result.messages).toEqual([
+        { id: "Sent/11", threadId: "<reply-now@example.com>" },
+      ]);
+    } finally {
+      mailboxState.searchFailsWhenBefore = false;
+      mailboxState.sentSource = "";
+      vi.useRealTimers();
+    }
   });
 
   it("reads the next page of sent message ids", async () => {

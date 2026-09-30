@@ -4013,9 +4013,15 @@ function imapSearchWindow(after?: Date, before?: Date) {
   // message the server dates differently from the selected range; the exact
   // timestamps are still applied after the fetch.
   const day = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  let beforeDay = before ? new Date(utcDay(before) + day) : undefined;
+  // A cutoff that has not happened yet is not a bound. imapflow turns that
+  // future BEFORE into OLDER 0 when the server advertises WITHIN, and the
+  // search fails, so the mailbox looks empty.
+  if (beforeDay && beforeDay.getTime() >= now) beforeDay = new Date(now - 1000);
   return {
     since: after ? new Date(utcDay(after) - day) : undefined,
-    before: before ? new Date(utcDay(before) + day) : undefined,
+    before: beforeDay,
   };
 }
 
