@@ -85,16 +85,50 @@ describe("getThreadParticipantNames", () => {
       ),
     ).toEqual(["Jordan"]);
   });
+
+  it("names a copied person when the outgoing mail has no other recipient", () => {
+    expect(
+      getThreadParticipantNames(
+        [
+          message({
+            from: "Owner <owner@example.com>",
+            to: "",
+            cc: "Ada Copy <ada-copy@example.com>",
+          }),
+        ],
+        "owner@example.com",
+      ),
+    ).toEqual(["Ada Copy"]);
+  });
+
+  it("names a blind-copy person when the outgoing mail has no other recipient", () => {
+    expect(
+      getThreadParticipantNames(
+        [
+          message({
+            from: "Owner <owner@example.com>",
+            to: "Owner <owner@example.com>",
+            bcc: "Hidden <hidden-copy@example.com>",
+          }),
+        ],
+        "owner@example.com",
+      ),
+    ).toEqual(["Hidden"]);
+  });
 });
 
 function message({
   from,
   to,
+  cc,
+  bcc,
   labelIds,
 }: {
   from: string;
   to: string;
+  cc?: string;
+  bcc?: string;
   labelIds?: string[];
 }) {
-  return { headers: { from, to }, labelIds };
+  return { headers: { from, to, cc, bcc }, labelIds };
 }

@@ -23,7 +23,7 @@ import type { ThreadsListResponse } from "@/app/api/threads/route";
 import type { GetFoldersResponse } from "@/app/api/user/folders/route";
 import { fetchWithAccount } from "@/utils/fetch";
 import { formatShortDate } from "@/utils/date";
-import { extractNameFromEmail, participant } from "@/utils/email";
+import { getThreadParticipantNames } from "@/app/(app)/[emailAccountId]/mail/thread-participants";
 import {
   imapListLocation,
   imapListMessage,
@@ -386,16 +386,8 @@ export function ImapInbox() {
             {visibleThreads.map((thread) => {
               const message = imapListMessage(thread.messages);
               const sender =
-                extractNameFromEmail(
-                  participant(
-                    {
-                      headers: {
-                        from: message?.headers.from || "",
-                        to: message?.headers.to || "",
-                      },
-                    },
-                    userEmail,
-                  ),
+                getThreadParticipantNames(thread.messages, userEmail).join(
+                  ", ",
                 ) || "Unknown sender";
               const sentAt = message?.headers.date
                 ? new Date(message.headers.date)

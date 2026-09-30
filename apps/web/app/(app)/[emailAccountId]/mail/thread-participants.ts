@@ -7,7 +7,7 @@ import { GmailLabel } from "@/utils/gmail/label";
 import type { ParsedMessageHeaders } from "@/utils/types";
 
 type ParticipantMessage = {
-  headers: Pick<ParsedMessageHeaders, "from" | "to">;
+  headers: Pick<ParsedMessageHeaders, "from" | "to" | "cc" | "bcc">;
   labelIds?: string[] | null;
 };
 
@@ -33,15 +33,35 @@ export function getThreadParticipantNames(
 
   const recipients = new Map<string, string>();
   const recipientMessages = senders.size > 0 ? nonDraftMessages : messages;
-  for (const message of recipientMessages) {
-    for (const recipient of splitRecipientList(message.headers.to)) {
-      addParticipant(recipients, recipient, normalizedUserEmail);
-    }
-  }
+  addRecipients(recipients, recipientMessages, normalizedUserEmail, ["to"]);
   // An outgoing-only thread should name the other side, not "me".
   recipients.delete(normalizedUserEmail);
+  if (!recipients.size) {
+    addRecipients(recipients, recipientMessages, normalizedUserEmail, [
+      "cc",
+      "bcc",
+    ]);
+    recipients.delete(normalizedUserEmail);
+  }
 
   return recipients.size ? [...recipients.values()] : [...senders.values()];
+}
+
+function addRecipients(
+  recipients: Map<string, string>,
+  messages: ParticipantMessage[],
+  normalizedUserEmail: string,
+  fields: ("to" | "cc" | "bcc")[],
+) {
+  for (const message of messages) {
+    for (const field of fields) {
+      for (const recipient of splitRecipientList(
+        message.headers[field] || "",
+      )) {
+        addParticipant(recipients, recipient, normalizedUserEmail);
+      }
+    }
+  }
 }
 
 function addParticipant(
