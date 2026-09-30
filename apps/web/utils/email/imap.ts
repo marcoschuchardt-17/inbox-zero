@@ -503,7 +503,7 @@ export function createImapProvider(
     },
     sendEmail: async ({ to, cc, bcc, subject, messageText, attachments }) => {
       const transport = createSmtpTransport(config);
-      const messageId = `smtp-${Date.now()}`;
+      const messageId = outgoingMessageId(config.ownerEmail);
       const files = mimeAttachments(attachments);
       const result = await transport.sendMail({
         from: mailboxFrom(config),
@@ -542,7 +542,7 @@ export function createImapProvider(
     },
     sendEmailWithHtml: async (body: SendEmailBody) => {
       const transport = createSmtpTransport(config);
-      const messageId = `smtp-${Date.now()}`;
+      const messageId = outgoingMessageId(config.ownerEmail);
       const references = replyReferences(
         body.replyToEmail?.headerMessageId,
         body.replyToEmail?.references,
@@ -685,7 +685,7 @@ export function createImapProvider(
       const draft = drafts.at(-1);
       if (!draft?.headers.to) throw new SafeError("Draft not found");
       const transport = createSmtpTransport(config);
-      const messageId = `smtp-${Date.now()}`;
+      const messageId = outgoingMessageId(config.ownerEmail);
       const inReplyTo = draft.headers["in-reply-to"];
       const references = draft.headers.references || inReplyTo;
       const text = draft.textPlain || draft.snippet;
@@ -1809,6 +1809,11 @@ function headerValue(
 
 function mailboxFrom(config: ImapConfig) {
   return formatEmailWithName(config.displayName, config.ownerEmail);
+}
+
+function outgoingMessageId(ownerEmail: string) {
+  const domain = ownerEmail.split("@")[1] || "localhost";
+  return `<smtp-${crypto.randomUUID()}@${domain}>`;
 }
 
 function headerDateIso(value: unknown, fallback: Date) {

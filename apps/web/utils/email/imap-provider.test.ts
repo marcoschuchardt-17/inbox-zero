@@ -394,6 +394,26 @@ describe("createImapProvider", () => {
     });
   });
 
+  it("gives outgoing mail a Message-ID the other person can answer", async () => {
+    sentMail.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.sendEmailWithHtml({
+      to: "sam@example.com",
+      subject: "Hello",
+      messageHtml: "<p>Hi</p>",
+    });
+    await provider.sendEmail({
+      to: "sam@example.com",
+      subject: "Hello",
+      messageText: "Hi",
+    });
+
+    for (const message of sentMail) {
+      expect(message.messageId).toMatch(/^<[^<>\s@]+@[^<>\s@]+>$/);
+    }
+  });
+
   it("sends a reply on the same conversation", async () => {
     sentMail.length = 0;
     appended.length = 0;
