@@ -1,6 +1,6 @@
 import { ActionType, NewsletterStatus } from "@/generated/prisma/enums";
 import { matchesStaticRule } from "@/utils/ai/choose-rule/match-rules";
-import { extractEmailAddress } from "@/utils/email";
+import { extractEmailAddresses } from "@/utils/email";
 import { imapKeyword } from "@/utils/email/imap-flags";
 import type { EmailProvider } from "@/utils/email/types";
 import type { Logger } from "@/utils/logger";
@@ -239,8 +239,10 @@ export function blockedSenderAddresses(
   );
   const found = new Set<string>();
   for (const message of messages) {
-    const from = extractEmailAddress(message.headers.from).toLowerCase();
-    if (from && blocked.has(from)) found.add(from);
+    for (const address of extractEmailAddresses(message.headers.from)) {
+      const from = address.toLowerCase();
+      if (from && blocked.has(from)) found.add(from);
+    }
   }
   return [...found];
 }

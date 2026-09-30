@@ -27,6 +27,19 @@ describe("blockedSenderAddresses", () => {
       ),
     ).toEqual(["billing@example.com"]);
   });
+
+  it("includes the first sender when that address is blocked", () => {
+    expect(
+      blockedSenderAddresses(
+        [
+          message(
+            "Sam Block <sam-block@example.com>, Ada Block <ada-block@example.com>",
+          ),
+        ],
+        ["sam-block@example.com"],
+      ),
+    ).toEqual(["sam-block@example.com"]);
+  });
 });
 
 describe("applyImapStaticMailboxActions", () => {
@@ -70,6 +83,49 @@ describe("applyImapStaticMailboxActions", () => {
     expect(applied).toBe(1);
     expect(archiveThread).toHaveBeenCalledTimes(1);
     expect(archiveThread).toHaveBeenCalledWith("thread-1", "");
+  });
+
+  it("archives mail when the first of two senders matches", async () => {
+    vi.mocked(prisma.rule.findMany).mockResolvedValue([
+      {
+        from: "sam-rule@example.com",
+        to: null,
+        subject: null,
+        body: null,
+        actions: [
+          {
+            type: ActionType.ARCHIVE,
+            folderId: null,
+            folderName: null,
+          },
+        ],
+      },
+    ] as never);
+    const archiveThread = vi.fn();
+    const provider = {
+      archiveThread,
+      markRead: vi.fn(),
+      starMessage: vi.fn(),
+      markSpam: vi.fn(),
+      moveThreadToFolder: vi.fn(),
+      getOrCreateFolderIdByName: vi.fn(),
+    } as unknown as EmailProvider;
+
+    const applied = await applyImapStaticMailboxActions({
+      emailAccountId: "account-1",
+      messages: [
+        mail(
+          "1",
+          "thread-both",
+          "Sam Rule <sam-rule@example.com>, Ada Rule <ada-rule@example.com>",
+        ),
+      ],
+      provider,
+      logger,
+    });
+
+    expect(applied).toBe(1);
+    expect(archiveThread).toHaveBeenCalledWith("thread-both", "");
   });
 });
 

@@ -984,6 +984,7 @@ function getNormalizedEmailMatchHeaders(message: ParsedMessage) {
   return {
     fromAddressHeader: normalizeEmailHeaderForRuleMatching(
       message.headers.from,
+      true,
     ),
     toAddressHeader: normalizeEmailHeaderForRuleMatching(
       message.headers.to,

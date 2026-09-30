@@ -277,6 +277,17 @@ describe("matchesStaticRule", () => {
     expect(matchesStaticRule(rule, message, logger)).toBe(true);
   });
 
+  it("matches from against the first of several senders", () => {
+    const rule = getStaticRule({ from: "sam-rule@example.com" });
+    const message = getMessage({
+      headers: getHeaders({
+        from: "Sam Rule <sam-rule@example.com>, Ada Rule <ada-rule@example.com>",
+      }),
+    });
+
+    expect(matchesStaticRule(rule, message, logger)).toBe(true);
+  });
+
   it("does not match to against email-like text in a display name", () => {
     const rule = getStaticRule({ to: "@vip.com" });
     const message = getMessage({
