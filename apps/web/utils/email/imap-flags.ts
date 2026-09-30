@@ -9,6 +9,7 @@ const ROW_SYSTEM_LABELS = new Set([
   "DRAFT",
   "TRASH",
   "SPAM",
+  "ARCHIVE",
   "IMPORTANT",
 ]);
 

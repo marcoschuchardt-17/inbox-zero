@@ -20,6 +20,13 @@ describe("imapRowLabelIds", () => {
     ).toEqual(["Rechnungen"]);
   });
 
+  it("drops the archive folder mark and keeps a label the user added", () => {
+    expect(imapRowLabelIds(["ARCHIVE", "FYI", "UNREAD"])).toEqual(["FYI"]);
+    expect(imapThreadLabelIds([{ labelIds: ["ARCHIVE", "FYI"] }])).toEqual([
+      "FYI",
+    ]);
+  });
+
   it("returns nothing when the message has no user label", () => {
     expect(imapRowLabelIds(undefined)).toEqual([]);
   });
