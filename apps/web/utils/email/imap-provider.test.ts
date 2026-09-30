@@ -2173,6 +2173,49 @@ describe("createImapProvider", () => {
     mailboxState.exists = 1;
   });
 
+  it("returns a search match past the first two hundred", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 201;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-01-01T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Oldest match",
+          "<oldest-match@example.com>",
+          "Thu, 01 Jan 2026 12:00:00 +0000",
+        ),
+      },
+      ...Array.from({ length: 200 }, (_, index) => ({
+        uid: index + 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Newer match",
+          `<newer-match-${index}@example.com>`,
+          "Sun, 20 Sep 2026 12:00:00 +0000",
+        ),
+      })),
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const page = await provider.getMessagesWithPagination({
+        query: "match",
+        maxResults: 1,
+        pageToken: "200",
+      });
+
+      expect(page.messages.map((message) => message.subject)).toEqual([
+        "Oldest match",
+      ]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("keeps only inbox mail inside the requested dates", async () => {
     const previous = {
       exists: mailboxState.exists,

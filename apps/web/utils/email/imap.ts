@@ -74,7 +74,6 @@ type ParsedImapMessage = ParsedMessage & {
 };
 
 const DEFAULT_PAGE_SIZE = 20;
-const SEARCH_MATCH_LIMIT = 200;
 // A filing preview only needs recent files, so each folder is scanned this far
 // instead of downloading the whole mailbox.
 const ATTACHMENT_SCAN_LIMIT = 100;
@@ -4075,6 +4074,7 @@ async function searchImapMessages({
   maxResults: number;
   pageToken?: string;
 }): Promise<{ messages: ParsedImapMessage[]; nextPageToken?: string }> {
+  const offset = pageOffset(pageToken);
   const mailboxes = await mailboxNamesForRead({ config, logger });
   const collected: ParsedImapMessage[] = [];
   for (const [index, mailbox] of mailboxes.entries()) {
@@ -4085,6 +4085,7 @@ async function searchImapMessages({
         logger,
         mailbox,
         needle,
+        limit: offset + maxResults + 1,
       });
       collected.push(...messages);
     } catch (error) {
@@ -4104,7 +4105,6 @@ async function searchImapMessages({
       (left, right) =>
         new Date(right.date).getTime() - new Date(left.date).getTime(),
     );
-  const offset = pageOffset(pageToken);
   return {
     messages: filtered.slice(offset, offset + maxResults),
     nextPageToken:
@@ -4119,11 +4119,13 @@ async function fetchMailboxTextMatches({
   logger,
   mailbox,
   needle,
+  limit,
 }: {
   config: ImapConfig;
   logger: Logger;
   mailbox: string;
   needle: string;
+  limit: number;
 }): Promise<ParsedImapMessage[]> {
   const client = createImapClient(config);
   await connectImapClient(client);
@@ -4134,7 +4136,7 @@ async function fetchMailboxTextMatches({
       const uids = (Array.isArray(searched) ? searched : [])
         .filter((uid): uid is number => typeof uid === "number")
         .sort((left, right) => right - left)
-        .slice(0, SEARCH_MATCH_LIMIT);
+        .slice(0, Math.max(0, limit));
       if (!uids.length) return [];
       const wanted = new Set(uids.map(String));
       const messages: ParsedImapMessage[] = [];
