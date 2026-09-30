@@ -4491,6 +4491,9 @@ function imapMessageHaystack(message: ParsedImapMessage) {
     message.headers["list-post"] || "",
     message.headers["list-unsubscribe"] || "",
     message.headers["list-unsubscribe-post"] || "",
+    message.headers["message-id"] || "",
+    message.headers.references || "",
+    message.headers["in-reply-to"] || "",
     ...(message.attachments ?? []).map((attachment) => attachment.filename),
     attachmentSearchText.get(message) || "",
     ...imapRowLabelIds(message.labelIds).flatMap((label) => [
