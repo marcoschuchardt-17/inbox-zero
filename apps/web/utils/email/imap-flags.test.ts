@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   imapListLocation,
   imapListMessage,
+  imapListRows,
   imapMessageIsStarred,
   imapMessageIsUnread,
   imapThreadIsStarred,
@@ -145,6 +146,35 @@ describe("imapListMessage", () => {
     expect(imapListMessage([{ id: "Sent/9" }])?.id).toBe("Sent/9");
     expect(imapListMessage([{ id: "Archive/10" }])?.id).toBe("Archive/10");
     expect(imapListMessage([])).toBeUndefined();
+  });
+});
+
+describe("imapListRows", () => {
+  it("keeps two messages that share a conversation id", () => {
+    const rows = imapListRows([
+      {
+        id: "<rechnung-2026-09@example.com>",
+        messages: [{ id: "Archive/7" }],
+      },
+      {
+        id: "<rechnung-2026-09@example.com>",
+        messages: [{ id: "Archive/3" }],
+      },
+    ]);
+
+    expect(rows.map((row) => row.messages[0]?.id)).toEqual([
+      "Archive/7",
+      "Archive/3",
+    ]);
+  });
+
+  it("drops a second copy of the same message", () => {
+    const rows = imapListRows([
+      { id: "<same@example.com>", messages: [{ id: "Archive/7" }] },
+      { id: "<same@example.com>", messages: [{ id: "Archive/7" }] },
+    ]);
+
+    expect(rows).toHaveLength(1);
   });
 });
 

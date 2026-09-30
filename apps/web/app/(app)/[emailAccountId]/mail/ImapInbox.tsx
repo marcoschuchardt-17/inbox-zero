@@ -27,6 +27,7 @@ import { getThreadParticipantNames } from "@/app/(app)/[emailAccountId]/mail/thr
 import {
   imapListLocation,
   imapListMessage,
+  imapListRows,
   imapMessageIsUnread,
   imapMessageMailbox,
   imapThreadIsStarred,
@@ -116,7 +117,10 @@ export function ImapInbox() {
     olderPages?.query === listQuery
       ? olderPages.nextPageToken
       : data?.nextPageToken;
-  const visibleThreads = [...(data?.threads ?? []), ...olderThreads];
+  const visibleThreads = imapListRows([
+    ...(data?.threads ?? []),
+    ...olderThreads,
+  ]);
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
   const syncedAccountId = useRef("");
 
@@ -426,7 +430,10 @@ export function ImapInbox() {
                 name: labelNames.get(labelId) ?? labelId,
               }));
               return (
-                <li key={thread.id} className="flex flex-col">
+                <li
+                  key={imapListMessage(thread.messages)?.id || thread.id}
+                  className="flex flex-col"
+                >
                   <button
                     type="button"
                     className="w-full min-w-0 px-2 py-3 text-left hover:bg-muted"

@@ -113,6 +113,22 @@ export function imapListMessage<T extends { id: string }>(
   return incoming ?? messages.at(-1);
 }
 
+export function imapListRows<
+  T extends { id: string; messages: readonly { id: string }[] },
+>(threads: readonly T[]) {
+  const seen = new Set<string>();
+  const rows: T[] = [];
+  for (const thread of threads) {
+    // Two different messages can share a conversation id. The row key has to
+    // be the copy on screen, or React drops one of them.
+    const key = imapListMessage(thread.messages)?.id || thread.id;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    rows.push(thread);
+  }
+  return rows;
+}
+
 type ImapFilingRole = "archive" | "trash" | "junk";
 
 const FILED_LABEL: Record<ImapFilingRole, string> = {
