@@ -58,6 +58,7 @@ vi.mock("@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy", () => ({
     onDiscard: () => void;
     replyingToEmail?: {
       to?: string;
+      cc?: string;
       threadId?: string;
       forwardedMessageId?: string;
       forwardedAttachments?: Array<{ filename: string }>;
@@ -68,6 +69,7 @@ vi.mock("@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy", () => ({
       data-inline-reply="true"
       data-thread-id={replyingToEmail?.threadId}
       data-to={replyingToEmail?.to}
+      data-cc={replyingToEmail?.cc}
       data-forwarded-message-id={replyingToEmail?.forwardedMessageId}
       data-forwarded-attachments={replyingToEmail?.forwardedAttachments
         ?.map((attachment) => attachment.filename)
@@ -273,6 +275,45 @@ describe("EmailMessage reply address", () => {
 
     expect(screen.getByTestId("composer").dataset.to).toBe(
       "Sam <sam@example.com>",
+    );
+  });
+
+  it("includes the other recipients when replying to everyone", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>",
+            subject: "Subject",
+            to: "user@example.com, Pat <pat@example.com>",
+            cc: "Ada <ada@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        replyAll
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Sam <sam@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "ada@example.com, pat@example.com",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Sam <sam@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Ada <ada@example.com>",
     );
   });
 });

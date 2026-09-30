@@ -37,6 +37,7 @@ import { useAccount } from "@/providers/EmailAccountProvider";
 import { shouldCloseConversationAfterDraftDiscard } from "@/utils/email/discarded-thread";
 import { storedDraftAttachmentRefs } from "@/utils/email/draft-update-attachments";
 import { normalizeContentId } from "@/utils/email/inline-images";
+import { buildReplyAllRecipients, formatCcList } from "@/utils/email/reply-all";
 import { formatReplySubject } from "@/utils/email/subject";
 import { env } from "@/env";
 import { isTypingTarget } from "@/lib/shortcuts/registry";
@@ -75,6 +76,8 @@ export function EmailMessage({
   onSelect,
   onNavigateMessage,
   sentMessageOpen,
+  replyAll = false,
+  composeRequest = 0,
 }: {
   message: ThreadMessage;
   bodyAvailable?: boolean;
@@ -97,6 +100,8 @@ export function EmailMessage({
   onSelect?: () => void;
   onNavigateMessage?: (direction: -1 | 1) => void;
   sentMessageOpen?: SentMessageOpenState;
+  replyAll?: boolean;
+  composeRequest?: number;
 }) {
   const { emailAccountId } = useAccount();
   // `null` follows `defaultComposeMode`, which the reader's Reply button flips
@@ -104,6 +109,14 @@ export function EmailMessage({
   const [composeOverride, setComposeOverride] = useState<
     ReplyDraftMode | "closed" | null
   >(null);
+  const [preferSender, setPreferSender] = useState(false);
+  const [seenComposeRequest, setSeenComposeRequest] = useState(composeRequest);
+  if (composeRequest !== seenComposeRequest) {
+    setSeenComposeRequest(composeRequest);
+    setPreferSender(false);
+    setComposeOverride(null);
+  }
+  const includeEveryone = replyAll && !preferSender;
   const composeMode = resolveComposeMode(composeOverride, defaultComposeMode);
   const serverDrafts = draftMessages ?? [];
   const [dismissedDraftIds, setDismissedDraftIds] = useState(
@@ -128,6 +141,7 @@ export function EmailMessage({
 
   const onReply = useCallback(() => {
     composeSessionRef.current += 1;
+    setPreferSender(true);
     setComposeOverride("reply");
   }, []);
   const onForward = useCallback(() => {
@@ -307,9 +321,10 @@ export function EmailMessage({
           ))}
           {composeMode && (
             <ReplyPanel
-              key={composerKey}
+              key={`${composerKey}:${includeEveryone ? "all" : "one"}`}
               autoScroll
               bodyAvailable={bodyAvailable}
+              replyAll={includeEveryone}
               conversationMessageIds={conversationMessageIds}
               message={message}
               onCloseCompose={onCloseComposeAfterSend}
@@ -567,6 +582,7 @@ function ReplyPanel({
   draftBodyAvailable = true,
   autoScroll = false,
   bodyAvailable = true,
+  replyAll = false,
 }: {
   message: ParsedMessage;
   refetch: () => void;
@@ -583,8 +599,9 @@ function ReplyPanel({
   draftBodyAvailable?: boolean;
   autoScroll?: boolean;
   bodyAvailable?: boolean;
+  replyAll?: boolean;
 }) {
-  const { emailAccountId } = useAccount();
+  const { emailAccountId, userEmail } = useAccount();
 
   const replyRef = useRef<HTMLDivElement>(null);
   // A forward owns its original source once composing starts. A later cache
@@ -609,10 +626,13 @@ function ReplyPanel({
     if (composeMode === "reply") {
       if (draftMessage) return prepareDraftReplyEmail(draftMessage);
 
-      return prepareReplyingToEmail(message);
+      return prepareReplyingToEmail(message, "", {
+        replyAll,
+        userEmail,
+      });
     }
     return forwardSource ? prepareForwardingEmail(forwardSource) : undefined;
-  }, [composeMode, message, draftMessage, forwardSource]);
+  }, [composeMode, draftMessage, forwardSource, message, replyAll, userEmail]);
 
   const { executeAsync: discardDraft } = useAction(
     deleteDraftAction.bind(null, emailAccountId),
@@ -764,17 +784,29 @@ function recipientSummary(to: string | undefined, userEmail: string) {
 const prepareReplyingToEmail = (
   message: ParsedMessage,
   content = "",
+  options?: { replyAll?: boolean; userEmail?: string },
 ): ReplyingToEmail => {
   const sentFromUser = message.labelIds?.includes("SENT");
 
   const { html } = createReplyContent({ message });
+  const everyone =
+    options?.replyAll && options.userEmail
+      ? buildReplyAllRecipients(
+          message.headers,
+          sentFromUser ? message.headers.to : undefined,
+          options.userEmail,
+        )
+      : undefined;
 
   return {
     // A message the account sent keeps its original recipients. Otherwise
     // honor Reply-To, which is where the sender asked replies to go.
-    to: sentFromUser
-      ? message.headers.to
-      : message.headers["reply-to"] || message.headers.from,
+    // Reply all also keeps the other people on To and Cc.
+    to: everyone
+      ? everyone.to
+      : sentFromUser
+        ? message.headers.to
+        : message.headers["reply-to"] || message.headers.from,
     // If following an email from yourself, don't add "Re:" prefix
     subject: sentFromUser
       ? message.headers.subject
@@ -782,8 +814,8 @@ const prepareReplyingToEmail = (
     headerMessageId: message.headers["message-id"] || undefined,
     messageId: message.id || undefined,
     threadId: message.threadId || undefined,
-    // Keep original CC
-    cc: message.headers.cc,
+    // Keep original CC. Reply all also adds the other To addresses.
+    cc: everyone ? formatCcList(everyone.cc) : message.headers.cc,
     // Keep original BCC if available
     bcc: sentFromUser ? message.headers.bcc : "",
     references: message.headers.references,

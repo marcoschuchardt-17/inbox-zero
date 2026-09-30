@@ -213,6 +213,8 @@ export function MailShell() {
     targets: ThreadSelection[];
   } | null>(null);
   const [replyToMessageId, setReplyToMessageId] = useState<string>();
+  const [replyToEveryone, setReplyToEveryone] = useState(false);
+  const [composeRequest, setComposeRequest] = useState(0);
   const [forwardToMessageId, setForwardToMessageId] = useState<string>();
   const pendingComposeRequest = useRef<{
     mode: "reply" | "forward";
@@ -639,6 +641,8 @@ export function MailShell() {
     const messageId = openMessages.at(-1)?.id;
     if (messageId) {
       pendingComposeRequest.current = null;
+      setReplyToEveryone(false);
+      setComposeRequest((request) => request + 1);
       setForwardToMessageId(undefined);
       setReplyToMessageId(messageId);
       return;
@@ -682,6 +686,7 @@ export function MailShell() {
 
     pendingComposeRequest.current = null;
     if (pendingRequest.mode === "reply") {
+      setReplyToEveryone(false);
       setForwardToMessageId(undefined);
       setReplyToMessageId(messageId);
     } else {
@@ -1147,6 +1152,17 @@ export function MailShell() {
       markUnread: markUnreadTargets,
       delete: trashTargets,
       reply: () => {
+        setReplyToEveryone(false);
+        setComposeRequest((request) => request + 1);
+        setForwardToMessageId(undefined);
+        if (!openThreadId && focusedThread) {
+          setOpenThread(getListThreadSelection(focusedThread, emailAccountId));
+        }
+        setReplyToMessageId(openMessages.at(-1)?.id);
+      },
+      replyAll: () => {
+        setReplyToEveryone(true);
+        setComposeRequest((request) => request + 1);
         setForwardToMessageId(undefined);
         if (!openThreadId && focusedThread) {
           setOpenThread(getListThreadSelection(focusedThread, emailAccountId));
@@ -1846,6 +1862,8 @@ export function MailShell() {
                       });
                     }}
                     autoOpenReplyForMessageId={replyToMessageId}
+                    autoOpenReplyAll={replyToEveryone}
+                    composeRequest={composeRequest}
                     autoOpenForwardForMessageId={forwardToMessageId}
                     renderMessageMenu={(message) => (
                       <MessageActionsMenu

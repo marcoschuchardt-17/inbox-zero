@@ -26,6 +26,8 @@ export function EmailThread({
   refetch,
   showReplyButton,
   autoOpenReplyForMessageId,
+  autoOpenReplyAll = false,
+  composeRequest = 0,
   autoOpenForwardForMessageId,
   expandMessageId,
   topRightComponent,
@@ -43,6 +45,8 @@ export function EmailThread({
   refetch: () => void;
   showReplyButton: boolean;
   autoOpenReplyForMessageId?: string;
+  autoOpenReplyAll?: boolean;
+  composeRequest?: number;
   autoOpenForwardForMessageId?: string;
   expandMessageId?: string | null;
   topRightComponent?: React.ReactNode;
@@ -260,6 +264,10 @@ export function EmailThread({
                 }
                 conversationMessageIds={messages.map((item) => item.id)}
                 defaultComposeMode={defaultComposeMode}
+                replyAll={
+                  autoOpenReplyAll && autoOpenReplyForMessageId === message.id
+                }
+                composeRequest={composeRequest}
                 draftMessages={draftMessages}
                 onConversationGone={onConversationGone}
                 expanded={expanded(
