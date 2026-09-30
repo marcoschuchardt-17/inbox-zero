@@ -1958,15 +1958,30 @@ describe("createImapProvider", () => {
   });
 
   it("renames a stored label and deletes it", async () => {
+    const previous = mailboxState.inboxMessages;
+    mailboxState.inboxMessages = [
+      {
+        uid: 7,
+        source: rawMessage,
+        flags: ["Desk_tag"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+      },
+    ];
+    flagsRemoved.length = 0;
     const provider = createImapProvider(imapConfig(), logger);
 
-    await provider.updateLabel("Desk_tag", { name: "Desk mark" });
-    await provider.deleteLabel("Desk_tag");
+    try {
+      await provider.updateLabel("Desk_tag", { name: "Desk mark" });
+      await provider.deleteLabel("Desk_tag");
+    } finally {
+      mailboxState.inboxMessages = previous;
+    }
 
     expect(prisma.label.updateMany).toHaveBeenCalledWith({
       where: { emailAccountId: "account-1", gmailLabelId: "Desk_tag" },
       data: { name: "Desk mark" },
     });
+    expect(flagsRemoved).toEqual(["Desk_tag"]);
     expect(prisma.label.deleteMany).toHaveBeenCalledWith({
       where: { emailAccountId: "account-1", gmailLabelId: "Desk_tag" },
     });

@@ -32,7 +32,7 @@ import {
   imapThreadIsStarred,
   imapThreadIsUnread,
   imapSearchRestoreAction,
-  imapThreadLabelIds,
+  imapVisibleThreadLabelIds,
 } from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
 import type { LabelsResponse } from "@/app/api/labels/route";
@@ -418,12 +418,13 @@ export function ImapInbox() {
               const searchRestore = submittedSearch
                 ? imapSearchRestoreAction(message?.id)
                 : null;
-              const rowLabels = imapThreadLabelIds(thread.messages).map(
-                (labelId) => ({
-                  id: labelId,
-                  name: labelNames.get(labelId) ?? labelId,
-                }),
-              );
+              const rowLabels = imapVisibleThreadLabelIds(
+                thread.messages,
+                new Set(labelNames.keys()),
+              ).map((labelId) => ({
+                id: labelId,
+                name: labelNames.get(labelId) ?? labelId,
+              }));
               return (
                 <li key={thread.id} className="flex items-start gap-2">
                   <button
@@ -840,7 +841,9 @@ function ImapLabelManager({
                     </Button>
                   </>
                 ) : (
-                  <span className="min-w-0 flex-1 truncate">{label.name}</span>
+                  <span className="min-w-0 flex-1 break-words">
+                    {label.name}
+                  </span>
                 )}
                 {editingId === label.id ? null : (
                   <Button

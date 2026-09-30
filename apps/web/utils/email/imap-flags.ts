@@ -32,6 +32,15 @@ export function imapThreadLabelIds(
   ];
 }
 
+export function imapVisibleThreadLabelIds(
+  messages: readonly { labelIds?: readonly string[] | null }[],
+  knownIds: ReadonlySet<string>,
+) {
+  return imapThreadLabelIds(messages).filter((labelId) =>
+    knownIds.has(labelId),
+  );
+}
+
 export function imapFlagsToLabelIds(flags: Iterable<string>): string[] {
   const flagSet = new Set(flags);
   const labels = [...flagSet].filter((flag) => !flag.startsWith(SYSTEM_FLAG));

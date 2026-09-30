@@ -11,6 +11,7 @@ import {
   imapSearchRestoreAction,
   imapThreadLabelIds,
   imapThreadNeedsMove,
+  imapVisibleThreadLabelIds,
 } from "./imap-flags";
 
 describe("imapRowLabelIds", () => {
@@ -29,6 +30,15 @@ describe("imapRowLabelIds", () => {
 
   it("returns nothing when the message has no user label", () => {
     expect(imapRowLabelIds(undefined)).toEqual([]);
+  });
+
+  it("hides a keyword after that label is gone", () => {
+    expect(
+      imapVisibleThreadLabelIds(
+        [{ labelIds: ["Desk_tag", "FYI"] }],
+        new Set(["FYI"]),
+      ),
+    ).toEqual(["FYI"]);
   });
 });
 

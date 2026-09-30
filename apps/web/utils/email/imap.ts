@@ -1328,6 +1328,10 @@ export function createImapProvider(
       });
     },
     deleteLabel: async (labelId) => {
+      const keyword = labelId.trim();
+      if (keyword) {
+        await removeKeywordFromAllMailboxes({ config, logger, keyword });
+      }
       await prisma.label.deleteMany({
         where: {
           emailAccountId: config.emailAccountId,
@@ -2276,6 +2280,57 @@ async function moveMessagesFromSenders({
       emailAccountId: config.emailAccountId,
     });
     throw new SafeError(`Failed to move IMAP messages to ${mailbox}`);
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+async function removeKeywordFromAllMailboxes({
+  config,
+  logger,
+  keyword,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  keyword: string;
+}) {
+  const client = createImapClient(config);
+  await connectImapClient(client);
+  try {
+    const boxes = await client.list();
+    const mailboxes = [
+      ...new Set(
+        [config.syncFolder || "INBOX", ...boxes.map((box) => box.path)].filter(
+          (mailbox): mailbox is string => Boolean(mailbox),
+        ),
+      ),
+    ];
+    for (const mailbox of mailboxes) {
+      const lock = await client
+        .getMailboxLock(mailbox)
+        .catch((error: unknown) => {
+          if (isMissingImapMailbox(error)) return null;
+          throw error;
+        });
+      if (!lock) continue;
+      try {
+        const searched = await client.search({ keyword }, { uid: true });
+        const uids = (Array.isArray(searched) ? searched : []).filter(
+          (uid): uid is number => typeof uid === "number",
+        );
+        for (const uid of uids) {
+          await client.messageFlagsRemove(uid, [keyword], { uid: true });
+        }
+      } finally {
+        lock.release();
+      }
+    }
+  } catch (error) {
+    logger.error("Failed removing an IMAP label", {
+      error,
+      emailAccountId: config.emailAccountId,
+    });
+    throw new SafeError("Failed to delete label");
   } finally {
     await client.logout().catch(() => undefined);
   }
