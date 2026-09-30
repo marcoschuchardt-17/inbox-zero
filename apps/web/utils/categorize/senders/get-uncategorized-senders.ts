@@ -1,4 +1,4 @@
-import { extractEmailAddress } from "@/utils/email";
+import { extractEmailAddresses } from "@/utils/email";
 import { getSenders } from "./get-senders";
 import prisma from "@/utils/prisma";
 import type { Sender } from "@/utils/categorize/senders/batch-validation";
@@ -26,10 +26,13 @@ export async function getUncategorizedSenders({
 
     const senderMap = new Map<string, string | null>();
     for (const sender of result) {
-      const email = extractEmailAddress(sender.from);
-      // Only set the name if we don't already have one (keep first non-null)
-      if (!senderMap.has(email) || (!senderMap.get(email) && sender.fromName)) {
-        senderMap.set(email, sender.fromName);
+      const addresses = extractEmailAddresses(sender.from);
+      const people = addresses.length ? addresses : [sender.from];
+      for (const email of people) {
+        const name = people.length === 1 ? sender.fromName : null;
+        if (!senderMap.has(email) || (!senderMap.get(email) && name)) {
+          senderMap.set(email, name);
+        }
       }
     }
 

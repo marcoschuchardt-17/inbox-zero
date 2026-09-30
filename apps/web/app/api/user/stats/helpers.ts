@@ -1,3 +1,4 @@
+import { extractDomainFromEmail, extractEmailAddresses } from "@/utils/email";
 import prisma from "@/utils/prisma";
 
 type EmailField = "to" | "from" | "fromDomain";
@@ -27,9 +28,9 @@ export async function getEmailFieldStats({
   isSent: boolean;
 }): Promise<EmailFieldStatsResult> {
   const dateRange = { fromDate, toDate };
-
+  const sourceField = field === "fromDomain" ? "from" : field;
   const emailsCount = await prisma.emailMessage.groupBy({
-    by: [field],
+    by: [sourceField],
     where: {
       emailAccountId,
       sent: isSent,
@@ -39,27 +40,69 @@ export async function getEmailFieldStats({
       },
     },
     _count: {
-      [field]: true,
+      [sourceField]: true,
     },
     orderBy: {
       _count: {
-        [field]: "desc",
+        [sourceField]: "desc",
       },
     },
-    take: 50,
   });
 
-  // Create the result with the correct field name
-  return {
-    data: emailsCount.map((item) => {
-      const resultField = field.includes("Domain")
-        ? field.replace("Domain", "")
-        : field;
+  const rows = emailsCount.map((item) => ({
+    value: String(item[sourceField] || ""),
+    count: item._count[sourceField] ?? 0,
+  }));
+  const counted =
+    field === "fromDomain" ? countAddressDomains(rows) : countAddresses(rows);
+  const resultField = field === "fromDomain" ? "from" : field;
 
-      return {
-        [resultField]: item[field] || "",
-        count: item._count ? item._count[field] : 0,
-      };
-    }),
+  return {
+    data: counted.slice(0, 50).map((item) => ({
+      [resultField]: item.value,
+      count: item.count,
+    })),
   };
+}
+
+export function countAddresses(rows: AddressCount[]) {
+  return rankedCounts(rows, (value) => addressesInStoredField(value));
+}
+
+export function countAddressDomains(rows: AddressCount[]) {
+  return rankedCounts(rows, (value) =>
+    addressesInStoredField(value).flatMap((address) => {
+      const domain = extractDomainFromEmail(address).toLowerCase();
+      return domain ? [domain] : [];
+    }),
+  );
+}
+
+type AddressCount = { value: string; count: number };
+
+function addressesInStoredField(value: string) {
+  const addresses = extractEmailAddresses(value).map((address) =>
+    address.toLowerCase(),
+  );
+  if (addresses.length) return addresses;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed ? [trimmed] : [];
+}
+
+function rankedCounts(
+  rows: AddressCount[],
+  valuesFor: (value: string) => string[],
+) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    for (const value of valuesFor(row.value)) {
+      counts.set(value, (counts.get(value) ?? 0) + row.count);
+    }
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.value.localeCompare(right.value),
+    );
 }

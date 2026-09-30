@@ -1,3 +1,4 @@
+import { extractEmailAddresses } from "@/utils/email";
 import prisma from "@/utils/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { Logger } from "@/utils/logger";
@@ -123,16 +124,7 @@ export async function getSenderEmailStats(
   try {
     const results = await prisma.$queryRaw<SenderEmailStats[]>(query);
 
-    // Convert BigInt values to regular numbers
-    return results.map((result) => ({
-      from: result.from,
-      fromName: result.fromName,
-      minFromName: result.minFromName,
-      count: result.count,
-      inboxEmails: result.inboxEmails,
-      readEmails: result.readEmails,
-      unsubscribeLink: result.unsubscribeLink,
-    }));
+    return expandSenderAddresses(results);
   } catch (error) {
     logger.error("getSenderEmailStats error", {
       error,
@@ -160,4 +152,44 @@ function getOrderByClause(
     default:
       return `"count" ${direction}`;
   }
+}
+
+function expandSenderAddresses(results: SenderEmailStats[]) {
+  const merged = new Map<string, SenderEmailStats>();
+  for (const result of results) {
+    const addresses = extractEmailAddresses(result.from).map((address) =>
+      address.toLowerCase(),
+    );
+    const people = addresses.length ? addresses : [result.from];
+    for (const address of people) {
+      const fromName = people.length === 1 ? result.fromName : null;
+      const existing = merged.get(address);
+      if (!existing) {
+        merged.set(address, {
+          from: address,
+          fromName,
+          minFromName: people.length === 1 ? result.minFromName : null,
+          count: asNumber(result.count),
+          inboxEmails: asNumber(result.inboxEmails),
+          readEmails: asNumber(result.readEmails),
+          unsubscribeLink: result.unsubscribeLink,
+        });
+        continue;
+      }
+      existing.count += asNumber(result.count);
+      existing.inboxEmails += asNumber(result.inboxEmails);
+      existing.readEmails += asNumber(result.readEmails);
+      if (!existing.unsubscribeLink && result.unsubscribeLink) {
+        existing.unsubscribeLink = result.unsubscribeLink;
+      }
+    }
+  }
+  return [...merged.values()].sort(
+    (left, right) =>
+      right.count - left.count || left.from.localeCompare(right.from),
+  );
+}
+
+function asNumber(value: number | bigint) {
+  return typeof value === "bigint" ? Number(value) : value;
 }

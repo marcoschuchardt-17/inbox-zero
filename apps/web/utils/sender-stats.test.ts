@@ -18,6 +18,31 @@ describe("getSenderEmailStats", () => {
     expect(sql).toContain("sent = false");
     expect(sql).toContain("draft = false");
   });
+
+  it("lists every sender stored on one message", async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        from: "sam-chart@example.com, ada-chart@example.com",
+        fromName: "Sam Chart",
+        minFromName: "Sam Chart",
+        count: 1,
+        inboxEmails: 1,
+        readEmails: 0,
+        unsubscribeLink: null,
+      },
+    ]);
+
+    const senders = await getSenderEmailStats({
+      emailAccountId: "account-1",
+      logger: createScopedLogger("sender-stats-test"),
+    });
+
+    expect(senders.map((sender) => sender.from)).toEqual([
+      "ada-chart@example.com",
+      "sam-chart@example.com",
+    ]);
+    expect(senders.every((sender) => sender.count === 1)).toBe(true);
+  });
 });
 
 function sqlText(query: unknown) {

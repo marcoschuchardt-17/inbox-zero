@@ -2876,10 +2876,12 @@ async function storeSentMessages({
   messages: ParsedImapMessage[];
 }) {
   for (const message of messages) {
-    const from = extractEmailAddress(message.headers.from || "");
+    const fromAddresses = extractEmailAddresses(message.headers.from || "");
+    const from = fromAddresses.join(", ");
     const date = new Date(message.date);
     if (!from || Number.isNaN(date.getTime())) continue;
-    const to = extractEmailAddress(message.headers.to || "") || "Missing";
+    const to =
+      extractEmailAddresses(message.headers.to || "").join(", ") || "Missing";
     await prisma.emailMessage.upsert({
       where: {
         emailAccountId_threadId_messageId: {
@@ -2895,7 +2897,7 @@ async function storeSentMessages({
         date,
         from,
         fromName: extractNameFromEmail(message.headers.from || "") || null,
-        fromDomain: extractDomainFromEmail(from),
+        fromDomain: extractDomainFromEmail(fromAddresses[0] || ""),
         to,
         read: true,
         sent: true,

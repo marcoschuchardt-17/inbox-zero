@@ -7,9 +7,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { isDefined } from "@/utils/types";
 import {
   extractDomainFromEmail,
-  extractEmailAddress,
+  extractEmailAddresses,
   extractNameFromEmail,
   legacySubjectThreadKey,
+  storedAnalyticsAddresses,
 } from "@/utils/email";
 import type { EmailProvider } from "@/utils/email/types";
 import { internalDateToDate } from "@/utils/date";
@@ -194,14 +195,15 @@ export async function saveBatch({
         return;
       }
 
+      const fromAddresses = extractEmailAddresses(m.headers.from);
       return {
         threadId: m.threadId,
         messageId: m.id,
         subject: m.subject || "",
-        from: extractEmailAddress(m.headers.from),
+        from: storedAnalyticsAddresses(m.headers.from) || "Missing",
         fromName: extractNameFromEmail(m.headers.from),
-        fromDomain: extractDomainFromEmail(m.headers.from),
-        to: m.headers.to ? extractEmailAddress(m.headers.to) : "Missing",
+        fromDomain: extractDomainFromEmail(fromAddresses[0] || ""),
+        to: storedAnalyticsAddresses(m.headers.to || "") || "Missing",
         date,
         unsubscribeLink,
         read: !m.labelIds?.includes("UNREAD"),

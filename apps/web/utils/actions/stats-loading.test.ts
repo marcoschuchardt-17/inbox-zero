@@ -66,6 +66,37 @@ describe("saveBatch", () => {
 
     expect(prisma.emailMessage.deleteMany).not.toHaveBeenCalled();
   });
+
+  it("stores every sender on a message from more than one person", async () => {
+    prisma.$executeRaw.mockResolvedValue(1);
+    prisma.emailMessage.deleteMany.mockResolvedValue({ count: 0 });
+    const date = "2026-09-30T13:00:00.000Z";
+
+    await saveBatch({
+      emailAccountId: "account-1",
+      emailProvider: providerWith({
+        id: "INBOX/9",
+        threadId: "<chart-both@example.com>",
+        subject: "Chart both",
+        from: "Sam Chart <sam-chart@example.com>, Ada Chart <ada-chart@example.com>",
+        internalDate: date,
+      }),
+      logger: createScopedLogger("stats-loading-test"),
+      nextPageToken: undefined,
+      before: undefined,
+      after: undefined,
+    });
+
+    expect(prisma.emailMessage.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          expect.objectContaining({
+            from: "sam-chart@example.com, ada-chart@example.com",
+          }),
+        ],
+      },
+    });
+  });
 });
 
 function providerWith(message: {

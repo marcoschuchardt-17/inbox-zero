@@ -4,6 +4,7 @@ import {
   extractEmailAddress,
   extractEmailAddresses,
   recipientDisplayNames,
+  storedAnalyticsAddresses,
   extractUniqueEmailAddresses,
   splitRecipientList,
   extractDomainFromEmail,
@@ -36,6 +37,16 @@ describe("email utils", () => {
       expect(
         recipientDisplayNames("Sam <sam@example.com>, Ada <ada@example.com>"),
       ).toBe("Sam, Ada");
+    });
+  });
+
+  describe("storedAnalyticsAddresses", () => {
+    it("keeps every address", () => {
+      expect(
+        storedAnalyticsAddresses(
+          "Sam <sam@example.com>, Ada <ada@example.com>",
+        ),
+      ).toBe("sam@example.com, ada@example.com");
     });
   });
 

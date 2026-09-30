@@ -3600,6 +3600,33 @@ describe("createImapProvider", () => {
     mailboxState.sentSource = "";
   });
 
+  it("stores every recipient on a sent message", async () => {
+    mailboxState.allUids = [1];
+    mailboxState.sentSource = [
+      "From: Owner <owner@example.com>",
+      "To: Sam Chart <sam-chart-to@example.com>, Ada Chart <ada-chart-to@example.com>",
+      "Subject: Chart sent both",
+      "Date: Wed, 30 Sep 2026 13:00:00 +0000",
+      "Message-ID: <chart-sent-both@example.com>",
+      "",
+      "Sent to both of them.",
+    ].join("\r\n");
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.getMessagesWithPagination({ maxResults: 20 });
+
+    expect(prisma.emailMessage.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          to: "sam-chart-to@example.com, ada-chart-to@example.com",
+          sent: true,
+        }),
+      }),
+    );
+    mailboxState.allUids = [];
+    mailboxState.sentSource = "";
+  });
+
   it("drops stored sent mail that is no longer in the Sent folder", async () => {
     mailboxState.sentSource = [
       "From: Owner <owner@example.com>",
