@@ -87,16 +87,28 @@ export function sentReplyRecipients(
   accountEmail?: string | null,
 ) {
   // A header that only names this account is not who the reply should reach.
+  let chosen: {
+    to: string;
+    cc: string | null | undefined;
+    bcc: string | null | undefined;
+  };
   if (replyHeaderReachesSomeoneElse(headers.to, accountEmail)) {
-    return { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
+    chosen = { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
+  } else if (replyHeaderReachesSomeoneElse(headers.cc, accountEmail)) {
+    chosen = { to: headers.cc || "", cc: undefined, bcc: headers.bcc };
+  } else if (replyHeaderReachesSomeoneElse(headers.bcc, accountEmail)) {
+    chosen = { to: headers.bcc || "", cc: undefined, bcc: undefined };
+  } else {
+    chosen = { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
   }
-  if (replyHeaderReachesSomeoneElse(headers.cc, accountEmail)) {
-    return { to: headers.cc || "", cc: undefined, bcc: headers.bcc };
-  }
-  if (replyHeaderReachesSomeoneElse(headers.bcc, accountEmail)) {
-    return { to: headers.bcc || "", cc: undefined, bcc: undefined };
-  }
-  return { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
+  if (!accountEmail) return chosen;
+  // The account is already in the conversation, so the reply skips it.
+  const to = headerWithoutAccount(chosen.to, accountEmail);
+  return {
+    to: to || chosen.to,
+    cc: headerWithoutAccount(chosen.cc, accountEmail),
+    bcc: headerWithoutAccount(chosen.bcc, accountEmail),
+  };
 }
 
 // Extracts all email addresses from a comma-separated header string
@@ -441,6 +453,18 @@ function displayNameBesideAddress(
   // second name, so it must not replace Billing with the domain.
   if (!display || isSameEmailAddress(display, email)) return "";
   return display;
+}
+
+function headerWithoutAccount(
+  header: string | null | undefined,
+  accountEmail: string,
+) {
+  if (header == null || header === "") return header ?? undefined;
+  const people = splitRecipientList(header);
+  const others = recipientPeopleOtherThanAccount(header, accountEmail);
+  if (others.length === people.length) return header;
+  if (!others.length) return;
+  return others.join(", ");
 }
 
 function recipientPeopleOtherThanAccount(

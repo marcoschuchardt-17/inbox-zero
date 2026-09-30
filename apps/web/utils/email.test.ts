@@ -193,6 +193,23 @@ describe("email utils", () => {
         bcc: undefined,
       });
     });
+
+    it("addresses the other person when this account is also on To", () => {
+      expect(
+        sentReplyRecipients(
+          {
+            to: "Owner <owner@example.com>, Ada Replylist <ada-replylist@example.com>",
+            cc: "Owner <owner@example.com>, Pat <pat@example.com>",
+            bcc: "Owner <owner@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Ada Replylist <ada-replylist@example.com>",
+        cc: "Pat <pat@example.com>",
+        bcc: undefined,
+      });
+    });
   });
 
   describe("messageWasSentByAccount", () => {

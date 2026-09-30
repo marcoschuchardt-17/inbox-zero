@@ -434,6 +434,39 @@ describe("EmailMessage reply address", () => {
     );
   });
 
+  it("replies to the other person when this account is also addressed", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Reply listed me",
+            to: "Starttls <user@example.com>, Ada Replylist <ada-replylist@example.com>",
+            cc: "Starttls <user@example.com>, Pat <pat@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Replylist <ada-replylist@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Pat <pat@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Reply listed me",
+    );
+  });
+
   it("replies to the other person when the account is also a sender", () => {
     render(
       <EmailMessage
