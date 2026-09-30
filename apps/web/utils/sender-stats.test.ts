@@ -43,6 +43,43 @@ describe("getSenderEmailStats", () => {
     ]);
     expect(senders.every((sender) => sender.count === 1)).toBe(true);
   });
+
+  it("leaves the account off the list, including when it is one of two senders", async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        from: "starttls.imap@example.com",
+        fromName: "Starttls",
+        minFromName: "Starttls",
+        count: 4,
+        inboxEmails: 0,
+        readEmails: 4,
+        unsubscribeLink: null,
+      },
+      {
+        from: "sam.participant@gmail.com, starttls.imap@example.com",
+        fromName: "Sam Participant",
+        minFromName: "Sam Participant",
+        count: 1,
+        inboxEmails: 0,
+        readEmails: 1,
+        unsubscribeLink: null,
+      },
+    ]);
+
+    const senders = await getSenderEmailStats({
+      emailAccountId: "account-1",
+      accountEmail: "starttls.imap@example.com",
+      logger: createScopedLogger("sender-stats-test"),
+    });
+
+    expect(senders).toEqual([
+      expect.objectContaining({
+        from: "sam.participant@gmail.com",
+        fromName: "Sam Participant",
+        count: 1,
+      }),
+    ]);
+  });
 });
 
 function sqlText(query: unknown) {

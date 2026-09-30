@@ -1,4 +1,8 @@
-import { extractDomainFromEmail, extractEmailAddresses } from "@/utils/email";
+import {
+  addressesOtherThanAccount,
+  extractDomainFromEmail,
+  extractEmailAddresses,
+} from "@/utils/email";
 import prisma from "@/utils/prisma";
 
 type EmailField = "to" | "from" | "fromDomain";
@@ -20,12 +24,14 @@ export async function getEmailFieldStats({
   toDate,
   field,
   isSent,
+  accountEmail,
 }: {
   emailAccountId: string;
   fromDate?: number | null;
   toDate?: number | null;
   field: EmailField;
   isSent: boolean;
+  accountEmail?: string | null;
 }): Promise<EmailFieldStatsResult> {
   const dateRange = { fromDate, toDate };
   const sourceField = field === "fromDomain" ? "from" : field;
@@ -53,8 +59,14 @@ export async function getEmailFieldStats({
     value: String(item[sourceField] || ""),
     count: item._count[sourceField] ?? 0,
   }));
+  const exceptAccount =
+    !isSent && (field === "from" || field === "fromDomain")
+      ? accountEmail
+      : undefined;
   const counted =
-    field === "fromDomain" ? countAddressDomains(rows) : countAddresses(rows);
+    field === "fromDomain"
+      ? countAddressDomains(rows, exceptAccount)
+      : countAddresses(rows, exceptAccount);
   const resultField = field === "fromDomain" ? "from" : field;
 
   return {
@@ -65,13 +77,24 @@ export async function getEmailFieldStats({
   };
 }
 
-export function countAddresses(rows: AddressCount[]) {
-  return rankedCounts(rows, (value) => addressesInStoredField(value));
+export function countAddresses(
+  rows: AddressCount[],
+  accountEmail?: string | null,
+) {
+  return rankedCounts(rows, (value) =>
+    addressesOtherThanAccount(addressesInStoredField(value), accountEmail),
+  );
 }
 
-export function countAddressDomains(rows: AddressCount[]) {
+export function countAddressDomains(
+  rows: AddressCount[],
+  accountEmail?: string | null,
+) {
   return rankedCounts(rows, (value) =>
-    addressesInStoredField(value).flatMap((address) => {
+    addressesOtherThanAccount(
+      addressesInStoredField(value),
+      accountEmail,
+    ).flatMap((address) => {
       const domain = extractDomainFromEmail(address).toLowerCase();
       return domain ? [domain] : [];
     }),

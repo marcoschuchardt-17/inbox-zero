@@ -16,7 +16,28 @@ import {
   getNewsletterSenderDisplayName,
   messageRepliesToSourceSender,
   isSameOrganization,
+  messageIsFromAccountOnly,
 } from "./email";
+
+describe("messageIsFromAccountOnly", () => {
+  it("is true when every from address is the account", () => {
+    expect(
+      messageIsFromAccountOnly(
+        "Starttls <starttls.imap@example.com>",
+        "starttls.imap@example.com",
+      ),
+    ).toBe(true);
+  });
+
+  it("is false when someone else also sent the message", () => {
+    expect(
+      messageIsFromAccountOnly(
+        "Sam Participant <sam.participant@gmail.com>, Starttls <starttls.imap@example.com>",
+        "starttls.imap@example.com",
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("email utils", () => {
   describe("extractNameFromEmail", () => {

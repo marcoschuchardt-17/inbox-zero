@@ -97,6 +97,55 @@ describe("saveBatch", () => {
       },
     });
   });
+
+  it("stores mail that is only from this account as sent", async () => {
+    prisma.emailAccount.findUnique.mockResolvedValue({
+      email: "starttls.imap@example.com",
+    } as never);
+    prisma.$executeRaw.mockResolvedValue(1);
+
+    await saveBatch({
+      emailAccountId: "account-1",
+      emailProvider: providerWith({
+        id: "Archive/96",
+        threadId: "<chart-sent-both@example.com>",
+        subject: "Chart sent both",
+        from: "Starttls <starttls.imap@example.com>",
+        internalDate: "2026-09-30T16:05:00.000Z",
+      }),
+      logger: createScopedLogger("stats-loading-test"),
+      nextPageToken: undefined,
+      before: undefined,
+      after: undefined,
+    });
+
+    expect(prisma.emailMessage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps a message that also names someone else as incoming", async () => {
+    prisma.emailAccount.findUnique.mockResolvedValue({
+      email: "starttls.imap@example.com",
+    } as never);
+    prisma.$executeRaw.mockResolvedValue(1);
+    prisma.emailMessage.deleteMany.mockResolvedValue({ count: 0 });
+
+    await saveBatch({
+      emailAccountId: "account-1",
+      emailProvider: providerWith({
+        id: "Archive/104",
+        threadId: "<profile-co-sender@example.com>",
+        subject: "Profile co-sender",
+        from: "Sam Participant <sam.participant@gmail.com>, Starttls <starttls.imap@example.com>",
+        internalDate: "2026-09-30T13:00:00.000Z",
+      }),
+      logger: createScopedLogger("stats-loading-test"),
+      nextPageToken: undefined,
+      before: undefined,
+      after: undefined,
+    });
+
+    expect(prisma.emailMessage.deleteMany).toHaveBeenCalled();
+  });
 });
 
 function providerWith(message: {

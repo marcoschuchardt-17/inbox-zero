@@ -10,6 +10,7 @@ import {
   extractEmailAddresses,
   extractNameFromEmail,
   legacySubjectThreadKey,
+  messageIsFromAccountOnly,
   storedAnalyticsAddresses,
 } from "@/utils/email";
 import type { EmailProvider } from "@/utils/email/types";
@@ -178,6 +179,10 @@ export async function saveBatch({
   });
 
   const messages = res.messages ?? [];
+  const account = await prisma.emailAccount.findUnique({
+    where: { id: emailAccountId },
+    select: { email: true },
+  });
 
   const emailsToSave = messages
     .map((m) => {
@@ -207,7 +212,9 @@ export async function saveBatch({
         date,
         unsubscribeLink,
         read: !m.labelIds?.includes("UNREAD"),
-        sent: !!m.labelIds?.includes("SENT"),
+        sent:
+          !!m.labelIds?.includes("SENT") ||
+          messageIsFromAccountOnly(m.headers.from, account?.email),
         draft: !!m.labelIds?.includes("DRAFT"),
         inbox: !!m.labelIds?.includes("INBOX"),
         emailAccountId,

@@ -117,6 +117,27 @@ export function isSameEmailAddress(left: string, right: string) {
   return canonicalizeEmailAddress(left) === canonicalizeEmailAddress(right);
 }
 
+export function addressesOtherThanAccount(
+  addresses: readonly string[],
+  accountEmail?: string | null,
+) {
+  if (!accountEmail) return [...addresses];
+  return addresses.filter(
+    (address) => !isSameEmailAddress(address, accountEmail),
+  );
+}
+
+export function messageIsFromAccountOnly(
+  from: string,
+  accountEmail?: string | null,
+) {
+  const addresses = extractEmailAddresses(from);
+  return (
+    addresses.length > 0 &&
+    addressesOtherThanAccount(addresses, accountEmail).length === 0
+  );
+}
+
 export function messageRepliesToSourceSender({
   sentMessage,
   sourceMessage,

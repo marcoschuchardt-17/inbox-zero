@@ -16,6 +16,21 @@ describe("countAddresses", () => {
       { value: "sam@example.com", count: 1 },
     ]);
   });
+
+  it("leaves out the account when it is the only sender or one of two", () => {
+    expect(
+      countAddresses(
+        [
+          { value: "starttls.imap@example.com", count: 4 },
+          {
+            value: "sam.participant@gmail.com, starttls.imap@example.com",
+            count: 1,
+          },
+        ],
+        "starttls.imap@example.com",
+      ),
+    ).toEqual([{ value: "sam.participant@gmail.com", count: 1 }]);
+  });
 });
 
 describe("countAddressDomains", () => {

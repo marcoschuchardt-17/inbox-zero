@@ -18,7 +18,7 @@ export interface SendersResponse {
  * Get sender statistics from database
  */
 async function getSenderStatistics(
-  options: SenderStatsQuery & { emailAccountId: string },
+  options: SenderStatsQuery & { emailAccountId: string; accountEmail: string },
 ): Promise<SendersResponse> {
   const [mostReceived, mostReceivedDomains] = await Promise.all([
     getMostReceivedFrom(options),
@@ -48,8 +48,10 @@ async function getMostReceivedFrom({
   emailAccountId,
   fromDate,
   toDate,
+  accountEmail,
 }: SenderStatsQuery & {
   emailAccountId: string;
+  accountEmail: string;
 }) {
   return getEmailFieldStats({
     emailAccountId,
@@ -57,6 +59,7 @@ async function getMostReceivedFrom({
     toDate,
     field: "from",
     isSent: false,
+    accountEmail,
   });
 }
 
@@ -67,8 +70,10 @@ async function getDomainsMostReceivedFrom({
   emailAccountId,
   fromDate,
   toDate,
+  accountEmail,
 }: SenderStatsQuery & {
   emailAccountId: string;
+  accountEmail: string;
 }) {
   return getEmailFieldStats({
     emailAccountId,
@@ -76,6 +81,7 @@ async function getDomainsMostReceivedFrom({
     toDate,
     field: "fromDomain",
     isSent: false,
+    accountEmail,
   });
 }
 
@@ -91,6 +97,7 @@ export const GET = withEmailAccount("user/stats/senders", async (request) => {
   const result = await getSenderStatistics({
     ...query,
     emailAccountId,
+    accountEmail: request.auth.email,
   });
 
   return NextResponse.json(result);

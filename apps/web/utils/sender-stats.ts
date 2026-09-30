@@ -1,4 +1,8 @@
-import { extractEmailAddresses } from "@/utils/email";
+import {
+  addressesOtherThanAccount,
+  extractEmailAddresses,
+  isSameEmailAddress,
+} from "@/utils/email";
 import prisma from "@/utils/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { Logger } from "@/utils/logger";
@@ -27,6 +31,7 @@ export type SenderEmailStatsOptions = {
   orderBy?: "emails" | "unread" | "unarchived";
   orderDirection?: "asc" | "desc";
   limit?: number | null;
+  accountEmail?: string | null;
   logger: Logger;
 };
 
@@ -124,7 +129,7 @@ export async function getSenderEmailStats(
   try {
     const results = await prisma.$queryRaw<SenderEmailStats[]>(query);
 
-    return expandSenderAddresses(results);
+    return expandSenderAddresses(results, options.accountEmail);
   } catch (error) {
     logger.error("getSenderEmailStats error", {
       error,
@@ -154,21 +159,32 @@ function getOrderByClause(
   }
 }
 
-function expandSenderAddresses(results: SenderEmailStats[]) {
+function expandSenderAddresses(
+  results: SenderEmailStats[],
+  accountEmail?: string | null,
+) {
   const merged = new Map<string, SenderEmailStats>();
   for (const result of results) {
     const addresses = extractEmailAddresses(result.from).map((address) =>
       address.toLowerCase(),
     );
-    const people = addresses.length ? addresses : [result.from];
+    const people = addressesOtherThanAccount(
+      addresses.length ? addresses : [result.from],
+      accountEmail,
+    );
+    if (!people.length) continue;
     for (const address of people) {
-      const fromName = people.length === 1 ? result.fromName : null;
+      const fromName =
+        people.length === 1 &&
+        (!addresses.length || isSameEmailAddress(addresses[0], address))
+          ? result.fromName
+          : null;
       const existing = merged.get(address);
       if (!existing) {
         merged.set(address, {
           from: address,
           fromName,
-          minFromName: people.length === 1 ? result.minFromName : null,
+          minFromName: fromName ? result.minFromName : null,
           count: asNumber(result.count),
           inboxEmails: asNumber(result.inboxEmails),
           readEmails: asNumber(result.readEmails),
