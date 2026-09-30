@@ -2669,6 +2669,63 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("finds a file name and a copied address that are not in the preview", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T18:00:00.000Z",
+        source: [
+          "From: Ads <ads@example.com>",
+          "To: owner@example.com",
+          "Cc: Ada <ada@example.com>",
+          "Subject: File",
+          "Date: Mon, 28 Sep 2026 18:00:00 +0000",
+          "Message-ID: <file-search@example.com>",
+          "MIME-Version: 1.0",
+          'Content-Type: multipart/mixed; boundary="bound"',
+          "",
+          "--bound",
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "See attached.",
+          "--bound",
+          'Content-Type: text/plain; name="note.txt"',
+          'Content-Disposition: attachment; filename="note.txt"',
+          "Content-Transfer-Encoding: base64",
+          "",
+          "Tm90ZQ==",
+          "--bound--",
+          "",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const byFile = await provider.searchThreads({
+        query: "note.txt",
+        maxResults: 20,
+      });
+      const byCopy = await provider.searchThreads({
+        query: "ada@example.com",
+        maxResults: 20,
+      });
+
+      expect(
+        byFile.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["File"]);
+      expect(
+        byCopy.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["File"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("returns the search match with the newest written date when that mail arrived earlier", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 3;

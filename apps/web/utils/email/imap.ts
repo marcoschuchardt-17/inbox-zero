@@ -4435,6 +4435,9 @@ function imapMessageHaystack(message: ParsedImapMessage) {
     htmlSnippet(message.textHtml || ""),
     message.headers.from,
     message.headers.to,
+    message.headers.cc || "",
+    message.headers.bcc || "",
+    ...(message.attachments ?? []).map((attachment) => attachment.filename),
   ]
     .join("\n")
     .toLowerCase();
