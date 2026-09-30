@@ -2627,6 +2627,48 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("finds a word in the HTML message when it is past the preview", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T12:00:00.000Z",
+        source: [
+          "From: Billing <billing@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Invoice preview",
+          "Date: Mon, 28 Sep 2026 12:00:00 +0000",
+          "Message-ID: <html-search@example.com>",
+          "MIME-Version: 1.0",
+          "Content-Type: text/html; charset=utf-8",
+          "",
+          `<p>${"Intro ".repeat(80)}</p><p>Invoice number 44821 is due.</p>`,
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const listed = await provider.getMessagesWithPagination({
+        maxResults: 5,
+      });
+      const found = await provider.searchThreads({
+        query: "44821",
+        maxResults: 20,
+      });
+
+      expect(listed.messages[0]?.snippet).not.toContain("44821");
+      expect(
+        found.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Invoice preview"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("returns the search match with the newest written date when that mail arrived earlier", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 3;

@@ -4431,8 +4431,8 @@ async function fetchMailboxTextMatches({
 function imapMessageHaystack(message: ParsedImapMessage) {
   return [
     message.subject,
-    message.snippet,
     message.textPlain || "",
+    htmlSnippet(message.textHtml || ""),
     message.headers.from,
     message.headers.to,
   ]
