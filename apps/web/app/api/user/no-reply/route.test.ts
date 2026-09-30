@@ -23,12 +23,15 @@ vi.mock("@/utils/middleware", () => ({
 
 const getSentMessages = vi.fn();
 const getThread = vi.fn();
+const getThreadsWithQuery = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getThreadsWithQuery.mockResolvedValue({ threads: [] });
   vi.mocked(createEmailProvider).mockResolvedValue({
     getSentMessages,
     getThread,
+    getThreadsWithQuery,
   } as never);
 });
 
@@ -64,6 +67,42 @@ describe("GET /api/user/no-reply", () => {
     expect(threads[0]?.messages.at(-1)?.headers.from).toContain(
       "owner@example.com",
     );
+  });
+
+  it("includes archived mail the account sent and skips mail sent with someone else", async () => {
+    getSentMessages.mockResolvedValue([]);
+    getThreadsWithQuery.mockResolvedValue({
+      threads: [
+        { id: "<copied@example.com>" },
+        { id: "<both@example.com>" },
+        { id: "<notowner@example.com>" },
+      ],
+    });
+    getThread.mockImplementation(async (threadId: string) => {
+      if (threadId === "<both@example.com>") {
+        return conversation("<both@example.com>", [
+          "Sam <sam@example.com>, Owner <owner@example.com>",
+        ]);
+      }
+      if (threadId === "<notowner@example.com>") {
+        return conversation("<notowner@example.com>", [
+          "Notowner <notowner@example.com>",
+        ]);
+      }
+      return conversation("<copied@example.com>", [
+        "Owner <owner@example.com>",
+      ]);
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/user/no-reply"),
+      {} as never,
+    );
+    const threads = await response.json();
+
+    expect(threads.map((thread: { id: string }) => thread.id)).toEqual([
+      "<copied@example.com>",
+    ]);
   });
 });
 

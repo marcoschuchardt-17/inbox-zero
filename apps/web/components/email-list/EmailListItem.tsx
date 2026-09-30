@@ -10,7 +10,7 @@ import clsx from "clsx";
 import { ActionButtons } from "@/components/ActionButtons";
 import { PlanBadge } from "@/components/PlanBadge";
 import type { Thread } from "@/components/email-list/types";
-import { extractNameFromEmail, participant } from "@/utils/email";
+import { participant, recipientDisplayNames } from "@/utils/email";
 import { Checkbox } from "@/components/Checkbox";
 import { EmailDate } from "@/components/email-list/EmailDate";
 import { decodeSnippet } from "@/utils/gmail/decode";
@@ -125,7 +125,7 @@ export const EmailListItem = forwardRef(
                 </div>
 
                 <div className="ml-4 w-28 shrink-0 overflow-hidden truncate text-foreground sm:w-36 xl:w-48">
-                  {extractNameFromEmail(
+                  {recipientDisplayNames(
                     participant(lastMessage, props.userEmail),
                   )}{" "}
                   {thread.messages.length > 1 ? (

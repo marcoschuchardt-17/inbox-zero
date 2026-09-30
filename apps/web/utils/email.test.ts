@@ -544,6 +544,21 @@ describe("email utils", () => {
         ),
       ).toBe("Sam <sam@example.com>");
     });
+
+    it("names the copied person when sent mail has no To", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Owner <owner@example.com>",
+              to: "",
+              cc: "Ada Copy <ada-copy@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Ada Copy <ada-copy@example.com>");
+    });
   });
 
   describe("normalizeEmailAddress", () => {

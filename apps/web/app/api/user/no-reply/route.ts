@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isDefined } from "@/utils/types";
 import { withEmailProvider } from "@/utils/middleware";
+import { messageIsFromAccountOnly } from "@/utils/email";
 import { createEmailProvider } from "@/utils/email/provider";
 import type { Logger } from "@/utils/logger";
 
@@ -24,11 +25,29 @@ async function getNoReply({
   });
 
   const sentEmails = await emailProvider.getSentMessages(50);
+  const threadIds = sentEmails.map((message) => message.threadId || "");
+  // A copy the account sent can sit in Archive without a Sent label.
+  if (provider === "imap") {
+    const fromAccount = await emailProvider.getThreadsWithQuery({
+      query: { fromEmail: userEmail },
+      maxResults: 50,
+    });
+    for (const thread of fromAccount.threads) {
+      if (thread.id) threadIds.push(thread.id);
+    }
+  }
+  const seenIds = new Set<string>();
+  const uniqueThreadIds: string[] = [];
+  for (const threadId of threadIds) {
+    if (!threadId || seenIds.has(threadId)) continue;
+    seenIds.add(threadId);
+    uniqueThreadIds.push(threadId);
+  }
   const threads = (
     await Promise.all(
-      sentEmails.map(async (message) => {
+      uniqueThreadIds.map(async (threadId) => {
         try {
-          return await emailProvider.getThread(message.threadId || "");
+          return await emailProvider.getThread(threadId);
         } catch (error) {
           if (isMissingThread(error)) return;
           throw error;
@@ -62,7 +81,9 @@ function threadsStillAwaitingReply<
   for (const thread of threads) {
     if (!thread.id || seen.has(thread.id)) continue;
     const from = thread.messages.at(-1)?.headers.from || "";
-    if (!from.includes(userEmail)) continue;
+    // A shorter address inside another sender is not this account, and a
+    // message sent together with someone else is not waiting on our reply.
+    if (!messageIsFromAccountOnly(from, userEmail)) continue;
     seen.add(thread.id);
     awaiting.push(thread);
   }

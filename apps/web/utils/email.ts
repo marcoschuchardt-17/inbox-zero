@@ -288,7 +288,12 @@ export function extractDomainFromEmail(email: string): string {
 // if we're the sender, then return the recipient
 // if we're the recipient, then return the sender
 export function participant(
-  message: { headers: Pick<ParsedMessage["headers"], "from" | "to"> },
+  message: {
+    headers: Pick<ParsedMessage["headers"], "from" | "to"> & {
+      cc?: string | null;
+      bcc?: string | null;
+    };
+  },
   userEmail: string,
 ) {
   if (!userEmail) return message.headers.from;
@@ -296,8 +301,16 @@ export function participant(
   const sentByAccount =
     fromAddresses.length > 0 &&
     fromAddresses.every((address) => isSameEmailAddress(address, userEmail));
-  if (sentByAccount) return message.headers.to;
-  return message.headers.from;
+  if (!sentByAccount) return message.headers.from;
+  // Mail the account sent with an empty To still went to the copied people.
+  for (const header of [
+    message.headers.to,
+    message.headers.cc,
+    message.headers.bcc,
+  ]) {
+    if (header && extractEmailAddresses(header).length) return header;
+  }
+  return message.headers.to;
 }
 
 // Converts name and email to "Name <email@example.com>" or just "email@example.com" if no name
