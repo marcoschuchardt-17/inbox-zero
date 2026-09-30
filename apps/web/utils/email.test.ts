@@ -798,6 +798,24 @@ describe("email utils", () => {
         true,
       ],
       ["missing address", "", "user@acme.com", false],
+      [
+        "a colleague listed before an outside sender",
+        "Colleague <colleague@company.com>, Stranger <stranger@gmail.com>",
+        "user@company.com",
+        true,
+      ],
+      [
+        "an outside sender listed alone",
+        "Stranger <stranger@gmail.com>",
+        "user@company.com",
+        false,
+      ],
+      [
+        "two outside senders",
+        "Stranger <stranger@gmail.com>, Other <other@vendor.com>",
+        "user@company.com",
+        false,
+      ],
     ])("returns %s", (_caseName, left, right, expected) => {
       expect(isSameOrganization(left, right)).toBe(expected);
     });
