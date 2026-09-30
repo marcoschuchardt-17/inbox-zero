@@ -11,7 +11,11 @@ import type { EmailForLLM } from "@/utils/types";
 import type { EmailProvider } from "@/utils/email/types";
 import { getModel, type ModelType } from "@/utils/llms/model";
 import { createGenerateObject } from "@/utils/llms";
-import { extractEmailAddress, isSameOrganization } from "@/utils/email";
+import {
+  extractEmailAddress,
+  extractEmailAddresses,
+  isSameOrganization,
+} from "@/utils/email";
 import { isWhitelistedSender } from "@/utils/email/whitelist";
 import { hasPriorContactOrAssumeYes } from "@/utils/cold-email/has-prior-contact";
 import { decideColdEmail } from "@/utils/decision-model/cold-email";
@@ -84,21 +88,35 @@ export async function checkColdEmailGuards({
     | null = null;
 
   if (groupId) {
-    const normalizedFrom = extractEmailAddress(email.from) || email.from;
-    patternMatch = await prisma.groupItem.findFirst({
-      where: {
-        groupId,
-        type: GroupItemType.FROM,
-        value: normalizedFrom,
-      },
-      select: {
-        id: true,
-        type: true,
-        value: true,
-        exclude: true,
-        group: { select: { id: true, name: true } },
-      },
-    });
+    const addresses = extractEmailAddresses(email.from);
+    const sources =
+      addresses.length > 0
+        ? addresses
+        : [extractEmailAddress(email.from) || email.from];
+    let excludedMatch: typeof patternMatch = null;
+    for (const normalizedFrom of sources) {
+      const match = await prisma.groupItem.findFirst({
+        where: {
+          groupId,
+          type: GroupItemType.FROM,
+          value: normalizedFrom,
+        },
+        select: {
+          id: true,
+          type: true,
+          value: true,
+          exclude: true,
+          group: { select: { id: true, name: true } },
+        },
+      });
+      if (!match) continue;
+      if (!match.exclude) {
+        patternMatch = match;
+        break;
+      }
+      excludedMatch = excludedMatch ?? match;
+    }
+    patternMatch = patternMatch ?? excludedMatch;
   }
 
   if (patternMatch && !patternMatch.exclude) {
