@@ -458,7 +458,7 @@ function MessageHeader({
   const senderNameClassName = cn(
     "truncate text-sm",
     expanded
-      ? "max-w-40 shrink font-semibold text-foreground"
+      ? "shrink-0 font-semibold text-foreground"
       : "w-24 shrink-0 font-medium text-secondary-foreground sm:w-28",
   );
 
@@ -474,10 +474,7 @@ function MessageHeader({
         <Tooltip content="View public profile">
           <button
             aria-label={`View public profile for ${senderName}`}
-            className={cn(
-              "group/sender flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              expanded ? "min-w-0" : "shrink-0",
-            )}
+            className="group/sender flex shrink-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={(event) => {
               event.stopPropagation();
               onOpenSenderContext?.(message);
