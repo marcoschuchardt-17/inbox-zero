@@ -1167,6 +1167,50 @@ describe("createImapProvider", () => {
     mailboxState.trashSource = "";
   });
 
+  it("opens a conversation in the order of the date on the mail when that mail arrived later", async () => {
+    mailboxState.inboxMessages = [
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: sam@example.com",
+          "Subject: Written later",
+          "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+          "Message-ID: <written-later@example.com>",
+          "In-Reply-To: <written-earlier@example.com>",
+          "References: <written-earlier@example.com>",
+          "",
+          "This was written later.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 8,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T12:00:00.000Z",
+        source: [
+          "From: Sam <sam@example.com>",
+          "To: owner@example.com",
+          "Subject: Written earlier",
+          "Date: Tue, 01 Sep 2026 12:00:00 +0000",
+          "Message-ID: <written-earlier@example.com>",
+          "",
+          "This was written earlier.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const thread = await provider.getThread("<written-earlier@example.com>");
+
+    expect(thread.messages.map((message) => message.subject)).toEqual([
+      "Written earlier",
+      "Written later",
+    ]);
+    mailboxState.inboxMessages = [];
+  });
+
   it("leaves Papierkorb and Entwürfe out of the open conversation", async () => {
     const previousListed = mailboxState.listed;
     mailboxState.listed = [

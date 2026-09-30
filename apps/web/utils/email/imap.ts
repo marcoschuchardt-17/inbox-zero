@@ -3149,7 +3149,9 @@ function messagesForOpenThread(
     unique.push(message);
   }
   return unique.sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    (left, right) =>
+      messageShownTime(left) - messageShownTime(right) ||
+      new Date(left.date).getTime() - new Date(right.date).getTime(),
   );
 }
 
