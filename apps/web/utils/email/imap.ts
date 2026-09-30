@@ -109,12 +109,24 @@ export function createImapProvider(
     getSentMessages: async (maxResults = DEFAULT_PAGE_SIZE) =>
       fetchSentMessages({ config, logger, maxResults }),
     getSentMessageIds: async ({ maxResults, after, before, pageToken }) => {
-      const page = await fetchSentMessagePage({
-        config,
-        logger,
-        maxResults,
-        beforeSequence: pageOffset(pageToken) || undefined,
-      });
+      const page =
+        after || before
+          ? await fetchSentMessagesByDate({
+              config,
+              logger,
+              maxResults,
+              pageToken,
+              after,
+              // The dated mailbox read treats `before` as exclusive. One
+              // millisecond keeps a message stamped on that exact instant.
+              before: before ? new Date(before.getTime() + 1) : undefined,
+            })
+          : await fetchSentMessagePage({
+              config,
+              logger,
+              maxResults,
+              beforeSequence: pageOffset(pageToken) || undefined,
+            });
       const inRange = page.messages.filter((message) => {
         const sentAt = new Date(message.date);
         if (Number.isNaN(sentAt.getTime())) return false;
@@ -345,12 +357,23 @@ export function createImapProvider(
         });
       };
       if (query?.type === "sent") {
-        const page = await fetchSentMessagePage({
-          config,
-          logger,
-          maxResults,
-          beforeSequence: pageOffset(pageToken) || undefined,
-        });
+        const page =
+          query.after || query.before || query.isUnread
+            ? await fetchSentMessagesByDate({
+                config,
+                logger,
+                maxResults,
+                pageToken,
+                after: query.after,
+                before: query.before,
+                isUnread: query.isUnread,
+              })
+            : await fetchSentMessagePage({
+                config,
+                logger,
+                maxResults,
+                beforeSequence: pageOffset(pageToken) || undefined,
+              });
         messages = page.messages;
         nextPageToken = page.nextPageToken;
       } else if (mailbox) {
@@ -3195,6 +3218,51 @@ async function fetchSentMessages({
 }) {
   const page = await fetchSentMessagePage({ config, logger, maxResults });
   return page.messages;
+}
+
+async function fetchSentMessagesByDate({
+  config,
+  logger,
+  maxResults,
+  pageToken,
+  after,
+  before,
+  isUnread,
+}: {
+  config: ImapConfig;
+  logger: Logger;
+  maxResults: number;
+  pageToken?: string;
+  after?: Date;
+  before?: Date;
+  isUnread?: boolean;
+}) {
+  const preferred = await lookupRoleMailbox({ config, logger, role: "sent" });
+  const mailboxes = [
+    ...new Set(
+      [preferred, ...SENT_MAILBOXES].filter((mailbox): mailbox is string =>
+        Boolean(mailbox),
+      ),
+    ),
+  ];
+  for (const mailbox of mailboxes) {
+    try {
+      return await fetchMailboxMessagesByDate({
+        config,
+        logger,
+        mailbox,
+        maxResults,
+        pageToken,
+        after,
+        before,
+        isUnread,
+      });
+    } catch (error) {
+      if (isMissingImapMailbox(error)) continue;
+      throw error;
+    }
+  }
+  return { messages: [], nextPageToken: undefined };
 }
 
 async function fetchSentMessagePage({

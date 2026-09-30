@@ -174,11 +174,21 @@ vi.mock("imapflow", () => ({
       if (query?.since || query?.before) {
         const folderUids = mailboxState.folderDateUids[mailboxState.opened];
         if (folderUids) return folderUids;
-        return inboxMessagesForSearch()
+        const opened = sourcesForOpenedMailbox();
+        const pool = opened.length ? opened : inboxMessagesForSearch();
+        return pool
           .filter((message) => imapDateMatches(message, query))
           .map((message) => message.uid);
       }
       if (query?.seen === false) {
+        if (
+          mailboxState.opened === "Sent" &&
+          mailboxState.sentMessages.length
+        ) {
+          return mailboxState.sentMessages
+            .filter((message) => !message.flags.includes("\\Seen"))
+            .map((message) => message.uid);
+        }
         if (mailboxState.inboxMessages.length) {
           return mailboxState.inboxMessages
             .filter((message) => !message.flags.includes("\\Seen"))
@@ -2595,7 +2605,7 @@ describe("createImapProvider", () => {
       expect(first.messages).toEqual([
         { id: "Sent/2", threadId: "<newer-sent@example.com>" },
       ]);
-      expect(first.nextPageToken).toBe("2");
+      expect(first.nextPageToken).toBe("1");
 
       const second = await provider.getSentMessageIds({
         maxResults: 1,
@@ -2606,6 +2616,107 @@ describe("createImapProvider", () => {
         { id: "Sent/1", threadId: "<older-sent@example.com>" },
       ]);
       expect(second.nextPageToken).toBeUndefined();
+    } finally {
+      mailboxState.sentMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
+  it("returns older sent mail when newer mail is outside the date window", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.sentMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: old@example.com",
+          "Subject: Older sent note",
+          "Date: Tue, 01 Sep 2026 12:00:00 +0000",
+          "Message-ID: <older-sent@example.com>",
+          "",
+          "Older sent note.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-10-15T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: new@example.com",
+          "Subject: Newer sent note",
+          "Date: Thu, 15 Oct 2026 12:00:00 +0000",
+          "Message-ID: <newer-sent@example.com>",
+          "",
+          "Newer sent note.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const result = await provider.getSentMessageIds({
+        maxResults: 1,
+        after: new Date("2026-08-01T00:00:00.000Z"),
+        before: new Date("2026-09-30T00:00:00.000Z"),
+      });
+
+      expect(result.messages).toEqual([
+        { id: "Sent/1", threadId: "<older-sent@example.com>" },
+      ]);
+    } finally {
+      mailboxState.sentMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
+  it("returns unread sent mail when newer sent mail is already read", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.sentMessages = [
+      {
+        uid: 1,
+        flags: [],
+        internalDate: "2026-09-01T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: sam@example.com",
+          "Subject: Still unread sent",
+          "Date: Tue, 01 Sep 2026 12:00:00 +0000",
+          "Message-ID: <unread-sent@example.com>",
+          "",
+          "Still unread sent.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: sam@example.com",
+          "Subject: Already read sent",
+          "Date: Sun, 20 Sep 2026 12:00:00 +0000",
+          "Message-ID: <read-sent@example.com>",
+          "",
+          "Already read sent.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const result = await provider.getThreadsWithQuery({
+        maxResults: 1,
+        query: { type: "sent", isUnread: true },
+      });
+
+      expect(
+        result.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Still unread sent"]);
     } finally {
       mailboxState.sentMessages = [];
       mailboxState.exists = previousExists;
@@ -3908,6 +4019,9 @@ function sourcesForOpenedMailbox() {
         internalDate: "2026-09-28T13:00:00.000Z",
       },
     ];
+  }
+  if (mailboxState.opened === "Sent" && mailboxState.sentMessages.length) {
+    return mailboxState.sentMessages;
   }
   if (mailboxState.opened === "Sent" && mailboxState.sentSource) {
     return [
