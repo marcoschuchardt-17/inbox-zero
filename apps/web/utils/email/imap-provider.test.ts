@@ -2850,6 +2850,50 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("finds a reply-to address when that address is not in the message", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T15:00:00.000Z",
+        source: [
+          "From: News <news@example.com>",
+          "Reply-To: List Desk <list-reply@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Weekly digest",
+          "Date: Tue, 29 Sep 2026 15:00:00 +0000",
+          "Message-ID: <weekly-digest@example.com>",
+          "",
+          "The weekly note.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const byAddress = await provider.searchThreads({
+        query: "list-reply@example.com",
+        maxResults: 20,
+      });
+      const byName = await provider.searchThreads({
+        query: "List Desk",
+        maxResults: 20,
+      });
+
+      expect(
+        byAddress.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Weekly digest"]);
+      expect(
+        byName.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Weekly digest"]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("returns the search match with the newest written date when that mail arrived earlier", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 3;

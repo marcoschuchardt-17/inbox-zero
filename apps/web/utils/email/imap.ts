@@ -4460,6 +4460,7 @@ function imapMessageHaystack(message: ParsedImapMessage) {
     message.headers.to,
     message.headers.cc || "",
     message.headers.bcc || "",
+    message.headers["reply-to"] || "",
     ...(message.attachments ?? []).map((attachment) => attachment.filename),
     attachmentSearchText.get(message) || "",
     ...imapRowLabelIds(message.labelIds).flatMap((label) => [
