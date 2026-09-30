@@ -2792,6 +2792,64 @@ describe("createImapProvider", () => {
     }
   });
 
+  it("finds a word in a text file when that word is not in the message", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 1;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-29T12:00:00.000Z",
+        source: [
+          "From: Notes <notes@example.com>",
+          "To: inbox.imap@example.com",
+          "Subject: Filed scan",
+          "Date: Tue, 29 Sep 2026 12:00:00 +0000",
+          "Message-ID: <filed-scan@example.com>",
+          "MIME-Version: 1.0",
+          'Content-Type: multipart/mixed; boundary="bound"',
+          "",
+          "--bound",
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "See attached.",
+          "--bound",
+          "Content-Type: text/html; charset=utf-8",
+          'Content-Disposition: attachment; filename="scan.bin"',
+          "",
+          "<style>body { color: papayawhip }",
+          "<p>kontostand bleibt im anhang</p>",
+          "--bound--",
+          "",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const listed = await provider.getMessagesWithPagination({
+        maxResults: 5,
+      });
+      const found = await provider.searchThreads({
+        query: "kontostand",
+        maxResults: 20,
+      });
+      const styleOnly = await provider.searchThreads({
+        query: "papayawhip",
+        maxResults: 20,
+      });
+
+      expect(listed.messages[0]?.snippet).not.toContain("kontostand");
+      expect(
+        found.threads.map((thread) => thread.messages[0]?.subject),
+      ).toEqual(["Filed scan"]);
+      expect(styleOnly.threads).toEqual([]);
+    } finally {
+      mailboxState.inboxMessages = [];
+      mailboxState.exists = previousExists;
+    }
+  });
+
   it("returns the search match with the newest written date when that mail arrived earlier", async () => {
     const previousExists = mailboxState.exists;
     mailboxState.exists = 3;

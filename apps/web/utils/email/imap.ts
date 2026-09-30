@@ -1897,7 +1897,7 @@ async function parseImapMessage(
   const historyId = String(arrivedAt.getTime());
   const threadKey = imapThreadKey(parsed, subject, uid);
 
-  return {
+  const message = {
     id: imapMessageId(mailbox, uid),
     threadId: threadKey,
     historyId,
@@ -1938,6 +1938,8 @@ async function parseImapMessage(
     _attachments: includeAttachmentBodies ? attachments : [],
     _uid: uid,
   };
+  rememberAttachmentSearchText(message, attachments);
+  return message;
 }
 
 function headerValue(
@@ -4459,6 +4461,7 @@ function imapMessageHaystack(message: ParsedImapMessage) {
     message.headers.cc || "",
     message.headers.bcc || "",
     ...(message.attachments ?? []).map((attachment) => attachment.filename),
+    attachmentSearchText.get(message) || "",
     ...imapRowLabelIds(message.labelIds).flatMap((label) => [
       label,
       label.replace(/_/g, " "),
@@ -4466,6 +4469,42 @@ function imapMessageHaystack(message: ParsedImapMessage) {
   ]
     .join("\n")
     .toLowerCase();
+}
+
+// A text file can be large. Keep enough decoded text to match a search word
+// without copying the whole file onto the message the mailbox returns.
+const ATTACHMENT_SEARCH_TEXT_LIMIT = 200_000;
+const attachmentSearchText = new WeakMap<object, string>();
+
+function rememberAttachmentSearchText(
+  message: object,
+  attachments: { mimeType: string; content: Uint8Array }[],
+) {
+  const parts: string[] = [];
+  let remaining = ATTACHMENT_SEARCH_TEXT_LIMIT;
+  for (const attachment of attachments) {
+    if (remaining <= 0) break;
+    const text = searchableAttachmentText(attachment).slice(0, remaining);
+    if (!text.trim()) continue;
+    parts.push(text);
+    remaining -= text.length;
+  }
+  if (parts.length) attachmentSearchText.set(message, parts.join("\n"));
+}
+
+function searchableAttachmentText(attachment: {
+  mimeType: string;
+  content: Uint8Array;
+}) {
+  if (!attachment.content.byteLength) return "";
+  const type = attachment.mimeType.toLowerCase().split(";")[0]?.trim() ?? "";
+  if (!type.startsWith("text/")) return "";
+  const bytes =
+    attachment.content.byteLength > ATTACHMENT_SEARCH_TEXT_LIMIT
+      ? attachment.content.subarray(0, ATTACHMENT_SEARCH_TEXT_LIMIT)
+      : attachment.content;
+  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  return type === "text/html" ? htmlSnippet(decoded) : decoded;
 }
 
 async function fetchSearchableMailboxMessages({
