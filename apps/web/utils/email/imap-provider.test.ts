@@ -144,6 +144,14 @@ vi.mock("imapflow", () => ({
           .filter((message) => imapDateMatches(message, query))
           .map((message) => message.uid);
       }
+      if (query?.seen === false) {
+        if (mailboxState.inboxMessages.length) {
+          return mailboxState.inboxMessages
+            .filter((message) => !message.flags.includes("\\Seen"))
+            .map((message) => message.uid);
+        }
+        return mailboxState.unseen;
+      }
       if (query?.text) {
         const needle = query.text.toLowerCase();
         return sourcesForOpenedMailbox()
@@ -2776,6 +2784,44 @@ describe("createImapProvider", () => {
       ["Early September"],
     );
     expect(second.nextPageToken).toBeUndefined();
+    mailboxState.inboxMessages = [];
+    mailboxState.exists = 1;
+  });
+
+  it("returns unread inbox mail when newer mail is already read", async () => {
+    mailboxState.exists = 2;
+    mailboxState.inboxMessages = [
+      {
+        uid: 1,
+        flags: [],
+        internalDate: "2026-09-02T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Still unread",
+          "<still-unread@example.com>",
+          "Wed, 02 Sep 2026 12:00:00 +0000",
+        ),
+      },
+      {
+        uid: 2,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-20T12:00:00.000Z",
+        source: datedInboxMessage(
+          "Already read",
+          "<already-read@example.com>",
+          "Sun, 20 Sep 2026 12:00:00 +0000",
+        ),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getThreadsWithQuery({
+      maxResults: 1,
+      query: { type: "inbox", isUnread: true },
+    });
+
+    expect(result.threads.map((thread) => thread.messages[0]?.subject)).toEqual(
+      ["Still unread"],
+    );
     mailboxState.inboxMessages = [];
     mailboxState.exists = 1;
   });

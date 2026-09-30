@@ -324,7 +324,7 @@ export function createImapProvider(
         };
       }
       const loadMailbox = async () => {
-        if (query?.after || query?.before) {
+        if (query?.after || query?.before || query?.isUnread) {
           return fetchMailboxMessagesByDate({
             config,
             logger,
