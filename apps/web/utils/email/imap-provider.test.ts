@@ -121,7 +121,17 @@ vi.mock("imapflow", () => ({
       text?: string;
       header?: Record<string, string>;
     }) {
-      if (query?.from) return mailboxState.fromUids;
+      if (query?.from) {
+        if (
+          (query.since || query.before) &&
+          mailboxState.inboxMessages.length
+        ) {
+          return mailboxState.inboxMessages
+            .filter((message) => imapDateMatches(message, query))
+            .map((message) => message.uid);
+        }
+        return mailboxState.fromUids;
+      }
       if (query?.to) {
         if (mailboxState.opened !== "Sent") return [];
         if (mailboxState.sentMessages.length) {
@@ -3845,6 +3855,59 @@ describe("createImapProvider", () => {
     expect(matched.messages[0]?.headers.from).toContain("sam@example.com");
     expect(differentSender.messages).toEqual([]);
     expect(olderThanTheMessage.messages).toEqual([]);
+    mailboxState.fromUids = [];
+  });
+
+  it("returns an older message from a sender when newer mail is outside the date window", async () => {
+    const fromSam = (
+      uid: number,
+      subject: string,
+      date: string,
+      internalDate: string,
+    ) => ({
+      uid,
+      flags: ["\\Seen"],
+      internalDate,
+      source: [
+        "From: Sam <sam@example.com>",
+        "To: owner@example.com",
+        `Subject: ${subject}`,
+        `Date: ${date}`,
+        `Message-ID: <sender-${uid}@example.com>`,
+        "",
+        subject,
+      ].join("\r\n"),
+    });
+    mailboxState.inboxMessages = [
+      fromSam(
+        1,
+        "Older note",
+        "Tue, 01 Sep 2026 12:00:00 +0000",
+        "2026-09-01T12:00:00.000Z",
+      ),
+      ...Array.from({ length: 50 }, (_, index) =>
+        fromSam(
+          index + 2,
+          "Newer note",
+          "Thu, 15 Oct 2026 12:00:00 +0000",
+          "2026-10-15T12:00:00.000Z",
+        ),
+      ),
+    ];
+    mailboxState.fromUids = mailboxState.inboxMessages.map(
+      (message) => message.uid,
+    );
+    const provider = createImapProvider(imapConfig(), logger);
+
+    const result = await provider.getMessagesFromSender({
+      senderEmail: "sam@example.com",
+      before: new Date("2026-09-30T00:00:00.000Z"),
+    });
+
+    expect(result.messages.map((message) => message.subject)).toEqual([
+      "Older note",
+    ]);
+    mailboxState.inboxMessages = [];
     mailboxState.fromUids = [];
   });
 

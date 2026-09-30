@@ -3377,8 +3377,13 @@ async function findImapMessagesFromSender({
         });
       if (!lock) continue;
       try {
+        const window = imapSearchWindow(after, before);
         const searched = await client.search(
-          { from: senderEmail },
+          {
+            from: senderEmail,
+            ...(window.since ? { since: window.since } : {}),
+            ...(window.before ? { before: window.before } : {}),
+          },
           { uid: true },
         );
         const uids = Array.isArray(searched) ? searched : [];
