@@ -1177,6 +1177,88 @@ describe("createImapProvider", () => {
     mailboxState.archiveMessages = [];
   });
 
+  it("lists both emails that reuse one message id", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.archiveMessages = reusedMessageIdCopies();
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const listed = await provider.getThreadsWithQuery({
+        query: { type: "archive" },
+      });
+
+      expect(
+        listed.threads.map((thread) => thread.messages[0]?.textPlain?.trim()),
+      ).toEqual([
+        "Bitte begleiche die Rechnung.",
+        "Bitte die Rechnung begleichen.",
+      ]);
+      expect(listed.threads.map((thread) => thread.id)).toEqual([
+        "<rechnung-2026-09@example.com>",
+        "<rechnung-2026-09@example.com>",
+      ]);
+    } finally {
+      mailboxState.exists = previousExists;
+      mailboxState.archiveMessages = [];
+    }
+  });
+
+  it("keeps a reply with its own message id in one conversation", async () => {
+    const previousExists = mailboxState.exists;
+    mailboxState.exists = 2;
+    mailboxState.archiveMessages = [
+      {
+        uid: 3,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T16:30:00.000Z",
+        source: [
+          "From: Billing <billing@example.com>",
+          "To: owner@example.com",
+          "Subject: Rechnung 2026-09",
+          "Date: Mon, 28 Sep 2026 16:30:00 +0000",
+          "Message-ID: <rechnung-parent@example.com>",
+          "",
+          "Bitte die Rechnung begleichen.",
+        ].join("\r\n"),
+      },
+      {
+        uid: 7,
+        flags: ["\\Seen"],
+        internalDate: "2026-09-28T19:40:00.000Z",
+        source: [
+          "From: Owner <owner@example.com>",
+          "To: Billing <billing@example.com>",
+          "Subject: Re: Rechnung 2026-09",
+          "Date: Mon, 28 Sep 2026 19:40:00 +0000",
+          "Message-ID: <rechnung-reply@example.com>",
+          "In-Reply-To: <rechnung-parent@example.com>",
+          "References: <rechnung-parent@example.com>",
+          "",
+          "Ich begleiche die Rechnung.",
+        ].join("\r\n"),
+      },
+    ];
+    const provider = createImapProvider(imapConfig(), logger);
+
+    try {
+      const listed = await provider.getThreadsWithQuery({
+        query: { type: "archive" },
+      });
+
+      expect(listed.threads).toHaveLength(1);
+      expect(
+        listed.threads[0]?.messages.map((message) => message.textPlain?.trim()),
+      ).toEqual([
+        "Bitte die Rechnung begleichen.",
+        "Ich begleiche die Rechnung.",
+      ]);
+    } finally {
+      mailboxState.exists = previousExists;
+      mailboxState.archiveMessages = [];
+    }
+  });
+
   it("shows one copy when the same email is stored in two folders", async () => {
     const source = [
       "From: Sam <sam@example.com>",
@@ -5946,6 +6028,39 @@ function savedDraft() {
     "",
     "Draft reply.",
   ].join("\r\n");
+}
+
+function reusedMessageIdCopies() {
+  return [
+    {
+      uid: 3,
+      flags: [],
+      internalDate: "2026-09-28T16:30:00.000Z",
+      source: [
+        "From: billing@example.com",
+        "To: owner@example.com",
+        "Subject: Rechnung 2026-09",
+        "Date: Mon, 28 Sep 2026 16:30:00 +0000",
+        "Message-ID: <rechnung-2026-09@example.com>",
+        "",
+        "Bitte die Rechnung begleichen.",
+      ].join("\r\n"),
+    },
+    {
+      uid: 7,
+      flags: ["\\Seen", "FYI"],
+      internalDate: "2026-09-28T19:40:00.000Z",
+      source: [
+        "From: Billing <billing@example.com>",
+        "To: owner@example.com",
+        "Subject: Rechnung 2026-09",
+        "Date: Mon, 28 Sep 2026 19:40:00 +0000",
+        "Message-ID: <rechnung-2026-09@example.com>",
+        "",
+        "Bitte begleiche die Rechnung.",
+      ].join("\r\n"),
+    },
+  ];
 }
 
 function datedInboxMessage(subject: string, messageId: string, date: string) {

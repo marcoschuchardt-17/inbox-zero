@@ -100,7 +100,7 @@ export function createImapProvider(
         .includes(config.ownerEmail.toLowerCase()),
     getThreads: async () => {
       const messages = await fetchMailboxMessages({ config, logger });
-      return groupToThreads(messages);
+      return threadsForList(messages);
     },
     getInboxMessages: async (maxResults = DEFAULT_PAGE_SIZE) => {
       const messages = await fetchMailboxMessages({
@@ -345,7 +345,7 @@ export function createImapProvider(
           return true;
         });
         return {
-          threads: groupToThreads(matched.slice(offset, offset + maxResults)),
+          threads: threadsForList(matched.slice(offset, offset + maxResults)),
           nextPageToken:
             offset + maxResults < matched.length
               ? String(offset + maxResults)
@@ -434,7 +434,7 @@ export function createImapProvider(
         return true;
       });
       return {
-        threads: groupToThreads(filtered).slice(0, maxResults),
+        threads: threadsForList(filtered).slice(0, maxResults),
         nextPageToken,
       };
     },
@@ -2087,11 +2087,42 @@ function htmlSnippet(htmlBody: string) {
 }
 
 function threadsInListOrder(messages: ParsedMessage[]) {
-  return groupToThreads(messages).sort(
+  return threadsForList(messages).sort(
     (left, right) =>
       listMessageShownTime(right.messages) -
       listMessageShownTime(left.messages),
   );
+}
+
+function threadsForList(messages: ParsedMessage[]) {
+  return groupToThreads(messages)
+    .flatMap(separateReusedMessageIdCopies)
+    .sort((left, right) => {
+      const leftMessage = left.messages.at(-1);
+      const rightMessage = right.messages.at(-1);
+      return (
+        (rightMessage ? messageShownTime(rightMessage) : 0) -
+        (leftMessage ? messageShownTime(leftMessage) : 0)
+      );
+    });
+}
+
+function separateReusedMessageIdCopies(thread: EmailThread): EmailThread[] {
+  if (thread.messages.length < 2) return [thread];
+  const messageIds = thread.messages.map(
+    (message) => message.headers["message-id"]?.trim() || "",
+  );
+  const sharedId = messageIds[0];
+  if (!sharedId || messageIds.some((id) => id !== sharedId)) return [thread];
+  // A reply that repeats the parent id still belongs to that conversation.
+  if (
+    thread.messages.some(
+      (message) => message.headers["in-reply-to"] || message.headers.references,
+    )
+  ) {
+    return [thread];
+  }
+  return thread.messages.map((message) => toThread([message]));
 }
 
 function listMessageShownTime(messages: ParsedMessage[]) {
