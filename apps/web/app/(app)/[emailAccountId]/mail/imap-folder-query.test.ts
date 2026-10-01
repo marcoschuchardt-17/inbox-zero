@@ -3,6 +3,7 @@ import {
   imapListCursor,
   imapMailboxQuery,
   imapMailboxViewFromQuery,
+  imapSearchInputValue,
 } from "./imap-folder-query";
 
 describe("imapMailboxViewFromQuery", () => {
@@ -53,5 +54,24 @@ describe("imapMailboxQuery", () => {
       type: null,
       folderId: "Junk",
     });
+  });
+});
+
+describe("imapSearchInputValue", () => {
+  it("keeps a typed draft only while the address still has that query", () => {
+    expect(imapSearchInputValue("", null)).toBe("");
+    expect(imapSearchInputValue("please keep", null)).toBe("please keep");
+    expect(
+      imapSearchInputValue("", {
+        committedQuery: "",
+        text: "please keep",
+      }),
+    ).toBe("please keep");
+    expect(
+      imapSearchInputValue("", {
+        committedQuery: "please keep",
+        text: "please keep",
+      }),
+    ).toBe("");
   });
 });

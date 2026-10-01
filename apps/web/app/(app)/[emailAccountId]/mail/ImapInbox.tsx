@@ -51,6 +51,7 @@ import {
   imapListCursor,
   imapMailboxQuery,
   imapMailboxViewFromQuery,
+  imapSearchInputValue,
 } from "@/app/(app)/[emailAccountId]/mail/imap-folder-query";
 
 const folders = [
@@ -90,8 +91,13 @@ export function ImapInbox() {
     mailboxQuery.type,
     mailboxQuery.folderId,
   );
-  const [search, setSearch] = useState(queryParam ?? "");
-  const submittedSearch = queryParam?.trim() ?? "";
+  const committedSearch = queryParam ?? "";
+  const [searchDraft, setSearchDraft] = useState<{
+    committedQuery: string;
+    text: string;
+  } | null>(null);
+  const search = imapSearchInputValue(committedSearch, searchDraft);
+  const submittedSearch = committedSearch.trim();
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
   const { data: labelList, mutate: mutateLabels } =
     useSWR<LabelsResponse>("/api/labels");
@@ -149,7 +155,7 @@ export function ImapInbox() {
 
   function openFolder(next: string) {
     setArchiveError("");
-    setSearch("");
+    setSearchDraft({ committedQuery: committedSearch, text: "" });
     const nextQuery = imapMailboxQuery(next);
     setMailboxQuery({
       q: null,
@@ -422,7 +428,7 @@ export function ImapInbox() {
             event.preventDefault();
             setArchiveError("");
             const next = search.trim();
-            setSearch(next);
+            setSearchDraft({ committedQuery: committedSearch, text: next });
             setMailboxQuery({ q: next || null }).catch(() => undefined);
           }}
         >
@@ -430,7 +436,12 @@ export function ImapInbox() {
             ref={searchInputRef}
             aria-label="Search mail"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) =>
+              setSearchDraft({
+                committedQuery: committedSearch,
+                text: event.target.value,
+              })
+            }
             placeholder="Search mail"
             className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
           />
@@ -443,7 +454,7 @@ export function ImapInbox() {
               variant="outline"
               size="sm"
               onClick={() => {
-                setSearch("");
+                setSearchDraft({ committedQuery: committedSearch, text: "" });
                 setArchiveError("");
                 setMailboxQuery({ q: null }).catch(() => undefined);
               }}

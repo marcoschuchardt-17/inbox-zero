@@ -22,6 +22,16 @@ export function imapListCursor(index: number, count: number, delta: number) {
   return next;
 }
 
+// The box shows what the user is typing for the query currently in the address.
+// A sidebar link can clear that query, and the old draft must not stay behind.
+export function imapSearchInputValue(
+  committedQuery: string,
+  draft: { committedQuery: string; text: string } | null,
+) {
+  if (draft?.committedQuery === committedQuery) return draft.text;
+  return committedQuery;
+}
+
 export function imapMailboxQuery(folder: string) {
   if (folder.startsWith("mailbox:")) {
     return { type: null, folderId: folder.slice("mailbox:".length) };
