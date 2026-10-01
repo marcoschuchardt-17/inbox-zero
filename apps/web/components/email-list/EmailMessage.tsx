@@ -42,6 +42,7 @@ import { useAccount } from "@/providers/EmailAccountProvider";
 import { shouldCloseConversationAfterDraftDiscard } from "@/utils/email/discarded-thread";
 import { storedDraftAttachmentRefs } from "@/utils/email/draft-update-attachments";
 import { normalizeContentId } from "@/utils/email/inline-images";
+import { composeRequestReopens } from "@/hooks/useDisplayedEmail";
 import { buildReplyAllRecipients, formatCcList } from "@/utils/email/reply-all";
 import { formatReplySubject } from "@/utils/email/subject";
 import { env } from "@/env";
@@ -83,6 +84,7 @@ export function EmailMessage({
   sentMessageOpen,
   replyAll = false,
   composeRequest = 0,
+  onOpenedComposeDismissed,
 }: {
   message: ThreadMessage;
   bodyAvailable?: boolean;
@@ -107,6 +109,7 @@ export function EmailMessage({
   sentMessageOpen?: SentMessageOpenState;
   replyAll?: boolean;
   composeRequest?: number;
+  onOpenedComposeDismissed?: () => void;
 }) {
   const { emailAccountId } = useAccount();
   // `null` follows `defaultComposeMode`, which the reader's Reply button flips
@@ -118,8 +121,10 @@ export function EmailMessage({
   const [seenComposeRequest, setSeenComposeRequest] = useState(composeRequest);
   if (composeRequest !== seenComposeRequest) {
     setSeenComposeRequest(composeRequest);
-    setPreferSender(false);
-    setComposeOverride(null);
+    if (composeRequestReopens(seenComposeRequest, composeRequest)) {
+      setPreferSender(false);
+      setComposeOverride(null);
+    }
   }
   const includeEveryone = replyAll && !preferSender;
   const composeMode = resolveComposeMode(composeOverride, defaultComposeMode);
@@ -156,7 +161,8 @@ export function EmailMessage({
 
   const onCloseCompose = useCallback(() => {
     setComposeOverride("closed");
-  }, []);
+    onOpenedComposeDismissed?.();
+  }, [onOpenedComposeDismissed]);
   const [composerKey, setComposerKey] = useState(0);
   const undoSendSessionRef = useRef<ComposeSession | null>(null);
 

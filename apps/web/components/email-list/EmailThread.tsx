@@ -19,7 +19,10 @@ import {
 import { internalDateToDate } from "@/utils/date";
 import { GmailLabel } from "@/utils/gmail/label";
 import { useSentMessageOpens } from "@/hooks/useSentMessageOpens";
-import { autoOpenMessageId } from "@/hooks/useDisplayedEmail";
+import {
+  autoOpenMessageId,
+  useDisplayedEmail,
+} from "@/hooks/useDisplayedEmail";
 
 export function EmailThread({
   messages,
@@ -65,6 +68,11 @@ export function EmailThread({
   }) => ReactNode;
 }) {
   const { emailAccountId } = useAccount();
+  const {
+    autoOpenForwardForMessageId: urlForwardId,
+    autoOpenReplyForMessageId: urlReplyId,
+    dismissOpenedCompose,
+  } = useDisplayedEmail();
   const threadId = messages[0]?.threadId ?? "";
   const { drafts: localDrafts } = useReplyDrafts(emailAccountId, threadId);
   const { data: sentMessageOpens } = useSentMessageOpens(threadId || null);
@@ -272,6 +280,11 @@ export function EmailThread({
                   autoOpenReplyAll && autoOpenReplyForMessageId === message.id
                 }
                 composeRequest={composeRequest}
+                onOpenedComposeDismissed={
+                  urlReplyId === message.id || urlForwardId === message.id
+                    ? dismissOpenedCompose
+                    : undefined
+                }
                 draftMessages={draftMessages}
                 onConversationGone={onConversationGone}
                 expanded={expanded(

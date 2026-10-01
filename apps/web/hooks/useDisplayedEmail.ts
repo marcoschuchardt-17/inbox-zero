@@ -31,11 +31,17 @@ export const useDisplayedEmail = () => {
     ) => {
       setAutoOpenReplyForMessageId(options?.autoOpenReplyForMessageId || null);
       setAutoOpenReplyAll(options?.replyAll ? true : null);
-      if (options?.autoOpenReplyForMessageId) {
-        setComposeRequest((current) => (current ?? 0) + 1);
-      } else if (!options) {
-        setComposeRequest(null);
-      }
+      // A forward has to count too. Otherwise a reply the user already closed
+      // stays closed, and the forward never appears.
+      setComposeRequest((current) =>
+        nextComposeRequest(
+          current ?? 0,
+          Boolean(
+            options?.autoOpenReplyForMessageId ||
+              options?.autoOpenForwardForMessageId,
+          ),
+        ),
+      );
       setAutoOpenForwardForMessageId(
         options?.autoOpenForwardForMessageId || null,
       );
@@ -53,10 +59,23 @@ export const useDisplayedEmail = () => {
     ],
   );
 
+  const dismissOpenedCompose = useCallback(() => {
+    setAutoOpenReplyForMessageId(null);
+    setAutoOpenReplyAll(null);
+    setAutoOpenForwardForMessageId(null);
+    setComposeRequest(null);
+  }, [
+    setAutoOpenForwardForMessageId,
+    setAutoOpenReplyAll,
+    setAutoOpenReplyForMessageId,
+    setComposeRequest,
+  ]);
+
   return {
     threadId,
     messageId,
     showEmail,
+    dismissOpenedCompose,
     showReplyButton,
     autoOpenForwardForMessageId,
     autoOpenReplyForMessageId,
@@ -72,4 +91,16 @@ export function autoOpenMessageId(
   replyId?: string | null,
 ) {
   return forwardId || replyId || null;
+}
+
+// Opening a reply or a forward asks for a new composer. Dismissing one removes
+// the request so a reload does not open it again.
+export function nextComposeRequest(current: number, opening: boolean) {
+  if (!opening) return null;
+  return current + 1;
+}
+
+// Clearing the request must not undo a composer the user just closed.
+export function composeRequestReopens(previous: number, next: number) {
+  return next > previous;
 }
