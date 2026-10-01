@@ -22,7 +22,7 @@ import { LoadingContent } from "@/components/LoadingContent";
 import { getSWRFetchErrorMessage } from "@/providers/swr-error";
 import { Button } from "@/components/ui/button";
 import type { EmailLabels } from "@/providers/email-label-types";
-import { extractEmailAddress, extractNameFromEmail } from "@/utils/email";
+import { getMessageSenderProfile } from "@/app/(app)/[emailAccountId]/mail/thread-participants";
 
 const SenderContextPanel = dynamic(
   () =>
@@ -78,6 +78,8 @@ export type ThreadReaderProps = {
    * a message that already has an AI draft.
    */
   autoOpenReplyForMessageId?: string;
+  autoOpenReplyAll?: boolean;
+  composeRequest?: number;
   autoOpenForwardForMessageId?: string;
   /** The ⋯ dropdown, i.e. `ThreadActionsMenu`, composed by the shell. */
   menu?: ReactNode;
@@ -105,6 +107,8 @@ export function ThreadReader({
   refetch,
   onSendSuccess,
   autoOpenReplyForMessageId,
+  autoOpenReplyAll,
+  composeRequest,
   autoOpenForwardForMessageId,
   menu,
   renderMessageMenu,
@@ -216,18 +220,19 @@ export function ThreadReader({
           renderMessageMenu={renderMessageMenu}
           enableMessageNavigation={enableMessageNavigation}
           autoOpenReplyForMessageId={autoOpenReplyForMessageId}
+          autoOpenReplyAll={autoOpenReplyAll}
+          composeRequest={composeRequest}
           autoOpenForwardForMessageId={autoOpenForwardForMessageId}
           key={threadId}
           messages={messages}
           missingBodyIds={localAvailability?.missingBodyIds}
           onMarkDone={onArchive}
           onOpenSenderContext={(message) => {
-            const senderEmail = extractEmailAddress(message.headers.from);
+            const profile = getMessageSenderProfile(message.headers.from);
             setSenderContext({
               messageId: message.id,
-              senderEmail,
-              senderName:
-                extractNameFromEmail(message.headers.from) || senderEmail,
+              senderEmail: profile.senderEmail,
+              senderName: profile.senderName || profile.senderEmail,
             });
           }}
           refetch={refetch}

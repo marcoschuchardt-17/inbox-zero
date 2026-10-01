@@ -1,13 +1,18 @@
-import { load } from "cheerio";
+import { load, type CheerioAPI } from "cheerio";
+import type { AnyNode } from "domhandler";
+import { textStartsWithForwardedMessage } from "@/utils/email/forwarded-quote";
 import type { ParsedMessage } from "@/utils/types";
 import { convertEmailHtmlToText, parseReply } from "@/utils/mail";
 
 export function parseMessageReply(message: ParsedMessage): ParsedMessage {
   const parsedTextPlain = parseReply(message.textPlain || "").trim();
-  const parsedTextHtml = message.textHtml
+  const strippedHtml = message.textHtml
+    ? stripQuotedHtmlContent(message.textHtml).trim()
+    : "";
+  const parsedHtmlText = strippedHtml
     ? parseReply(
         convertEmailHtmlToText({
-          htmlText: stripQuotedHtmlContent(message.textHtml),
+          htmlText: strippedHtml,
           includeLinks: false,
         }),
       ).trim()
@@ -15,8 +20,8 @@ export function parseMessageReply(message: ParsedMessage): ParsedMessage {
 
   return {
     ...message,
-    textPlain: parsedTextPlain || parsedTextHtml,
-    textHtml: parsedTextHtml,
+    textPlain: parsedTextPlain || parsedHtmlText,
+    textHtml: strippedHtml,
   };
 }
 
@@ -30,7 +35,18 @@ export function stripQuotedHtmlContent(html: string): string {
       ".gmail_attr",
       "blockquote[type='cite']",
     ].join(", "),
-  ).remove();
+  )
+    .filter((_, element) => !isForwardedQuote($, element))
+    .remove();
 
   return $.root().html() || html;
+}
+
+// A forward is the message. A reply quote is history the thread already shows.
+function isForwardedQuote($: CheerioAPI, element: AnyNode) {
+  const candidates = [element, ...$(element).parents().toArray()];
+  return candidates.some((node) => {
+    if (node.type !== "tag") return false;
+    return textStartsWithForwardedMessage($(node).text());
+  });
 }

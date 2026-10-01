@@ -8,6 +8,7 @@ import {
   extractNameFromEmail,
   isSameEmailAddress,
   participant,
+  splitRecipientList,
 } from "@/utils/email";
 import { getPublicContactContext } from "@/utils/ai/public-contact-context";
 import type { EmailProvider } from "@/utils/email/types";
@@ -52,9 +53,9 @@ async function getData({
   ]);
   if (!emailAccount) throw new SafeError("Email account not found");
 
-  const sender = participant(message, userEmail);
-  const email = extractEmailAddress(sender);
-  const name = extractNameFromEmail(sender);
+  const sender = researchedSender(participant(message, userEmail), userEmail);
+  const email = sender.email;
+  const name = sender.name;
   if (!email || isSameEmailAddress(email, userEmail)) {
     return { status: "unavailable", reason: "not_found" } as const;
   }
@@ -64,4 +65,18 @@ async function getData({
     name: name === email ? undefined : name,
     emailAccount,
   });
+}
+
+function researchedSender(from: string, userEmail: string) {
+  const people = splitRecipientList(from);
+  const chosen =
+    people.find(
+      (person) => !isSameEmailAddress(extractEmailAddress(person), userEmail),
+    ) ||
+    people[0] ||
+    from;
+  return {
+    email: extractEmailAddress(chosen),
+    name: extractNameFromEmail(chosen),
+  };
 }

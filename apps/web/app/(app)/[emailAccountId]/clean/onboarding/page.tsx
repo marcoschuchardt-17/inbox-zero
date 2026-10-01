@@ -49,7 +49,7 @@ export default async function CleanPage(props: {
     provider: emailAccount.account.provider,
     logger: createScopedLogger("clean-onboarding").with({ emailAccountId }),
   });
-  const { unhandledCount } = await getUnhandledCount(emailProvider);
+  const { unhandledCount, type } = await getUnhandledCount(emailProvider);
 
   const step = Number.parseInt(searchParams.step || "") || CleanStep.INTRO;
 
@@ -69,18 +69,14 @@ export default async function CleanPage(props: {
           <ConfirmationStep
             showFooter={false}
             action={searchParams.action ?? CleanAction.ARCHIVE}
-            timeRange={
-              searchParams.timeRange
-                ? Number.parseInt(searchParams.timeRange)
-                : 7
-            }
+            timeRange={timeRangeFromQuery(searchParams.timeRange)}
             instructions={searchParams.instructions}
             skips={{
-              reply: searchParams.skipReply === "true",
-              starred: searchParams.skipStarred === "true",
-              calendar: searchParams.skipCalendar === "true",
-              receipt: searchParams.skipReceipt === "true",
-              attachment: searchParams.skipAttachment === "true",
+              reply: flagFromQuery(searchParams.skipReply, true),
+              starred: flagFromQuery(searchParams.skipStarred, true),
+              calendar: flagFromQuery(searchParams.skipCalendar, true),
+              receipt: flagFromQuery(searchParams.skipReceipt, false),
+              attachment: flagFromQuery(searchParams.skipAttachment, false),
             }}
             reuseSettings={false}
           />
@@ -89,7 +85,11 @@ export default async function CleanPage(props: {
       // first / default step
       default:
         return (
-          <IntroStep unhandledCount={unhandledCount} cleanAction={"ARCHIVE"} />
+          <IntroStep
+            unhandledCount={unhandledCount}
+            cleanAction={"ARCHIVE"}
+            countType={type}
+          />
         );
     }
   };
@@ -110,4 +110,15 @@ export default async function CleanPage(props: {
       </Card>
     </div>
   );
+}
+
+function timeRangeFromQuery(value: string | undefined) {
+  if (value == null || value === "") return 7;
+  const parsed = Number.parseInt(value);
+  return Number.isNaN(parsed) ? 7 : parsed;
+}
+
+function flagFromQuery(value: string | undefined, fallback: boolean) {
+  if (value == null) return fallback;
+  return value === "true";
 }

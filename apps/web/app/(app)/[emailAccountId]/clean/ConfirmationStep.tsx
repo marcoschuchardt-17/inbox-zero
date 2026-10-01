@@ -12,6 +12,7 @@ import { CleanAction } from "@/generated/prisma/enums";
 import { PREVIEW_RUN_COUNT } from "@/app/(app)/[emailAccountId]/clean/consts";
 import { HistoryIcon, SettingsIcon } from "lucide-react";
 import { useAccount } from "@/providers/EmailAccountProvider";
+import { isImapProvider } from "@/utils/email/provider-types";
 import { prefixPath } from "@/utils/path";
 
 export function ConfirmationStep({
@@ -36,7 +37,8 @@ export function ConfirmationStep({
   reuseSettings: boolean;
 }) {
   const router = useRouter();
-  const { emailAccountId } = useAccount();
+  const { emailAccountId, provider } = useAccount();
+  const imap = isImapProvider(provider);
 
   const handleStartCleaning = async () => {
     const result = await cleanInboxAction(emailAccountId, {
@@ -88,10 +90,16 @@ export function ConfirmationStep({
         </li> */}
         <li>
           {action === CleanAction.ARCHIVE ? (
-            <>
-              Archived emails will be labeled{" "}
-              <Badge color="green">Archived</Badge> in Gmail.
-            </>
+            imap ? (
+              "Newsletters move to the Archive folder. Other mail stays in the inbox."
+            ) : (
+              <>
+                Archived emails will be labeled{" "}
+                <Badge color="green">Archived</Badge> in Gmail.
+              </>
+            )
+          ) : imap ? (
+            "Newsletters are marked as read. Other mail stays unread."
           ) : (
             <>
               Emails marked as read will be labeled{" "}

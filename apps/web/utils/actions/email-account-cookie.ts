@@ -1,13 +1,11 @@
 "use server";
 
 import { z } from "zod";
-import { cookies } from "next/headers";
 import prisma from "@/utils/prisma";
 import {
-  LAST_EMAIL_ACCOUNT_COOKIE,
-  type LastEmailAccountCookieValue,
-} from "@/utils/cookies";
-import { clearLastEmailAccountCookie } from "@/utils/cookies.server";
+  clearLastEmailAccountCookie,
+  setLastEmailAccountCookie,
+} from "@/utils/cookies.server";
 import { actionClientUser } from "@/utils/actions/safe-action";
 
 /**
@@ -24,20 +22,9 @@ export const setLastEmailAccountAction = actionClientUser
     });
     if (!emailAccount) return;
 
-    const cookieStore = await cookies();
-
-    const cookieValue: LastEmailAccountCookieValue = {
+    await setLastEmailAccountCookie({
       userId,
       emailAccountId: emailAccount.id,
-    };
-    const value = JSON.stringify(cookieValue);
-
-    cookieStore.set(LAST_EMAIL_ACCOUNT_COOKIE, value, {
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365, // 1 year
-      sameSite: "lax",
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
     });
   });
 

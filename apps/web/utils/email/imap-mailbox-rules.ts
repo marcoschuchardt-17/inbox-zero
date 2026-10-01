@@ -1,5 +1,6 @@
-import { ActionType } from "@/generated/prisma/enums";
+import { ActionType, NewsletterStatus } from "@/generated/prisma/enums";
 import { matchesStaticRule } from "@/utils/ai/choose-rule/match-rules";
+import { extractEmailAddresses } from "@/utils/email";
 import { imapKeyword } from "@/utils/email/imap-flags";
 import type { EmailProvider } from "@/utils/email/types";
 import type { Logger } from "@/utils/logger";
@@ -161,8 +162,167 @@ export async function labelImapMessagesWithStaticRules({
   return labeled;
 }
 
+const STATIC_MAILBOX_ACTIONS = [
+  ActionType.ARCHIVE,
+  ActionType.MARK_READ,
+  ActionType.STAR,
+  ActionType.MARK_SPAM,
+  ActionType.MOVE_FOLDER,
+] as const;
+
+export async function applyImapStaticMailboxActions({
+  emailAccountId,
+  messages,
+  provider,
+  logger,
+}: {
+  emailAccountId: string;
+  messages: ParsedMessage[];
+  provider: EmailProvider;
+  logger: Logger;
+}) {
+  const rules = await prisma.rule.findMany({
+    where: {
+      emailAccountId,
+      enabled: true,
+      instructions: null,
+      actions: { some: { type: { in: [...STATIC_MAILBOX_ACTIONS] } } },
+    },
+    select: {
+      from: true,
+      to: true,
+      subject: true,
+      body: true,
+      actions: {
+        where: { type: { in: [...STATIC_MAILBOX_ACTIONS] } },
+        select: { type: true, folderId: true, folderName: true },
+      },
+    },
+  });
+
+  const appliedKeys = new Set<string>();
+  let applied = 0;
+  for (const message of messages) {
+    for (const rule of rules) {
+      if (!matchesLoweredStaticRule(rule, message, logger)) continue;
+      for (const action of rule.actions) {
+        const key = actionKey(action.type, message);
+        if (appliedKeys.has(key)) continue;
+        try {
+          const didApply = await applyStaticMailboxAction({
+            action,
+            message,
+            provider,
+          });
+          if (!didApply) continue;
+          appliedKeys.add(key);
+          applied += 1;
+        } catch (error) {
+          logger.error("Skipped IMAP static action", {
+            error,
+            action: action.type,
+            emailAccountId,
+          });
+        }
+      }
+    }
+  }
+  return applied;
+}
+
+export function blockedSenderAddresses(
+  messages: ParsedMessage[],
+  blockedSenders: string[],
+) {
+  const blocked = new Set(
+    blockedSenders.map((sender) => sender.trim().toLowerCase()).filter(Boolean),
+  );
+  const found = new Set<string>();
+  for (const message of messages) {
+    for (const address of extractEmailAddresses(message.headers.from)) {
+      const from = address.toLowerCase();
+      if (from && blocked.has(from)) found.add(from);
+    }
+  }
+  return [...found];
+}
+
+export async function archiveBlockedImapSenders({
+  emailAccountId,
+  messages,
+  provider,
+}: {
+  emailAccountId: string;
+  messages: ParsedMessage[];
+  provider: EmailProvider;
+}) {
+  const blocked = await prisma.newsletter.findMany({
+    where: { emailAccountId, status: NewsletterStatus.AUTO_ARCHIVED },
+    select: { email: true },
+  });
+  const fromEmails = blockedSenderAddresses(
+    messages,
+    blocked.map((row) => row.email),
+  );
+  if (!fromEmails.length) return 0;
+  await provider.bulkArchiveFromSenders(fromEmails, "", emailAccountId);
+  return fromEmails.length;
+}
+
+function actionKey(type: ActionType, message: ParsedMessage) {
+  const target = type === ActionType.STAR ? message.id : message.threadId;
+  return `${type}:${target}`;
+}
+
+async function applyStaticMailboxAction({
+  action,
+  message,
+  provider,
+}: {
+  action: {
+    type: ActionType;
+    folderId: string | null;
+    folderName: string | null;
+  };
+  message: ParsedMessage;
+  provider: EmailProvider;
+}) {
+  switch (action.type) {
+    case ActionType.ARCHIVE:
+      await provider.archiveThread(message.threadId, "");
+      return true;
+    case ActionType.MARK_READ:
+      await provider.markRead(message.threadId);
+      return true;
+    case ActionType.STAR:
+      await provider.starMessage(message.id);
+      return true;
+    case ActionType.MARK_SPAM:
+      await provider.markSpam(message.threadId);
+      return true;
+    case ActionType.MOVE_FOLDER: {
+      const folderName = action.folderName?.trim();
+      const folderId =
+        action.folderId ||
+        (folderName
+          ? await provider.getOrCreateFolderIdByName(folderName)
+          : "");
+      if (!folderId) return false;
+      await provider.moveThreadToFolder(message.threadId, "", folderId);
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
 function matchesLoweredStaticRule(
-  rule: { from: string | null; to: string | null; subject: string | null; body: string | null },
+  rule: {
+    from: string | null;
+    to: string | null;
+    subject: string | null;
+    body: string | null;
+  },
   message: ParsedMessage,
   logger: Logger,
 ) {

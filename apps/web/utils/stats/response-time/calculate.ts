@@ -83,8 +83,8 @@ export async function calculateResponseTimes(
 
       // Sort by date ascending
       const sortedMessages = threadMessages.sort((a, b) => {
-        const dateA = a.internalDate ? new Date(a.internalDate).getTime() : 0;
-        const dateB = b.internalDate ? new Date(b.internalDate).getTime() : 0;
+        const dateA = messageTimestamp(a.internalDate);
+        const dateB = messageTimestamp(b.internalDate);
         return dateA - dateB;
       });
 
@@ -92,7 +92,7 @@ export async function calculateResponseTimes(
 
       for (const message of sortedMessages) {
         if (!message.internalDate) continue;
-        const messageDate = new Date(message.internalDate);
+        const messageDate = new Date(messageTimestamp(message.internalDate));
 
         // Check SENT label first, fallback to checking if message ID is in sent messages list
         const isSent =
@@ -175,6 +175,16 @@ export function calculateDistribution(
   }
 
   return distribution;
+}
+
+function messageTimestamp(internalDate: string | null | undefined) {
+  if (!internalDate) return 0;
+  if (/^\d+$/.test(internalDate)) {
+    const timestamp = Number(internalDate);
+    if (Number.isSafeInteger(timestamp)) return timestamp;
+  }
+  const parsed = new Date(internalDate).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 export { calculateMedian };

@@ -5,6 +5,8 @@ export function EmailDetails({ message }: { message: ThreadMessage }) {
 
   const details = [
     { label: "From", value: headers?.from },
+    { label: "Sender", value: headers?.sender },
+    { label: "Reply-To", value: headers?.["reply-to"] },
     { label: "To", value: headers?.to },
     { label: "Cc", value: headers?.cc },
     { label: "Bcc", value: headers?.bcc },
@@ -18,7 +20,7 @@ export function EmailDetails({ message }: { message: ThreadMessage }) {
             value && (
               <div
                 key={label}
-                className="grid grid-cols-[3rem_minmax(0,1fr)] gap-2"
+                className="grid grid-cols-[auto_minmax(0,1fr)] gap-2"
               >
                 <span className="text-muted-foreground">{label}</span>
                 <span className="break-words text-foreground">{value}</span>

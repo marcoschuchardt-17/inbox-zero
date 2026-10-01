@@ -11,6 +11,7 @@ import {
   ChevronUpIcon,
   ExpandIcon,
   ExternalLinkIcon,
+  MailIcon,
   MailXIcon,
   MoreHorizontalIcon,
   TagIcon,
@@ -58,7 +59,8 @@ import { ResubscribeDialog } from "@/app/(app)/[emailAccountId]/bulk-unsubscribe
 import { LabelsSubMenu } from "@/components/LabelsSubMenu";
 import type { EmailLabel } from "@/providers/email-label-types";
 import { useAccount } from "@/providers/EmailAccountProvider";
-import { isGoogleProvider } from "@/utils/email/provider-types";
+import { isGoogleProvider, isImapProvider } from "@/utils/email/provider-types";
+import { prefixPath } from "@/utils/path";
 import { getEmailTerminology } from "@/utils/terminology";
 import { Tooltip } from "@/components/Tooltip";
 
@@ -399,6 +401,19 @@ export function MoreDropdown<T extends Row>({
               >
                 <ExternalLinkIcon className="mr-2 size-4" />
                 <span>View in Gmail</span>
+              </Link>
+            </DropdownMenuItem>
+          )}
+          {isImapProvider(provider) && (
+            <DropdownMenuItem asChild>
+              <Link
+                href={prefixPath(
+                  emailAccountId,
+                  `/mail?q=${encodeURIComponent(item.name)}`,
+                )}
+              >
+                <MailIcon className="mr-2 size-4" />
+                <span>View mail</span>
               </Link>
             </DropdownMenuItem>
           )}

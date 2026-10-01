@@ -1,3 +1,4 @@
+import { env } from "@/env";
 import { DraftReplyConfidence } from "@/generated/prisma/enums";
 import {
   draftContextMetadataSchema,
@@ -44,6 +45,7 @@ export async function getReplyWithConfidence({
   messageId: string;
   ruleId?: string;
 }): Promise<ReplyWithConfidence | null> {
+  if (!isReplyCacheConfigured()) return null;
   const cachedReply = await redis.get<string>(
     getReplyKey({ emailAccountId, messageId, ruleId }),
   );
@@ -69,6 +71,7 @@ export async function saveReply({
   attachments?: SelectedAttachment[];
   ruleId?: string;
 }) {
+  if (!isReplyCacheConfigured()) return;
   return redis.set(
     getReplyKey({ emailAccountId, messageId, ruleId }),
     JSON.stringify({
@@ -82,6 +85,10 @@ export async function saveReply({
       ex: ruleId ? 60 * 60 * 24 * 90 : 60 * 60 * 24,
     },
   );
+}
+
+function isReplyCacheConfigured() {
+  return Boolean(env.UPSTASH_REDIS_URL && env.UPSTASH_REDIS_TOKEN);
 }
 
 function getReplyKey({

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SafeError, safeErrorStatusCode } from "@/utils/error";
 import { withEmailProvider } from "@/utils/middleware";
 import { threadsQuery, threadsView } from "@/utils/threads/validation";
 import { loadThreads, toListThreads } from "@/utils/threads/load";
@@ -67,6 +68,12 @@ export const GET = withEmailProvider(
         error,
         emailAccountId,
       });
+      if (error instanceof SafeError) {
+        return NextResponse.json(
+          { error: error.safeMessage, isKnownError: true },
+          { status: safeErrorStatusCode(error.statusCode) },
+        );
+      }
       return NextResponse.json(
         { error: "Failed to fetch threads" },
         { status: 500 },

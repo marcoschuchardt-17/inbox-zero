@@ -2,21 +2,16 @@ import { z } from "zod";
 import type { CleanGmailBody } from "@/app/api/clean/gmail/route";
 import { CleanAction } from "@/generated/prisma/enums";
 import { aiClean } from "@/utils/ai/clean/ai-clean";
-import { isNewsletterSender } from "@/utils/ai/group/find-newsletters";
-import { isMaybeReceipt, isReceipt } from "@/utils/ai/group/find-receipts";
+import { decideCleanAction } from "@/utils/clean/decide";
 import { assertCleanerApiEnabled } from "@/utils/cleaner-feature";
 import { internalDateToDate } from "@/utils/date";
 import { SafeError } from "@/utils/error";
 import { getGmailClientWithRefresh } from "@/utils/gmail/client";
-import { GmailLabel } from "@/utils/gmail/label";
 import { getThreadMessages } from "@/utils/gmail/thread";
 import { getEmailForLLM } from "@/utils/get-email-from-message";
 import type { Logger } from "@/utils/logger";
-import { getCalendarEventStatus } from "@/utils/parse/calender-event";
-import { findUnsubscribeLink } from "@/utils/parse/parseHtml.server";
 import { isActivePremium } from "@/utils/premium";
 import { saveThread, updateThread } from "@/utils/redis/clean";
-import type { ParsedMessage } from "@/utils/types";
 import { publishToQstash } from "@/utils/upstash";
 import {
   getEmailAccountWithAiAndTokens,
@@ -112,89 +107,9 @@ export async function cleanThread({
     logger,
   });
 
-  function isStarred(message: ParsedMessage) {
-    return message.labelIds?.includes(GmailLabel.STARRED);
-  }
-
-  function isSent(message: ParsedMessage) {
-    return message.labelIds?.includes(GmailLabel.SENT);
-  }
-
-  function hasAttachments(message: ParsedMessage) {
-    return message.attachments && message.attachments.length > 0;
-  }
-
-  function hasUnsubscribeLink(message: ParsedMessage) {
-    return (
-      findUnsubscribeLink(message.textHtml) ||
-      message.headers["list-unsubscribe"]
-    );
-  }
-
-  let needsLLMCheck = false;
-
-  for (const message of messages) {
-    if (skips.starred && isStarred(message)) {
-      await publish({ markDone: false });
-      return;
-    }
-
-    if (skips.conversation && isSent(message)) {
-      await publish({ markDone: false });
-      return;
-    }
-
-    if (skips.attachment && hasAttachments(message)) {
-      await publish({ markDone: false });
-      return;
-    }
-
-    if (skips.receipt) {
-      if (isReceipt(message)) {
-        await publish({ markDone: false });
-        return;
-      }
-
-      if (isMaybeReceipt(message)) {
-        needsLLMCheck = true;
-      }
-    }
-
-    const calendarEventStatus = getCalendarEventStatus(message);
-    if (skips.calendar && calendarEventStatus.isEvent) {
-      if (calendarEventStatus.timing === "past") {
-        await publish({ markDone: true });
-        return;
-      }
-
-      if (calendarEventStatus.timing === "future") {
-        await publish({ markDone: false });
-        return;
-      }
-    }
-
-    if (!isSent(message) && hasUnsubscribeLink(message)) {
-      await publish({ markDone: true });
-      return;
-    }
-
-    if (!isSent(message) && isNewsletterSender(message.headers.from)) {
-      await publish({ markDone: true });
-      return;
-    }
-  }
-
-  if (
-    !needsLLMCheck &&
-    lastMessage.labelIds?.some(
-      (label) =>
-        label === GmailLabel.SOCIAL ||
-        label === GmailLabel.PROMOTIONS ||
-        label === GmailLabel.UPDATES ||
-        label === GmailLabel.FORUMS,
-    )
-  ) {
-    await publish({ markDone: true });
+  const decision = decideCleanAction({ messages, skips });
+  if (decision !== "needs-model") {
+    await publish({ markDone: decision === "done" });
     return;
   }
 

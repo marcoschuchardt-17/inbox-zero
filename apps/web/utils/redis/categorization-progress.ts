@@ -63,7 +63,7 @@ export async function getCategorizationProgress({
   emailAccountId: string;
 }) {
   const key = getKey({ emailAccountId });
-  const progress = await redis.get<StoredCategorizationProgress>(key);
+  const progress = await readStoredProgress(key);
   if (!progress) return null;
 
   const parsedProgress = categorizationProgressSchema
@@ -85,7 +85,7 @@ export async function saveCategorizationTotalItems({
   const key = getKey({ emailAccountId });
   const existingProgress = await getCategorizationProgress({ emailAccountId });
   const timestamp = new Date().toISOString();
-  await redis.set(
+  await writeStoredProgress(
     key,
     {
       totalItems,
@@ -106,7 +106,7 @@ export async function saveCategorizationProgress({
   incrementCompleted: number;
 }) {
   const key = getKey({ emailAccountId });
-  const result = await redis.eval<string[], string | null>(
+  const result = await evalStoredProgress(
     INCREMENT_PROGRESS_SCRIPT,
     [key],
     [
@@ -131,7 +131,7 @@ export async function deleteCategorizationProgress({
   emailAccountId: string;
 }) {
   const key = getKey({ emailAccountId });
-  await redis.del(key);
+  await deleteStoredProgress(key);
 }
 
 export function getCategorizationStatusSnapshot(
@@ -170,6 +170,59 @@ export function getCategorizationStatusSnapshot(
     remainingItems,
     message: `Categorizing senders: ${completedItems} of ${progress.totalItems} completed.`,
   };
+}
+
+async function readStoredProgress(key: string) {
+  try {
+    return await redis.get<StoredCategorizationProgress>(key);
+  } catch (error) {
+    if (!isRedisUnavailable(error)) throw error;
+    return null;
+  }
+}
+
+async function writeStoredProgress(
+  key: string,
+  value: CategorizationProgress,
+  options: { ex: number },
+) {
+  try {
+    await redis.set(key, value, options);
+  } catch (error) {
+    if (!isRedisUnavailable(error)) throw error;
+  }
+}
+
+async function evalStoredProgress(
+  script: string,
+  keys: string[],
+  args: string[],
+) {
+  try {
+    return await redis.eval<string[], string | null>(script, keys, args);
+  } catch (error) {
+    if (!isRedisUnavailable(error)) throw error;
+    return null;
+  }
+}
+
+async function deleteStoredProgress(key: string) {
+  try {
+    await redis.del(key);
+  } catch (error) {
+    if (!isRedisUnavailable(error)) throw error;
+  }
+}
+
+function isRedisUnavailable(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const cause =
+    "cause" in error && error.cause instanceof Error ? error.cause.message : "";
+  return (
+    error.message.includes("Failed to parse URL") ||
+    error.message.includes("Invalid URL") ||
+    cause.includes("Invalid URL")
+  );
 }
 
 function normalizeCategorizationProgress(

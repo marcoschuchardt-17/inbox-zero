@@ -44,12 +44,14 @@ export function createSenderQueue(createPayload: CreatePayload) {
     onSuccess,
     onError,
     emailAccountId,
+    provider,
   }: {
     sender: string;
     labelId?: string;
     onSuccess?: (totalThreads: number) => void;
     onError?: (sender: string) => void;
     emailAccountId: string;
+    provider?: string;
   }) {
     const normalizedSender = normalizeSender(sender);
     if (!normalizedSender) return false;
@@ -100,6 +102,7 @@ export function createSenderQueue(createPayload: CreatePayload) {
       const { mutations } = await enqueueThreadMailMutationBatch({
         clientSource: { kind: "sender", sender: normalizedSender },
         emailAccountId,
+        ...(provider ? { provider } : {}),
         threads,
         payload: createPayload({ labelId }),
       });

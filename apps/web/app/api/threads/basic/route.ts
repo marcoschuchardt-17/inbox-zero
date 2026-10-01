@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { withEmailProvider } from "@/utils/middleware";
 import type { EmailProvider } from "@/utils/email/types";
 import { threadsQuery } from "@/utils/threads/validation";
-import { EMAIL_PROVIDER_RATE_LIMIT_MESSAGE, SafeError } from "@/utils/error";
+import {
+  EMAIL_PROVIDER_RATE_LIMIT_MESSAGE,
+  SafeError,
+  safeErrorStatusCode,
+} from "@/utils/error";
 import { isEmailProviderRateLimitError } from "@/utils/email/is-provider-rate-limit-error";
 
 // Straight from the provider — this route does no ExecutedRule join, so it
@@ -56,6 +60,13 @@ export const GET = withEmailProvider("threads/basic", async (request) => {
       })
     ) {
       throw new SafeError(EMAIL_PROVIDER_RATE_LIMIT_MESSAGE, 429);
+    }
+
+    if (error instanceof SafeError) {
+      return NextResponse.json(
+        { error: error.safeMessage, isKnownError: true },
+        { status: safeErrorStatusCode(error.statusCode) },
+      );
     }
 
     return NextResponse.json(

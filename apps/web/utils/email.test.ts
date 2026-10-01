@@ -3,6 +3,11 @@ import {
   extractNameFromEmail,
   extractEmailAddress,
   extractEmailAddresses,
+  collapsedRecipientNames,
+  collapsedReplyRecipientNames,
+  recipientDisplayNames,
+  storedAnalyticsAddresses,
+  storedRecipientAddresses,
   extractUniqueEmailAddresses,
   splitRecipientList,
   extractDomainFromEmail,
@@ -12,7 +17,31 @@ import {
   getNewsletterSenderDisplayName,
   messageRepliesToSourceSender,
   isSameOrganization,
+  messageIsFromAccountOnly,
+  incomingReplyRecipients,
+  messageWasSentByAccount,
+  sentReplyRecipients,
 } from "./email";
+
+describe("messageIsFromAccountOnly", () => {
+  it("is true when every from address is the account", () => {
+    expect(
+      messageIsFromAccountOnly(
+        "Starttls <starttls.imap@example.com>",
+        "starttls.imap@example.com",
+      ),
+    ).toBe(true);
+  });
+
+  it("is false when someone else also sent the message", () => {
+    expect(
+      messageIsFromAccountOnly(
+        "Sam Participant <sam.participant@gmail.com>, Starttls <starttls.imap@example.com>",
+        "starttls.imap@example.com",
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("email utils", () => {
   describe("extractNameFromEmail", () => {
@@ -27,6 +56,258 @@ describe("email utils", () => {
       ["empty input", "", ""],
     ])("handles %s", (_caseName, input, expected) => {
       expect(extractNameFromEmail(input)).toBe(expected);
+    });
+  });
+
+  describe("recipientDisplayNames", () => {
+    it("names every recipient", () => {
+      expect(
+        recipientDisplayNames("Sam <sam@example.com>, Ada <ada@example.com>"),
+      ).toBe("Sam, Ada");
+    });
+  });
+
+  describe("collapsedRecipientNames", () => {
+    it("names people on Cc and Bcc with the people on To", () => {
+      expect(
+        collapsedRecipientNames({
+          to: "Sam <sam@example.com>",
+          cc: "Ada <ada@example.com>",
+          bcc: "Hidden <hidden@example.com>",
+        }),
+      ).toBe("Sam, Ada, Hidden");
+    });
+
+    it("skips an empty copy list", () => {
+      expect(
+        collapsedRecipientNames({
+          to: "Sam <sam@example.com>",
+          cc: "",
+        }),
+      ).toBe("Sam");
+    });
+  });
+
+  describe("collapsedReplyRecipientNames", () => {
+    it("keeps a cleared copy list off the line", () => {
+      expect(
+        collapsedReplyRecipientNames({
+          to: "Sam <sam@example.com>",
+          cc: "",
+          savedCc: "Ada <ada@example.com>",
+        }),
+      ).toBe("Sam");
+    });
+
+    it("uses the saved copy list when the field is not filled yet", () => {
+      expect(
+        collapsedReplyRecipientNames({
+          to: "Sam <sam@example.com>",
+          savedCc: "Ada <ada@example.com>",
+        }),
+      ).toBe("Sam, Ada");
+    });
+  });
+
+  describe("storedAnalyticsAddresses", () => {
+    it("keeps every address", () => {
+      expect(
+        storedAnalyticsAddresses(
+          "Sam <sam@example.com>, Ada <ada@example.com>",
+        ),
+      ).toBe("sam@example.com, ada@example.com");
+    });
+  });
+
+  describe("storedRecipientAddresses", () => {
+    it("keeps the person on Cc when To is empty", () => {
+      expect(
+        storedRecipientAddresses({
+          to: "",
+          cc: "Ada Copy <ada-copy@example.com>",
+        }),
+      ).toBe("ada-copy@example.com");
+    });
+
+    it("keeps To when someone is also copied", () => {
+      expect(
+        storedRecipientAddresses({
+          to: "Sam <sam@example.com>",
+          cc: "Ada Copy <ada-copy@example.com>",
+        }),
+      ).toBe("sam@example.com");
+    });
+
+    it("counts the copied person when sent mail is only addressed to the account", () => {
+      expect(
+        storedRecipientAddresses(
+          {
+            to: "Owner <owner@example.com>",
+            cc: "Ada Stats <ada-stats@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toBe("ada-stats@example.com");
+    });
+
+    it("counts the other person when sent mail also addresses this account", () => {
+      expect(
+        storedRecipientAddresses(
+          {
+            to: "Owner <owner@example.com>, Ada Statsboth <ada-statsboth@example.com>",
+            cc: "Pat <pat@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toBe("ada-statsboth@example.com");
+    });
+
+    it("keeps this account when the sent mail names nobody else", () => {
+      expect(
+        storedRecipientAddresses(
+          { to: "Owner <owner@example.com>" },
+          "owner@example.com",
+        ),
+      ).toBe("owner@example.com");
+    });
+  });
+
+  describe("sentReplyRecipients", () => {
+    it("addresses the copied person when sent mail has no To", () => {
+      expect(
+        sentReplyRecipients({
+          to: "",
+          cc: "Ada Copy <ada-copy@example.com>",
+        }),
+      ).toEqual({
+        to: "Ada Copy <ada-copy@example.com>",
+        cc: undefined,
+        bcc: undefined,
+      });
+    });
+
+    it("keeps To when someone is also copied", () => {
+      expect(
+        sentReplyRecipients({
+          to: "Sam <sam@example.com>",
+          cc: "Ada Copy <ada-copy@example.com>",
+          bcc: "hidden@example.com",
+        }),
+      ).toEqual({
+        to: "Sam <sam@example.com>",
+        cc: "Ada Copy <ada-copy@example.com>",
+        bcc: "hidden@example.com",
+      });
+    });
+
+    it("addresses the copied person when sent mail is only addressed to the account", () => {
+      expect(
+        sentReplyRecipients(
+          {
+            to: "Owner <owner@example.com>",
+            cc: "Ada Beside <ada-beside@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Ada Beside <ada-beside@example.com>",
+        cc: undefined,
+        bcc: undefined,
+      });
+    });
+
+    it("addresses the other person when this account is also on To", () => {
+      expect(
+        sentReplyRecipients(
+          {
+            to: "Owner <owner@example.com>, Ada Replylist <ada-replylist@example.com>",
+            cc: "Owner <owner@example.com>, Pat <pat@example.com>",
+            bcc: "Owner <owner@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Ada Replylist <ada-replylist@example.com>",
+        cc: "Pat <pat@example.com>",
+        bcc: undefined,
+      });
+    });
+  });
+
+  describe("incomingReplyRecipients", () => {
+    it("keeps reply-to when the account email is omitted", () => {
+      expect(
+        incomingReplyRecipients({
+          from: "Sam <sam@example.com>",
+          "reply-to":
+            "Owner <owner@example.com>, Ada Replyto <ada-replyto@example.com>",
+          cc: "Owner <owner@example.com>, Pat Replycc <pat-replycc@example.com>",
+        }),
+      ).toEqual({
+        to: "Owner <owner@example.com>, Ada Replyto <ada-replyto@example.com>",
+        cc: "Owner <owner@example.com>, Pat Replycc <pat-replycc@example.com>",
+      });
+    });
+
+    it("replies to the other person when reply-to also names this account", () => {
+      expect(
+        incomingReplyRecipients(
+          {
+            from: "Sam <sam@example.com>",
+            "reply-to":
+              "Owner <owner@example.com>, Ada Replyto <ada-replyto@example.com>",
+            cc: "Owner <owner@example.com>, Pat Replycc <pat-replycc@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Ada Replyto <ada-replyto@example.com>",
+        cc: "Pat Replycc <pat-replycc@example.com>",
+      });
+    });
+
+    it("keeps reply-to when it only names this account", () => {
+      expect(
+        incomingReplyRecipients(
+          {
+            from: "Sam <sam@example.com>",
+            "reply-to": "Owner <owner@example.com>",
+            cc: "Owner <owner@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Owner <owner@example.com>",
+        cc: undefined,
+      });
+    });
+  });
+
+  describe("messageWasSentByAccount", () => {
+    it("is true for archived mail that is only from the account", () => {
+      expect(
+        messageWasSentByAccount(
+          {
+            labelIds: ["ARCHIVE"],
+            headers: { from: "Starttls <starttls.imap@example.com>" },
+          },
+          "starttls.imap@example.com",
+        ),
+      ).toBe(true);
+    });
+
+    it("is false when someone else also sent the message", () => {
+      expect(
+        messageWasSentByAccount(
+          {
+            labelIds: ["ARCHIVE"],
+            headers: {
+              from: "Sam <sam@example.com>, Starttls <starttls.imap@example.com>",
+            },
+          },
+          "starttls.imap@example.com",
+        ),
+      ).toBe(false);
     });
   });
 
@@ -351,6 +632,78 @@ describe("email utils", () => {
     ])("returns participant when %s", (_caseName, userEmail, expected) => {
       expect(participant(message, userEmail)).toBe(expected);
     });
+
+    it("keeps the other sender when the account is also listed", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Sam <sam@example.com>, Owner <owner@example.com>",
+              to: "Ada <ada@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Sam <sam@example.com>, Owner <owner@example.com>");
+    });
+
+    it("does not treat a shorter address inside the sender as the account", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Sam <sam@example.com>",
+              to: "Ada <ada@example.com>",
+            },
+          },
+          "am@example.com",
+        ),
+      ).toBe("Sam <sam@example.com>");
+    });
+
+    it("names the copied person when sent mail has no To", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Owner <owner@example.com>",
+              to: "",
+              cc: "Ada Copy <ada-copy@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Ada Copy <ada-copy@example.com>");
+    });
+
+    it("names the copied person when sent mail is only addressed to the account", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Owner <owner@example.com>",
+              to: "Owner <owner@example.com>",
+              cc: "Ada Beside <ada-beside@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Ada Beside <ada-beside@example.com>");
+    });
+
+    it("names the other person when this account is also addressed", () => {
+      expect(
+        participant(
+          {
+            headers: {
+              from: "Owner <owner@example.com>",
+              to: "Owner <owner@example.com>, Ada Listed <ada-listed@example.com>",
+            },
+          },
+          "owner@example.com",
+        ),
+      ).toBe("Ada Listed <ada-listed@example.com>");
+    });
   });
 
   describe("normalizeEmailAddress", () => {
@@ -510,6 +863,26 @@ describe("email utils", () => {
         { email: "updates@example.com", fromName: null },
         "",
       ],
+      [
+        "a real name when another copy only has the address",
+        {
+          email: "billing@example.com",
+          fromName: "billing@example.com",
+          minFromName: "Billing",
+          maxFromName: "billing@example.com",
+        },
+        "Billing",
+      ],
+      [
+        "the address used as the only name",
+        {
+          email: "billing@example.com",
+          fromName: "billing@example.com",
+          minFromName: "billing@example.com",
+          maxFromName: "billing@example.com",
+        },
+        "",
+      ],
     ];
 
     it.each(cases)("handles %s", (_caseName, sender, expected) => {
@@ -570,6 +943,24 @@ describe("email utils", () => {
         true,
       ],
       ["missing address", "", "user@acme.com", false],
+      [
+        "a colleague listed before an outside sender",
+        "Colleague <colleague@company.com>, Stranger <stranger@gmail.com>",
+        "user@company.com",
+        true,
+      ],
+      [
+        "an outside sender listed alone",
+        "Stranger <stranger@gmail.com>",
+        "user@company.com",
+        false,
+      ],
+      [
+        "two outside senders",
+        "Stranger <stranger@gmail.com>, Other <other@vendor.com>",
+        "user@company.com",
+        false,
+      ],
     ])("returns %s", (_caseName, left, right, expected) => {
       expect(isSameOrganization(left, right)).toBe(expected);
     });

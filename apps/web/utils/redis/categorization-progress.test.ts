@@ -95,6 +95,18 @@ describe("categorization progress", () => {
     expect(progress).toBeNull();
   });
 
+  it("treats a missing Redis server as no progress", async () => {
+    vi.mocked(redis.get).mockRejectedValueOnce(
+      new TypeError("Failed to parse URL from /pipeline"),
+    );
+
+    const progress = await getCategorizationProgress({
+      emailAccountId: "account-1",
+    });
+
+    expect(progress).toBeNull();
+  });
+
   it("returns null when no progress exists", async () => {
     vi.mocked(redis.get).mockResolvedValueOnce(null);
 

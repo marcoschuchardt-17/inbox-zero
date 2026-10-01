@@ -34,6 +34,12 @@ describe("getAvailableActionsForRuleEditor", () => {
     mockEnv.webhookActionsEnabled = true;
   });
 
+  it("offers move to folder for an IMAP account", () => {
+    const actions = getAvailableActionsForRuleEditor({ provider: "imap" });
+
+    expect(actions).toContain(ActionType.MOVE_FOLDER);
+  });
+
   it("preserves move folder for existing Microsoft-only actions", () => {
     const actions = getAvailableActionsForRuleEditor({
       provider: "",

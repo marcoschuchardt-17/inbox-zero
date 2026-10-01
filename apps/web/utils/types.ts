@@ -116,11 +116,14 @@ export interface ParsedMessageHeaders {
   date: string; // the date supplied by the email. internally we rely on message.internalDate provided by the gmail api
   from: string;
   "in-reply-to"?: string;
+  "list-id"?: string;
+  "list-post"?: string;
   "list-unsubscribe"?: string;
   "list-unsubscribe-post"?: string;
   "message-id"?: string;
   references?: string;
   "reply-to"?: string;
+  sender?: string;
   subject: string;
   to: string;
 }

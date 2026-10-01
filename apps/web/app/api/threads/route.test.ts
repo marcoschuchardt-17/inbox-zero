@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SafeError } from "@/utils/error";
 
 const { mockFindMany, mockGetThreadsWithQuery, mockSearchThreads } = vi.hoisted(
   () => ({
@@ -74,6 +75,24 @@ function getExecutedRule(overrides: Record<string, unknown> = {}) {
 }
 
 describe("GET /api/threads", () => {
+  it("returns an IMAP connection failure the reader can act on", async () => {
+    mockGetThreadsWithQuery.mockRejectedValue(
+      new SafeError(
+        "IMAP connection failed. Check host, port, TLS, and credentials.",
+      ),
+    );
+
+    const response = await GET(
+      new NextRequest("http://localhost:3000/api/threads"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "IMAP connection failed. Check host, port, TLS, and credentials.",
+      isKnownError: true,
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockFindMany.mockResolvedValue([]);

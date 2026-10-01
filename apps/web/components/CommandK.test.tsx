@@ -19,11 +19,19 @@ const thread = vi.hoisted(() => ({
   } as { thread: { id: string; messages: { id: string }[] } } | undefined,
   isLoading: false,
 }));
+const engine = vi.hoisted(() => ({
+  getDiagnostics: vi.fn(),
+  submitConversations: vi.fn(),
+}));
 const mail = vi.hoisted(() => ({
-  client: {
-    getDiagnostics: vi.fn(),
-    submitConversations: vi.fn(),
-  },
+  client: engine as null | typeof engine,
+}));
+const account = vi.hoisted(() => ({
+  emailAccountId: "account-1",
+  provider: "google",
+}));
+const http = vi.hoisted(() => ({
+  fetchWithAccount: vi.fn(),
 }));
 vi.mock("@inboxzero/mail-react/MailEngineProvider", () => ({
   useOptionalMailClient: () => mail.client,
@@ -46,7 +54,10 @@ vi.mock("@/hooks/useThread", () => ({
   useThread: () => ({ data: thread.data, isLoading: thread.isLoading }),
 }));
 vi.mock("@/providers/EmailAccountProvider", () => ({
-  useAccount: () => ({ emailAccountId: "account-1" }),
+  useAccount: () => account,
+}));
+vi.mock("@/utils/fetch", () => ({
+  fetchWithAccount: (...args: unknown[]) => http.fetchWithAccount(...args),
 }));
 vi.mock("@/providers/ComposeModalProvider", () => ({
   useComposeModal: () => ({ onOpen: vi.fn() }),
@@ -99,8 +110,11 @@ describe("CommandK side-panel actions", () => {
       },
     };
     thread.isLoading = false;
-    mail.client.getDiagnostics.mockResolvedValue({ revision: 1 });
-    mail.client.submitConversations.mockResolvedValue({ status: "queued" });
+    account.provider = "google";
+    mail.client = engine;
+    engine.getDiagnostics.mockResolvedValue({ revision: 1 });
+    engine.submitConversations.mockResolvedValue({ status: "queued" });
+    http.fetchWithAccount.mockResolvedValue({ ok: true });
     shortcuts.handlers = undefined;
   });
 
@@ -197,6 +211,103 @@ describe("CommandK side-panel actions", () => {
     expect(displayedEmail.showEmail).not.toHaveBeenCalled();
     expect(notifications.error).toHaveBeenCalledWith({
       description: "Email is still loading",
+    });
+  });
+
+  it("archives an IMAP conversation through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.archive?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/archive",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith(null);
+  });
+
+  it("stars an IMAP conversation through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.star?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/star",
+      emailAccountId: "account-1",
+      init: {
+        method: "POST",
+        body: JSON.stringify({ starred: true }),
+        headers: { "Content-Type": "application/json" },
+      },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).not.toHaveBeenCalled();
+  });
+
+  it("marks an open IMAP message as spam through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.markSpam?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/spam",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith(null);
+  });
+
+  it("marks an open IMAP message unread through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.markUnread?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/unread",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).not.toHaveBeenCalled();
+  });
+
+  it("moves an open IMAP message to Trash through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    render(<CommandK />);
+
+    await act(async () => shortcuts.handlers?.delete?.());
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/trash",
+      emailAccountId: "account-1",
+      init: { method: "POST" },
+    });
+    expect(engine.submitConversations).not.toHaveBeenCalled();
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith(null);
+  });
+
+  it("opens a reply to everyone for the latest side-panel message", () => {
+    render(<CommandK />);
+
+    act(() => shortcuts.handlers?.replyAll?.());
+
+    expect(displayedEmail.showEmail).toHaveBeenCalledWith({
+      threadId: "thread-1",
+      autoOpenReplyForMessageId: "message-2",
+      replyAll: true,
+      showReplyButton: true,
     });
   });
 

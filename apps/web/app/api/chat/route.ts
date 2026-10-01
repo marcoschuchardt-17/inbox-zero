@@ -409,6 +409,14 @@ export const POST = withEmailAccount("chat", async (request) => {
       action: "assistant-chat",
       flushReason: "chat-error",
     });
+    if (isMissingChatModelError(error)) {
+      return NextResponse.json(
+        {
+          error: "Add an API key for a chat model before sending a message.",
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json(
       { error: "Error in assistant chat" },
       { status: 500 },
@@ -573,5 +581,12 @@ function getInvalidChatRequestMetadata(value: unknown) {
       return metadata;
     },
     { attachmentCount: 0, textLength: 0 },
+  );
+}
+
+function isMissingChatModelError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.startsWith("No configured LLM model list resolved for ")
   );
 }

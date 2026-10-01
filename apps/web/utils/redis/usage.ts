@@ -61,6 +61,19 @@ export async function getUsage(options: {
   legacyEmail?: string | null;
   userId?: string | null;
 }) {
+  try {
+    return await readUsage(options);
+  } catch (error) {
+    if (!isUnconfiguredRedis(error)) throw error;
+    return {};
+  }
+}
+
+async function readUsage(options: {
+  emailAccountId: string;
+  legacyEmail?: string | null;
+  userId?: string | null;
+}) {
   const emailAccountUsageKey = getUsageKey({
     type: "email-account",
     id: options.emailAccountId,
@@ -748,6 +761,17 @@ function normalizeUsageFields(
   }
 
   return usage as RedisUsage;
+}
+
+function isUnconfiguredRedis(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const cause =
+    "cause" in error && error.cause instanceof Error ? error.cause.message : "";
+  return (
+    error.message.includes("Failed to parse URL") ||
+    error.message.includes("Invalid URL") ||
+    cause.includes("Invalid URL")
+  );
 }
 
 function parseWeeklyUsageMigrationState(

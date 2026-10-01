@@ -28,10 +28,12 @@ import { prefixPath } from "@/utils/path";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { isThreadUnread } from "@/app/(app)/[emailAccountId]/mail/read-state";
 import { useOptionalMailClient } from "@inboxzero/mail-react/MailEngineProvider";
+import { isImapProvider } from "@/utils/email/provider-types";
 import {
   mutationPayloadToChange,
   type ThreadMutationPayload,
 } from "@/utils/mail-engine/mutation-change";
+import { enqueueThreadMailMutationBatch } from "@/utils/mail-engine/thread-mail-mutations";
 import { submitConversationChanges } from "@/utils/mail-engine/submit-conversations";
 
 export function List({
@@ -211,6 +213,15 @@ export function EmailList({
 
   const submitThreads = useCallback(
     async (selected: Thread[], payload: ThreadMutationPayload) => {
+      if (isImapProvider(provider)) {
+        await enqueueThreadMailMutationBatch({
+          emailAccountId,
+          provider,
+          payload,
+          threads: selected,
+        });
+        return;
+      }
       if (!client) throw new Error("Mail engine is unavailable");
       const change = mutationPayloadToChange(payload);
       if (!change) throw new Error("Unsupported mail mutation");
@@ -224,7 +235,7 @@ export function EmailList({
         throw new Error("Couldn't queue all conversations");
       }
     },
-    [client, emailAccountId],
+    [client, emailAccountId, provider],
   );
 
   const onArchive = useCallback(

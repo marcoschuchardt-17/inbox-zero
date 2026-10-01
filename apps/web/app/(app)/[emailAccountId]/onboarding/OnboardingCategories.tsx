@@ -40,10 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ContinueButton } from "@/app/(app)/[emailAccountId]/onboarding/ContinueButton";
 import { cn } from "@/utils";
 import { TooltipExplanation } from "@/components/TooltipExplanation";
-import {
-  isGoogleProvider,
-  isMicrosoftProvider,
-} from "@/utils/email/provider-types";
+import { onboardingCategoryActionChoices } from "@/app/(app)/[emailAccountId]/onboarding/onboarding-category-actions";
 import { MutedText } from "@/components/Typography";
 
 // copy paste of old file
@@ -254,25 +251,11 @@ function CategoryCard({
               <SelectValue placeholder="Select action" />
             </SelectTrigger>
             <SelectContent>
-              {isMicrosoftProvider(provider) && (
-                <>
-                  <SelectItem value="label">Categorise</SelectItem>
-                  <SelectItem value="move_folder">Move to folder</SelectItem>
-                  {/* <SelectItem value="move_folder_delayed">
-                    Move to folder after a week
-                  </SelectItem> */}
-                </>
-              )}
-              {isGoogleProvider(provider) && (
-                <>
-                  <SelectItem value="label">Label</SelectItem>
-                  <SelectItem value="label_archive">Label & archive</SelectItem>
-                  {/* <SelectItem value="label_archive_delayed">
-                    Label & archive after a week
-                  </SelectItem> */}
-                </>
-              )}
-              <SelectItem value="none">Do nothing</SelectItem>
+              {onboardingCategoryActionChoices(provider).map((choice) => (
+                <SelectItem key={choice.value} value={choice.value}>
+                  {choice.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

@@ -348,6 +348,32 @@ describe("createRuleSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("requires folderName for MOVE_FOLDER on IMAP providers", () => {
+    const result = createRuleSchema("imap").safeParse(
+      buildRule({
+        type: ActionType.MOVE_FOLDER,
+        fields: {},
+        delayInMinutes: null,
+      }),
+    );
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts MOVE_FOLDER with folderName on IMAP providers", () => {
+    const result = createRuleSchema("imap").safeParse(
+      buildRule({
+        type: ActionType.MOVE_FOLDER,
+        fields: {
+          folderName: "Receipts",
+        },
+        delayInMinutes: null,
+      }),
+    );
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects structurally invalid static.from values", () => {
     const result = createRuleSchema(provider).safeParse({
       ...buildRule({

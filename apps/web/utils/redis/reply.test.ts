@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getReplyWithConfidence, saveReply } from "@/utils/redis/reply";
-import { DRAFT_PIPELINE_VERSION } from "@/utils/ai/reply/draft-attribution";
-import { redis } from "@/utils/redis";
-import { DraftReplyConfidence } from "@/generated/prisma/enums";
+
+const { mockedEnv } = vi.hoisted(() => ({
+  mockedEnv: {
+    UPSTASH_REDIS_URL: "https://redis.example.com" as string | undefined,
+    UPSTASH_REDIS_TOKEN: "token" as string | undefined,
+  },
+}));
+
+vi.mock("@/env", () => ({
+  env: mockedEnv,
+}));
 
 vi.mock("@/utils/redis", () => ({
   redis: {
@@ -11,9 +18,40 @@ vi.mock("@/utils/redis", () => ({
   },
 }));
 
+import { getReplyWithConfidence, saveReply } from "@/utils/redis/reply";
+import { DRAFT_PIPELINE_VERSION } from "@/utils/ai/reply/draft-attribution";
+import { redis } from "@/utils/redis";
+import { DraftReplyConfidence } from "@/generated/prisma/enums";
+
 describe("saveReply", () => {
   beforeEach(() => {
+    mockedEnv.UPSTASH_REDIS_URL = "https://redis.example.com";
+    mockedEnv.UPSTASH_REDIS_TOKEN = "token";
     vi.clearAllMocks();
+  });
+
+  it("skips the cache when Redis is not configured", async () => {
+    mockedEnv.UPSTASH_REDIS_URL = undefined;
+    mockedEnv.UPSTASH_REDIS_TOKEN = undefined;
+    vi.mocked(redis.get).mockRejectedValue(
+      new TypeError("Failed to parse URL from /pipeline"),
+    );
+
+    await expect(
+      getReplyWithConfidence({
+        emailAccountId: "account-1",
+        messageId: "message-1",
+      }),
+    ).resolves.toBeNull();
+    await saveReply({
+      emailAccountId: "account-1",
+      messageId: "message-1",
+      reply: "Draft reply",
+      confidence: DraftReplyConfidence.STANDARD,
+    });
+
+    expect(redis.get).not.toHaveBeenCalled();
+    expect(redis.set).not.toHaveBeenCalled();
   });
 
   it("stores enum confidence value", async () => {

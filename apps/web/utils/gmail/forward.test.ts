@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
-import { forwardEmailHtml } from "./forward";
+import { forwardEmailHtml, forwardEmailSubject } from "./forward";
 import type { ParsedMessage } from "@/utils/types";
 
 describe("email forwarding", () => {
@@ -202,6 +202,52 @@ ${message.textHtml}
     expect(html).not.toContain("</script>");
   });
 
+  it("keeps every recipient when the message lists more than one", () => {
+    const message: Pick<ParsedMessage, "headers" | "textPlain"> = {
+      headers: {
+        from: "News <news@example.com>",
+        date: testDate.toISOString(),
+        subject: "Shared desks",
+        to: "Sam <sam@example.com>, Ada <ada@example.com>",
+        cc: "Pat <pat@example.com>",
+      },
+      textPlain: "Please bring both desks.",
+    };
+
+    const html = forwardEmailHtml({
+      content: "",
+      message: message as ParsedMessage,
+    });
+
+    expect(html).toContain(
+      'To: Sam &lt;<a href="mailto:sam@example.com">sam@example.com</a>&gt;, Ada &lt;<a href="mailto:ada@example.com">ada@example.com</a>&gt;<br>',
+    );
+    expect(html).toContain(
+      'Cc: Pat &lt;<a href="mailto:pat@example.com">pat@example.com</a>&gt;<br>',
+    );
+  });
+
+  it("keeps every sender when the message lists more than one", () => {
+    const message: Pick<ParsedMessage, "headers" | "textPlain"> = {
+      headers: {
+        from: "Sam <sam@example.com>, Ada <ada@example.com>",
+        date: testDate.toISOString(),
+        subject: "Two senders",
+        to: "owner@example.com",
+      },
+      textPlain: "A short note from both.",
+    };
+
+    const html = forwardEmailHtml({
+      content: "",
+      message: message as ParsedMessage,
+    });
+
+    expect(html).toContain(
+      'From: <strong class="gmail_sendername" dir="auto">Sam</strong> <span dir="auto">&lt;<a href="mailto:sam@example.com">sam@example.com</a>&gt;</span>, <strong class="gmail_sendername" dir="auto">Ada</strong> <span dir="auto">&lt;<a href="mailto:ada@example.com">ada@example.com</a>&gt;</span><br>',
+    );
+  });
+
   it("escapes email header when no angle brackets present", () => {
     const message: Pick<ParsedMessage, "headers" | "textHtml"> = {
       headers: {
@@ -222,5 +268,26 @@ ${message.textHtml}
     // Basic case should work
     expect(html).toContain("From: attacker@example.com");
     expect(html).toContain("To: victim@example.com");
+  });
+});
+
+describe("forwardEmailSubject", () => {
+  it("adds one Fwd prefix", () => {
+    expect(forwardEmailSubject("Please reply")).toBe("Fwd: Please reply");
+  });
+
+  it("does not stack a prefix the message already has", () => {
+    expect(forwardEmailSubject("Fwd: Please reply")).toBe("Fwd: Please reply");
+    expect(forwardEmailSubject("fwd: Please reply")).toBe("fwd: Please reply");
+    expect(forwardEmailSubject("FW: Please reply")).toBe("FW: Please reply");
+    expect(forwardEmailSubject("  Fwd: Please reply  ")).toBe(
+      "Fwd: Please reply",
+    );
+  });
+
+  it("still marks a reply as forwarded", () => {
+    expect(forwardEmailSubject("Re: Please reply")).toBe(
+      "Fwd: Re: Please reply",
+    );
   });
 });

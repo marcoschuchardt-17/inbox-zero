@@ -423,6 +423,138 @@ describe("isColdEmail", () => {
     }
   });
 
+  it("does not classify a colleague listed first of two senders as cold", async () => {
+    vi.mocked(prisma.groupItem.findFirst).mockResolvedValue(null);
+
+    const result = await checkColdEmailGuards({
+      logger,
+      email: {
+        id: "msg-colleague-first",
+        from: "Colleague <colleague@company.com>, Stranger <stranger@gmail.com>",
+        to: "user@company.com",
+        subject: "Colleague first",
+        content: "Hello from both of us.",
+        date: new Date("2026-08-01T12:00:00.000Z"),
+      },
+      emailAccount: getEmailAccount({
+        id: "test-account-id",
+        email: "user@company.com",
+      }),
+      provider: mockProvider as never,
+      coldEmailRule: { instructions: "test instructions", groupId: "group-id" },
+    });
+
+    expect(result).toEqual({ isColdEmail: false, reason: "hasPreviousEmail" });
+    expect(
+      mockProvider.hasPreviousCommunicationsWithSenderOrDomain,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("does not classify a whitelisted sender listed first of two senders as cold", async () => {
+    const result = await checkColdEmailGuards({
+      logger,
+      email: {
+        id: "msg-whitelist-first",
+        from: "Welcome <welcome@service.example>, New Person <new.person@gmail.com>",
+        to: "user@example.com",
+        subject: "Application sender first",
+        content: "Your workspace is ready.",
+        date: new Date("2026-08-01T12:00:00.000Z"),
+      },
+      emailAccount: getEmailAccount({
+        id: "test-account-id",
+        email: "user@example.com",
+      }),
+      provider: mockProvider as never,
+      coldEmailRule: { instructions: "test instructions", groupId: "group-id" },
+    });
+
+    expect(result).toEqual({ isColdEmail: false, reason: "applicationSender" });
+    expect(prisma.groupItem.findFirst).not.toHaveBeenCalled();
+    expect(
+      mockProvider.hasPreviousCommunicationsWithSenderOrDomain,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("keeps a learned cold sender when that person is listed first", async () => {
+    vi.mocked(prisma.groupItem.findFirst).mockImplementation(async (args) => {
+      const value = (args as { where?: { value?: string } })?.where?.value;
+      if (value !== "cold.first@vendor.test") return null;
+      return {
+        id: "group-item-id",
+        type: GroupItemType.FROM,
+        value,
+        exclude: false,
+        group: { id: "group-id", name: "Cold Email" },
+      } as never;
+    });
+
+    const result = await checkColdEmailGuards({
+      logger,
+      email: {
+        id: "msg-cold-first",
+        from: "Cold First <cold.first@vendor.test>, New Person <new.person@gmail.com>",
+        to: "user@example.com",
+        subject: "Cold sender first",
+        content: "Hello from both of us.",
+        date: new Date("2026-08-01T12:00:00.000Z"),
+      },
+      emailAccount: getEmailAccount({
+        id: "test-account-id",
+        email: "user@example.com",
+      }),
+      provider: mockProvider as never,
+      coldEmailRule: { instructions: "test instructions", groupId: "group-id" },
+    });
+
+    expect(result).toEqual({
+      isColdEmail: true,
+      reason: "ai-already-labeled",
+      patternMatch: {
+        group: { id: "group-id", name: "Cold Email" },
+        groupItem: {
+          id: "group-item-id",
+          type: GroupItemType.FROM,
+          value: "cold.first@vendor.test",
+          exclude: false,
+        },
+      },
+    });
+    expect(
+      mockProvider.hasPreviousCommunicationsWithSenderOrDomain,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("counts earlier mail from the first of two senders", async () => {
+    vi.mocked(prisma.groupItem.findFirst).mockResolvedValue(null);
+    mockProvider.hasPreviousCommunicationsWithSenderOrDomain.mockImplementation(
+      async ({ from }: { from: string }) => from.includes("sam@example.com"),
+    );
+
+    const result = await checkColdEmailGuards({
+      logger,
+      email: {
+        id: "msg-two-senders",
+        from: "Sam <sam@example.com>, New Person <new.person@gmail.com>",
+        to: "user@test.com",
+        subject: "First sender history",
+        content: "Hello from both of us.",
+        date: new Date("2026-09-30T12:00:00.000Z"),
+      },
+      emailAccount: getEmailAccount({
+        id: "test-account-id",
+        email: "user@example.com",
+      }),
+      provider: mockProvider as never,
+      coldEmailRule: { instructions: "test instructions", groupId: "group-id" },
+    });
+
+    expect(result).toEqual({ isColdEmail: false, reason: "hasPreviousEmail" });
+    mockProvider.hasPreviousCommunicationsWithSenderOrDomain.mockResolvedValue(
+      false,
+    );
+  });
+
   it("checkColdEmailGuards returns null when every guard passes", async () => {
     vi.mocked(prisma.groupItem.findFirst).mockResolvedValue(null);
 

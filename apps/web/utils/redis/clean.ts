@@ -105,6 +105,46 @@ export async function getThreadsByJobId({
   jobId: string;
   limit?: number;
 }) {
+  try {
+    return await readThreadsByJobId({ emailAccountId, jobId, limit });
+  } catch (error) {
+    if (!isUnconfiguredRedis(error)) throw error;
+    return [];
+  }
+}
+
+export async function deleteAllUserData(userId: string) {
+  // Delete all thread keys for this user
+  const threadPattern = `thread:${userId}:*`;
+  let cursor = 0;
+  let deletedThreads = 0;
+
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, {
+      match: threadPattern,
+      count: 100,
+    });
+    cursor = Number(nextCursor);
+
+    if (batch.length > 0) {
+      // Spread the array of keys
+      await redis.unlink(...batch);
+      deletedThreads += batch.length;
+    }
+  } while (cursor !== 0);
+
+  return { deletedThreads };
+}
+
+async function readThreadsByJobId({
+  emailAccountId,
+  jobId,
+  limit,
+}: {
+  emailAccountId: string;
+  jobId: string;
+  limit: number;
+}) {
   const pattern = `thread:${emailAccountId}:${jobId}:*`;
   const keys = [];
   let cursor = 0;
@@ -131,25 +171,13 @@ export async function getThreadsByJobId({
   return threads.filter(isDefined);
 }
 
-export async function deleteAllUserData(userId: string) {
-  // Delete all thread keys for this user
-  const threadPattern = `thread:${userId}:*`;
-  let cursor = 0;
-  let deletedThreads = 0;
-
-  do {
-    const [nextCursor, batch] = await redis.scan(cursor, {
-      match: threadPattern,
-      count: 100,
-    });
-    cursor = Number(nextCursor);
-
-    if (batch.length > 0) {
-      // Spread the array of keys
-      await redis.unlink(...batch);
-      deletedThreads += batch.length;
-    }
-  } while (cursor !== 0);
-
-  return { deletedThreads };
+function isUnconfiguredRedis(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const cause =
+    "cause" in error && error.cause instanceof Error ? error.cause.message : "";
+  return (
+    error.message.includes("Failed to parse URL") ||
+    error.message.includes("Invalid URL") ||
+    cause.includes("Invalid URL")
+  );
 }

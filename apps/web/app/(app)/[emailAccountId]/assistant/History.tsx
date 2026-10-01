@@ -18,6 +18,7 @@ import { useAccount } from "@/providers/EmailAccountProvider";
 import { useChat } from "@/providers/ChatProvider";
 import { useExecutedRules } from "@/hooks/useExecutedRules";
 import { useMessagesBatch } from "@/hooks/useMessagesBatch";
+import { useThread } from "@/hooks/useThread";
 import type { ParsedMessage } from "@/utils/types";
 import { EmailMessageCell } from "@/components/EmailMessageCell";
 import { FixWithChat } from "@/app/(app)/[emailAccountId]/assistant/FixWithChat";
@@ -134,12 +135,23 @@ function HistoryThread({
   messagesLoading: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const fallbackThread = useThread({
+    id: message || messagesLoading ? null : result.threadId,
+  });
+  const resolvedMessage =
+    message ??
+    fallbackThread.data?.thread.messages.find(
+      (item) => item.id === result.messageId,
+    ) ??
+    fallbackThread.data?.thread.messages.at(-1);
+  const resolvedLoading =
+    messagesLoading || (!message && fallbackThread.isLoading);
   return (
     <>
       <HistoryMessageRow
         result={result}
-        message={message}
-        messagesLoading={messagesLoading}
+        message={resolvedMessage}
+        messagesLoading={resolvedLoading}
         leading={
           result.messageCount > 1 ? (
             <Button
@@ -268,8 +280,8 @@ function HistoryMessageRow({
           <div className="min-w-0 flex-1">
             <EmailCell
               message={message}
-              messageId={result.messageId}
-              threadId={result.threadId}
+              messageId={message?.id || result.messageId}
+              threadId={message?.threadId || result.threadId}
               userEmail={userEmail}
               isMessageLoading={isMessageLoading}
             />

@@ -59,6 +59,7 @@ export type EmailEditorHandle = {
     contentId: string;
     previewUrl: string;
   }) => boolean;
+  showInlineImagePreview: (contentId: string, previewUrl: string) => boolean;
   removeInlineImage: (contentId: string) => boolean;
 };
 
@@ -414,6 +415,28 @@ const RichEmailEditor = forwardRef<
           })
           .run();
       },
+      showInlineImagePreview: (contentId, previewUrl) => {
+        if (!editor) return false;
+        const normalized = normalizeContentId(contentId);
+        if (!normalized) return false;
+        return editor.commands.command(({ dispatch, state, tr }) => {
+          let changed = false;
+          state.doc.descendants((node, position) => {
+            if (node.type.name !== "emailImage") return;
+            const nodeId = normalizeContentId(node.attrs.contentId);
+            const sourceId = normalizeContentId(node.attrs.src);
+            if (nodeId !== normalized && sourceId !== normalized) return;
+            tr.setNodeMarkup(position, undefined, {
+              ...node.attrs,
+              contentId: node.attrs.contentId || contentId,
+              src: previewUrl,
+            });
+            changed = true;
+          });
+          if (changed) dispatch?.(tr);
+          return changed;
+        });
+      },
       removeInlineImage: (contentId) => {
         if (!editor) return false;
         return editor.commands.command(({ dispatch, state, tr }) => {
@@ -683,6 +706,7 @@ const FallbackEmailEditor = forwardRef<
         return inserted;
       },
       insertInlineImage: () => false,
+      showInlineImagePreview: () => false,
       removeInlineImage: () => false,
     }),
     [getValue],
@@ -912,6 +936,16 @@ function setBlockDirection(editor: Editor, direction: "ltr" | "rtl") {
     .focus()
     .updateAttributes("paragraph", { dir: direction })
     .run();
+}
+
+function normalizeContentId(value: unknown) {
+  if (typeof value !== "string") return;
+  let normalized = value.trim();
+  if (normalized.toLowerCase().startsWith("cid:")) {
+    normalized = normalized.slice(4);
+  }
+  normalized = normalized.trim().replace(/^<|>$/g, "").trim().toLowerCase();
+  return normalized || undefined;
 }
 
 function normalizeLinkHref(value: string) {

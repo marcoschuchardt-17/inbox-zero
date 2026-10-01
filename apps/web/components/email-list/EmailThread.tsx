@@ -19,6 +19,10 @@ import {
 import { internalDateToDate } from "@/utils/date";
 import { GmailLabel } from "@/utils/gmail/label";
 import { useSentMessageOpens } from "@/hooks/useSentMessageOpens";
+import {
+  autoOpenMessageId,
+  useDisplayedEmail,
+} from "@/hooks/useDisplayedEmail";
 
 export function EmailThread({
   messages,
@@ -26,11 +30,15 @@ export function EmailThread({
   refetch,
   showReplyButton,
   autoOpenReplyForMessageId,
+  autoOpenReplyAll = false,
+  composeRequest = 0,
   autoOpenForwardForMessageId,
+  expandMessageId,
   topRightComponent,
   onSendSuccess,
   onMarkDone,
   onOpenSenderContext,
+  onConversationGone,
   withHeader,
   renderToolbar,
   renderMessageMenu,
@@ -41,11 +49,15 @@ export function EmailThread({
   refetch: () => void;
   showReplyButton: boolean;
   autoOpenReplyForMessageId?: string;
+  autoOpenReplyAll?: boolean;
+  composeRequest?: number;
   autoOpenForwardForMessageId?: string;
+  expandMessageId?: string | null;
   topRightComponent?: React.ReactNode;
   onSendSuccess?: (messageId: string, threadId: string) => void;
   onMarkDone?: () => void;
   onOpenSenderContext?: (message: ThreadMessage) => void;
+  onConversationGone?: () => void;
   withHeader?: boolean;
   enableMessageNavigation?: boolean;
   renderMessageMenu?: (message: ThreadMessage) => ReactNode;
@@ -56,6 +68,11 @@ export function EmailThread({
   }) => ReactNode;
 }) {
   const { emailAccountId } = useAccount();
+  const {
+    autoOpenForwardForMessageId: urlForwardId,
+    autoOpenReplyForMessageId: urlReplyId,
+    dismissOpenedCompose,
+  } = useDisplayedEmail();
   const threadId = messages[0]?.threadId ?? "";
   const { drafts: localDrafts } = useReplyDrafts(emailAccountId, threadId);
   const { data: sentMessageOpens } = useSentMessageOpens(threadId || null);
@@ -71,11 +88,10 @@ export function EmailThread({
   >(
     () =>
       new Map(
-        organizedMessages
-          .filter(({ message }) =>
-            message.labelIds?.includes(GmailLabel.UNREAD),
-          )
-          .map(({ message }) => [message.id, true]),
+        initiallyExpandedMessageIds(
+          organizedMessages.map(({ message }) => message),
+          expandMessageId,
+        ).map((id) => [id, true]),
       ),
   );
   const [recoveredReply, setRecoveredReply] = useState<{
@@ -84,12 +100,22 @@ export function EmailThread({
     version: number;
   }>();
   useEffect(() => {
-    const messageId = autoOpenForwardForMessageId ?? autoOpenReplyForMessageId;
+    const messageId = autoOpenMessageId(
+      autoOpenForwardForMessageId,
+      autoOpenReplyForMessageId,
+    );
     if (messageId)
       setExpansionOverrides((previous) =>
         new Map(previous).set(messageId, true),
       );
   }, [autoOpenForwardForMessageId, autoOpenReplyForMessageId]);
+  useEffect(() => {
+    if (!expandMessageId) return;
+    setExpansionOverrides((previous) => {
+      if (previous.get(expandMessageId)) return previous;
+      return new Map(previous).set(expandMessageId, true);
+    });
+  }, [expandMessageId]);
   const expanded = (id: string, hasDraft: boolean) =>
     expansionOverrides.get(id) ?? (id === lastMessageId || hasDraft);
   const hasLocalDraft = (id: string) =>
@@ -248,8 +274,19 @@ export function EmailThread({
                     ? () => setSelectedMessageId(message.id)
                     : undefined
                 }
+                conversationMessageIds={messages.map((item) => item.id)}
                 defaultComposeMode={defaultComposeMode}
+                replyAll={
+                  autoOpenReplyAll && autoOpenReplyForMessageId === message.id
+                }
+                composeRequest={composeRequest}
+                onOpenedComposeDismissed={
+                  urlReplyId === message.id || urlForwardId === message.id
+                    ? dismissOpenedCompose
+                    : undefined
+                }
                 draftMessages={draftMessages}
+                onConversationGone={onConversationGone}
                 expanded={expanded(
                   message.id,
                   Boolean(defaultComposeMode) || draftMessages.length > 0,
@@ -391,6 +428,32 @@ export function organizeThreadMessages(messages: ThreadMessage[]) {
       draftsByMessageId.get(message.id) ?? [],
     ),
   }));
+}
+
+export function initiallyExpandedMessageIds(
+  messages: { id: string; labelIds?: string[] | null }[],
+  focusedMessageId?: string | null,
+) {
+  return messages
+    .filter(
+      (message) =>
+        message.labelIds?.includes(GmailLabel.UNREAD) ||
+        Boolean(focusedMessageId && message.id === focusedMessageId),
+    )
+    .map((message) => message.id);
+}
+
+export function messageIdForShortcut(
+  messages: { id: string }[],
+  focusedMessageId?: string | null,
+) {
+  if (
+    focusedMessageId &&
+    messages.some((message) => message.id === focusedMessageId)
+  ) {
+    return focusedMessageId;
+  }
+  return messages.at(-1)?.id;
 }
 
 function sortDraftsOldestFirst(drafts: ThreadMessage[]) {

@@ -18,6 +18,8 @@ const credentialSchema = z
   .min(1, "This field is required")
   .max(512, "Value is too long");
 
+const passwordSchema = z.string().trim().max(512, "Value is too long");
+
 export const upsertImapSmtpAccountBody = z.object({
   email: z.string().trim().email("Enter a valid email"),
   name: z.string().trim().max(120).optional(),
@@ -25,22 +27,26 @@ export const upsertImapSmtpAccountBody = z.object({
   imapPort: portSchema.default(993),
   imapSecure: z.boolean().default(true),
   imapUsername: credentialSchema,
-  imapPassword: credentialSchema,
+  imapPassword: passwordSchema,
   smtpHost: hostSchema,
   smtpPort: portSchema.default(465),
   smtpSecure: z.boolean().default(true),
   smtpUsername: credentialSchema,
-  smtpPassword: credentialSchema,
+  smtpPassword: passwordSchema,
   syncFolder: z.string().trim().min(1).max(255).default("INBOX"),
 });
 export type UpsertImapSmtpAccountBody = z.infer<
   typeof upsertImapSmtpAccountBody
 >;
 
-export const testImapSmtpConnectionBody = upsertImapSmtpAccountBody.omit({
-  email: true,
-  name: true,
-});
+export const testImapSmtpConnectionBody = upsertImapSmtpAccountBody
+  .omit({
+    email: true,
+    name: true,
+  })
+  .extend({
+    emailAccountId: z.string().optional(),
+  });
 export type TestImapSmtpConnectionBody = z.infer<
   typeof testImapSmtpConnectionBody
 >;

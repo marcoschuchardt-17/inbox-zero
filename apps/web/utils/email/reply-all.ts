@@ -1,5 +1,9 @@
 import type { ParsedMessageHeaders } from "@/utils/types";
-import { extractEmailAddress, splitRecipientList } from "@/utils/email";
+import {
+  extractEmailAddress,
+  extractEmailAddresses,
+  splitRecipientList,
+} from "@/utils/email";
 
 export interface ReplyAllRecipients {
   cc: string[];
@@ -22,7 +26,9 @@ export function buildReplyAllRecipients(
 ): ReplyAllRecipients {
   // Determine the primary recipient (TO field)
   const replyToRaw = overrideTo || headers["reply-to"] || headers.from;
-  const replyTo = extractEmailAddress(replyToRaw);
+  const replyTargets = new Set(
+    extractEmailAddresses(replyToRaw).map((email) => email.toLowerCase()),
+  );
 
   const currentUserEmailSet = new Set(
     (Array.isArray(currentUserEmails) ? currentUserEmails : [currentUserEmails])
@@ -36,21 +42,25 @@ export function buildReplyAllRecipients(
 
   addHeaderRecipientsToCcSet({
     headerValue: headers.cc,
-    replyTo,
+    replyTargets,
     currentUserEmailSet,
     seenEmails,
     ccSet,
   });
   addHeaderRecipientsToCcSet({
     headerValue: headers.to,
-    replyTo,
+    replyTargets,
     currentUserEmailSet,
     seenEmails,
     ccSet,
   });
 
   return {
-    to: replyToRaw, // Keep the original format for the TO field
+    // A reply the user already addressed keeps that To line. Otherwise the
+    // account is already reading the message, so reply-to skips it.
+    to: overrideTo
+      ? replyToRaw
+      : replyTargetWithoutAccount(replyToRaw, currentUserEmailSet),
     cc: Array.from(ccSet),
   };
 }
@@ -94,38 +104,49 @@ export function mergeAndDedupeRecipients(
   return result;
 }
 
+function replyTargetWithoutAccount(
+  replyToRaw: string,
+  currentUserEmailSet: Set<string>,
+) {
+  const people = splitRecipientList(replyToRaw);
+  const others = people.filter((person) => {
+    const email = extractEmailAddress(person).toLowerCase();
+    return Boolean(email) && !currentUserEmailSet.has(email);
+  });
+  // A reply-to that only names this account still has somewhere to go.
+  if (!others.length || others.length === people.length) return replyToRaw;
+  return others.join(", ");
+}
+
 function addHeaderRecipientsToCcSet({
   headerValue,
-  replyTo,
+  replyTargets,
   currentUserEmailSet,
   seenEmails,
   ccSet,
 }: {
   headerValue: string | undefined;
-  replyTo: string;
+  replyTargets: Set<string>;
   currentUserEmailSet: Set<string>;
   seenEmails: Set<string>;
   ccSet: Set<string>;
 }) {
   if (!headerValue) return;
 
-  const headerEmails = splitRecipientList(headerValue)
-    .map((entry) => extractEmailAddress(entry))
-    .filter((email) => {
-      if (!email) return false;
+  for (const entry of splitRecipientList(headerValue)) {
+    const email = extractEmailAddress(entry);
+    if (!email) continue;
 
-      const normalizedEmail = email.toLowerCase();
-      return (
-        normalizedEmail !== replyTo.toLowerCase() &&
-        !currentUserEmailSet.has(normalizedEmail)
-      );
-    });
-
-  for (const email of headerEmails) {
-    const key = email.toLowerCase();
-    if (!seenEmails.has(key)) {
-      seenEmails.add(key);
-      ccSet.add(email);
+    const normalizedEmail = email.toLowerCase();
+    if (
+      replyTargets.has(normalizedEmail) ||
+      currentUserEmailSet.has(normalizedEmail) ||
+      seenEmails.has(normalizedEmail)
+    ) {
+      continue;
     }
+
+    seenEmails.add(normalizedEmail);
+    ccSet.add(entry);
   }
 }

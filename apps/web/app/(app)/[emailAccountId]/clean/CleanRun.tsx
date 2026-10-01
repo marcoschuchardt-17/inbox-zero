@@ -10,12 +10,14 @@ export function CleanRun({
   threads,
   total,
   done,
+  streamEnabled,
 }: {
   isPreviewBatch: boolean;
   job: CleanupJob;
   threads: Awaited<ReturnType<typeof getThreadsByJobId>>;
   total: number;
   done: number;
+  streamEnabled: boolean;
 }) {
   return (
     <div className="mx-auto my-4 w-full max-w-2xl px-4">
@@ -25,6 +27,7 @@ export function CleanRun({
           threads={threads.filter((t) => t.status !== "processing")}
           stats={{ total, done }}
           action={job.action}
+          streamEnabled={streamEnabled}
         />
       </Card>
     </div>

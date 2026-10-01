@@ -53,6 +53,16 @@ describe("splitEmailContent", () => {
         .mainContent,
     ).toBe(content);
   });
+  it("keeps a forwarded message in the opened mail", () => {
+    const result = splitEmailContent(
+      '<p>Passing this along.</p><div class="gmail_quote gmail_quote_container"><div class="gmail_attr">---------- Forwarded message ----------<br>From: Digest &lt;digest@example.com&gt;</div><p>Can you reply to this?</p></div>',
+    );
+
+    expect(result.hasQuotedContent).toBe(false);
+    expect(result.mainContent).toContain("digest@example.com");
+    expect(result.mainContent).toContain("Can you reply to this?");
+  });
+
   it("collapses a Gmail quote container", () => {
     const result = splitEmailContent(
       '<div>Current reply</div><div class="gmail_quote_container"><div>Earlier message</div></div>',

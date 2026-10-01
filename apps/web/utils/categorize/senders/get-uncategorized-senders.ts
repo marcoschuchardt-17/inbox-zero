@@ -1,4 +1,8 @@
-import { extractEmailAddress } from "@/utils/email";
+import {
+  addressesOtherThanAccount,
+  extractEmailAddresses,
+  senderDisplayNameForAddress,
+} from "@/utils/email";
 import { getSenders } from "./get-senders";
 import prisma from "@/utils/prisma";
 import type { Sender } from "@/utils/categorize/senders/batch-validation";
@@ -16,6 +20,10 @@ export async function getUncategorizedSenders({
 }) {
   let uncategorizedSenders: Sender[] = [];
   let currentOffset = offset;
+  const account = await prisma.emailAccount.findUnique({
+    where: { id: emailAccountId },
+    select: { email: true },
+  });
 
   while (uncategorizedSenders.length === 0 && currentOffset < MAX_ITERATIONS) {
     const result = await getSenders({
@@ -26,10 +34,22 @@ export async function getUncategorizedSenders({
 
     const senderMap = new Map<string, string | null>();
     for (const sender of result) {
-      const email = extractEmailAddress(sender.from);
-      // Only set the name if we don't already have one (keep first non-null)
-      if (!senderMap.has(email) || (!senderMap.get(email) && sender.fromName)) {
-        senderMap.set(email, sender.fromName);
+      const addresses = extractEmailAddresses(sender.from);
+      const people = addressesOtherThanAccount(
+        addresses.length ? addresses : [sender.from],
+        account?.email,
+      );
+      if (!people.length) continue;
+      for (const email of people) {
+        const name = senderDisplayNameForAddress(
+          sender.fromName,
+          addresses,
+          people,
+          email,
+        ).name;
+        if (!senderMap.has(email) || (!senderMap.get(email) && name)) {
+          senderMap.set(email, name);
+        }
       }
     }
 

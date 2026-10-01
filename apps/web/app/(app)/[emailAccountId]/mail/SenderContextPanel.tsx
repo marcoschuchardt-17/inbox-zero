@@ -10,6 +10,7 @@ import {
   WalletCardsIcon,
   XIcon,
 } from "lucide-react";
+import { initialsForSenderList } from "@/app/(app)/[emailAccountId]/mail/thread-participants";
 import { usePublicContactContext } from "@/app/(app)/[emailAccountId]/mail/use-public-contact-context";
 import { LoadingContent } from "@/components/LoadingContent";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -83,10 +84,10 @@ export function SenderContextPanel({
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0">
-        <div className="truncate font-title font-medium text-base text-foreground">
+        <div className="break-words font-title font-medium text-base text-foreground">
           {senderName}
         </div>
-        <div className="truncate text-muted-foreground text-sm">
+        <div className="break-words text-muted-foreground text-sm">
           {senderEmail}
         </div>
       </div>
@@ -310,6 +311,9 @@ function ContextSkeleton() {
 }
 
 function getInitials(value: string) {
+  const listed = initialsForSenderList(value);
+  if (listed) return listed;
+
   const words = value.trim().split(/\s+/).filter(Boolean);
   return words
     .slice(0, 2)

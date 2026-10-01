@@ -7,7 +7,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockEnqueueThreadMailMutationBatch = vi.fn();
 const mockFetchWithAccount = vi.fn();
+const account = vi.hoisted(() => ({ provider: "google" }));
 let durableMutations: Array<Record<string, unknown>> = [];
+
+vi.mock("@/providers/EmailAccountProvider", () => ({
+  useAccount: () => ({
+    provider: account.provider,
+    emailAccountId: "account-1",
+  }),
+}));
 
 vi.mock("@/utils/mail-engine/thread-mail-mutations", () => ({
   enqueueThreadMailMutationBatch: (
@@ -25,6 +33,7 @@ describe("archive sender queue", () => {
     vi.resetModules();
     vi.clearAllMocks();
     sessionStorage.clear();
+    account.provider = "google";
     durableMutations = [];
     mockFetchWithAccount.mockResolvedValue({
       ok: true,
@@ -91,6 +100,38 @@ describe("archive sender queue", () => {
     expect(mockFetchWithAccount).toHaveBeenCalledWith({
       url: "/api/threads/basic?fromEmail=Sender%40example.com&limit=100&labelId=INBOX",
       emailAccountId: "account-1",
+    });
+  });
+
+  it("sends the IMAP provider with the archive batch", async () => {
+    account.provider = "imap";
+    mockFetchWithAccount.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        threads: [{ id: "thread-1", messages: [{ id: "message-1" }] }],
+      }),
+    });
+    const { jotaiStore } = await import("@/store");
+    const { useArchiveSenderQueueActions } = await import(
+      "./archive-sender-queue"
+    );
+    const { result } = renderHook(
+      () => useArchiveSenderQueueActions("account-1"),
+      { wrapper: createWrapper(jotaiStore) },
+    );
+
+    await act(async () => {
+      await result.current.queueArchiveSenders({
+        senders: ["receipts@example.com"],
+      });
+    });
+
+    expect(mockEnqueueThreadMailMutationBatch).toHaveBeenCalledWith({
+      clientSource: { kind: "sender", sender: "receipts@example.com" },
+      emailAccountId: "account-1",
+      provider: "imap",
+      payload: { kind: "archive" },
+      threads: [{ id: "thread-1", messages: [{ id: "message-1" }] }],
     });
   });
 

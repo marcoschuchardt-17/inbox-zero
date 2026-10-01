@@ -152,7 +152,7 @@ export function useCommandPaletteCommands({
         priority: 2,
         keywords: ["ai", "assistant", "automation"],
         action: () =>
-          router.push(prefixPath(emailAccountId, "/assistant/settings")),
+          router.push(prefixPath(emailAccountId, "/automation?tab=settings")),
       },
       {
         id: "settings-usage",

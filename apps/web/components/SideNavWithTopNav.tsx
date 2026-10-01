@@ -12,6 +12,8 @@ import {
 import { SideNav } from "@/components/SideNav";
 import { SidebarRight } from "@/components/SidebarRight";
 import { cn } from "@/utils";
+import { useAccount } from "@/providers/EmailAccountProvider";
+import { isImapProvider } from "@/utils/email/provider-types";
 
 const CrispWithNoSSR = dynamic(() => import("@/components/CrispChat"));
 
@@ -20,13 +22,15 @@ function ContentWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAssistantRoute = pathname?.includes("/assistant");
   const isMailRoute = pathname?.includes("/mail");
+  const { provider } = useAccount();
+  const mailOwnsNav = isMailRoute && !isImapProvider(provider);
   const isRightSidebarOpen =
     !isAssistantRoute && state.includes("chat-sidebar");
 
   // The padding only exists to clear the fixed MobileHeader, which neither of
   // these routes renders — on mail it showed up as a blank strip above the
   // screen's own sidebar and toolbar.
-  const noTopPadding = isAssistantRoute || isMailRoute;
+  const noTopPadding = isAssistantRoute || mailOwnsNav;
 
   return (
     <div
@@ -63,12 +67,13 @@ export function SideNavWithTopNav({
   feedbackEnabled: boolean;
 }) {
   const pathname = usePathname();
+  const { provider } = useAccount();
 
   if (!pathname) return null;
 
   const isAssistantRoute = pathname.includes("/assistant");
-  // The mail screen ships its own sidebar, so this one would be a second copy.
-  const isMailRoute = pathname.includes("/mail");
+  // Gmail and Outlook mail ship their own sidebar. IMAP mail uses this one.
+  const mailOwnsNav = pathname.includes("/mail") && !isImapProvider(provider);
 
   // Ugly code. May change the onboarding path later so we don't need to do this.
   // Only return children for the onboarding or onboarding-brief pages: /[emailAccountId]/onboarding or /[emailAccountId]/onboarding-brief
@@ -85,9 +90,9 @@ export function SideNavWithTopNav({
       sidebarNames={["left-sidebar", "chat-sidebar"]}
       keyboardShortcutName="left-sidebar"
     >
-      {/* Mail supplies its own sidebar and trigger for this shared state, so
-          the global navigation and its mobile header would be duplicates. */}
-      {!isMailRoute && (
+      {/* Gmail and Outlook supply their own sidebar and trigger, so the global
+          navigation and its mobile header would be duplicates there. */}
+      {!mailOwnsNav && (
         <>
           <MobileHeader />
           <SideNav name="left-sidebar" feedbackEnabled={feedbackEnabled} />

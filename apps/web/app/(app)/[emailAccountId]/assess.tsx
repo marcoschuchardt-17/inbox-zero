@@ -26,7 +26,7 @@ export function AssessUser() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: only run once
   useEffect(() => {
     // Skip assessment when an admin is viewing someone else's account
-    if (!emailAccountId || !isAccountOwner) return;
+    if (!emailAccountId || !isAccountOwner || provider === "imap") return;
 
     async function assess() {
       const result = await executeAssessAsync();

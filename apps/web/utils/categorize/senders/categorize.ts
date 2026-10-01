@@ -197,7 +197,7 @@ export async function categorizeWithAi({
     count: sendersToCategorizeWithAi.length,
   });
 
-  const aiResults = await aiCategorizeSenders({
+  const aiResults = await categorizeRemainingSenders({
     emailAccount,
     senders: sendersToCategorizeWithAi.map((sender) => ({
       emailAddress: sender,
@@ -214,4 +214,26 @@ export async function categorizeWithAi({
     if (result.category) return result;
     return aiResultsBySender.get(result.sender) ?? result;
   });
+}
+
+async function categorizeRemainingSenders(
+  input: Parameters<typeof aiCategorizeSenders>[0],
+) {
+  if (!input.senders.length) return [];
+  try {
+    return await aiCategorizeSenders(input);
+  } catch (error) {
+    if (!isMissingModelListError(error)) throw error;
+    logger.warn(
+      "Skipped AI sender categorization because no model list is configured",
+    );
+    return [];
+  }
+}
+
+function isMissingModelListError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.startsWith("No configured LLM model list resolved for ")
+  );
 }

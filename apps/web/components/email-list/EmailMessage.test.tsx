@@ -58,6 +58,8 @@ vi.mock("@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy", () => ({
     onDiscard: () => void;
     replyingToEmail?: {
       to?: string;
+      cc?: string;
+      subject?: string;
       threadId?: string;
       forwardedMessageId?: string;
       forwardedAttachments?: Array<{ filename: string }>;
@@ -67,6 +69,9 @@ vi.mock("@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy", () => ({
       data-testid="composer"
       data-inline-reply="true"
       data-thread-id={replyingToEmail?.threadId}
+      data-to={replyingToEmail?.to}
+      data-cc={replyingToEmail?.cc}
+      data-subject={replyingToEmail?.subject}
       data-forwarded-message-id={replyingToEmail?.forwardedMessageId}
       data-forwarded-attachments={replyingToEmail?.forwardedAttachments
         ?.map((attachment) => attachment.filename)
@@ -216,6 +221,467 @@ describe("EmailMessage reply", () => {
       />,
     );
     expect(screen.getByRole("textbox", { name: "Email message" })).toBeTruthy();
+  });
+});
+
+describe("EmailMessage recipients", () => {
+  afterEach(cleanup);
+
+  it("counts people who were only copied", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "News <news@example.com>",
+            subject: "Shared desks",
+            to: "Sam <sam@example.com>, Ada <ada@example.com>",
+            cc: "Pat <pat@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("to Sam and 2 others")).toBeTruthy();
+  });
+
+  it("counts the account when it was only copied", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "News <news@example.com>",
+            subject: "Copied desks",
+            to: "Sam <sam@example.com>",
+            cc: "Me <user@example.com>",
+            bcc: "Pat <pat@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("to me and 2 others")).toBeTruthy();
+  });
+
+  it("names every person who sent the message", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>, Ada <ada@example.com>",
+            subject: "Two senders",
+            to: "user@example.com",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Sam, Ada")).toBeTruthy();
+  });
+
+  it("names archived mail from this account as Me", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Copied only",
+            to: "",
+            cc: "Ada Copy <ada-copy@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Me")).toBeTruthy();
+    expect(screen.getByText("to Ada Copy")).toBeTruthy();
+  });
+});
+
+describe("EmailMessage reply address", () => {
+  afterEach(cleanup);
+
+  it("replies to the Reply-To address when the sender set one", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Newsletter <news@example.com>",
+            subject: "Subject",
+            to: "user@example.com",
+            "reply-to": "replies@example.com",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "replies@example.com",
+    );
+  });
+
+  it("replies to the original recipients of a message the account sent", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["SENT"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "user@example.com",
+            subject: "Subject",
+            to: "Sam <sam@example.com>",
+            "reply-to": "elsewhere@example.com",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Sam <sam@example.com>",
+    );
+  });
+
+  it("replies to the copied person when archived sent mail has no To", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Copied only",
+            to: "",
+            cc: "Ada Copy <ada-copy@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Copy <ada-copy@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBeUndefined();
+    expect(screen.getByTestId("composer").dataset.subject).toBe("Copied only");
+  });
+
+  it("replies to the copied person when sent mail is only addressed to the account", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Reply beside me",
+            to: "Starttls <user@example.com>",
+            cc: "Ada Beside <ada-beside@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Beside <ada-beside@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBeUndefined();
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Reply beside me",
+    );
+  });
+
+  it("replies to the other person when this account is also addressed", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>",
+            subject: "Reply listed me",
+            to: "Starttls <user@example.com>, Ada Replylist <ada-replylist@example.com>",
+            cc: "Starttls <user@example.com>, Pat <pat@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Replylist <ada-replylist@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Pat <pat@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Reply listed me",
+    );
+  });
+
+  it("replies to the other person when the account is also a sender", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam Participant <sam.participant@gmail.com>, Starttls <user@example.com>",
+            subject: "Profile co-sender",
+            to: "Ada Participant <ada.participant@acme.example>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Participant <ada.participant@acme.example>",
+    );
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Profile co-sender",
+    );
+  });
+
+  it("includes the other sender when replying to everyone on mail this account also sent", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          labelIds: ["ARCHIVE"],
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam Participant <sam.participant@gmail.com>, Starttls <user@example.com>",
+            subject: "Profile co-sender",
+            to: "Ada Participant <ada.participant@acme.example>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        replyAll
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Participant <ada.participant@acme.example>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Sam Participant <sam.participant@gmail.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Profile co-sender",
+    );
+  });
+
+  it("offers the public profile when this account is the first sender", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Starttls <user@example.com>, Sam Participant <sam.participant@gmail.com>",
+            subject: "Account first",
+            to: "Ada Participant <ada.participant@acme.example>",
+          },
+        }}
+        onOpenSenderContext={vi.fn()}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "View public profile for Starttls, Sam Participant",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("SS", { exact: true, hidden: true })).toBeTruthy();
+  });
+
+  it("keeps both initials of one sender", () => {
+    render(
+      <EmailMessage
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam Participant <sam.participant@gmail.com>",
+            subject: "One sender",
+            to: "Ada Participant <ada.participant@acme.example>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByText("SP", { exact: true, hidden: true })).toBeTruthy();
+  });
+
+  it("replies to the other person when reply-to also names this account", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>",
+            subject: "Reply to listed",
+            to: "user@example.com",
+            cc: "Me <user@example.com>, Pat Replycc <pat-replycc@example.com>",
+            "reply-to":
+              "Me <user@example.com>, Ada Replyto <ada-replyto@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Replyto <ada-replyto@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Pat Replycc <pat-replycc@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Re: Reply to listed",
+    );
+  });
+
+  it("leaves this account off reply-all when reply-to also names it", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>",
+            subject: "Reply to listed",
+            to: "user@example.com",
+            cc: "Me <user@example.com>, Pat Replycc <pat-replycc@example.com>",
+            "reply-to":
+              "Me <user@example.com>, Ada Replyto <ada-replyto@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        replyAll
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Replyto <ada-replyto@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Pat Replycc <pat-replycc@example.com>",
+    );
+  });
+
+  it("includes the other recipients when replying to everyone", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>",
+            subject: "Subject",
+            to: "user@example.com, Pat <pat@example.com>",
+            cc: "Ada <ada@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        replyAll
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Sam <sam@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Ada <ada@example.com>, Pat <pat@example.com>",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Sam <sam@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Ada <ada@example.com>",
+    );
   });
 });
 

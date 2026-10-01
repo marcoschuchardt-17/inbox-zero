@@ -1,3 +1,8 @@
+import {
+  addressesOtherThanAccount,
+  extractEmailAddresses,
+  senderDisplayNameForAddress,
+} from "@/utils/email";
 import prisma from "@/utils/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { Logger } from "@/utils/logger";
@@ -26,6 +31,7 @@ export type SenderEmailStatsOptions = {
   orderBy?: "emails" | "unread" | "unarchived";
   orderDirection?: "asc" | "desc";
   limit?: number | null;
+  accountEmail?: string | null;
   logger: Logger;
 };
 
@@ -73,6 +79,10 @@ export async function getSenderEmailStats(
   whereConditions.push(
     Prisma.sql`"emailAccountId" = ${options.emailAccountId}`,
   );
+  // Sent and draft rows are mail this account wrote. These stats list people
+  // who wrote to the account, for bulk unsubscribe and inbox health.
+  whereConditions.push(Prisma.sql`sent = false`);
+  whereConditions.push(Prisma.sql`draft = false`);
 
   // Add search filter if provided - search both from (email) and fromName fields
   if (options.search) {
@@ -119,16 +129,7 @@ export async function getSenderEmailStats(
   try {
     const results = await prisma.$queryRaw<SenderEmailStats[]>(query);
 
-    // Convert BigInt values to regular numbers
-    return results.map((result) => ({
-      from: result.from,
-      fromName: result.fromName,
-      minFromName: result.minFromName,
-      count: result.count,
-      inboxEmails: result.inboxEmails,
-      readEmails: result.readEmails,
-      unsubscribeLink: result.unsubscribeLink,
-    }));
+    return expandSenderAddresses(results, options.accountEmail);
   } catch (error) {
     logger.error("getSenderEmailStats error", {
       error,
@@ -156,4 +157,73 @@ function getOrderByClause(
     default:
       return `"count" ${direction}`;
   }
+}
+
+function expandSenderAddresses(
+  results: SenderEmailStats[],
+  accountEmail?: string | null,
+) {
+  const merged = new Map<string, SenderEmailStats>();
+  for (const result of results) {
+    const addresses = extractEmailAddresses(result.from).map((address) =>
+      address.toLowerCase(),
+    );
+    const people = addressesOtherThanAccount(
+      addresses.length ? addresses : [result.from],
+      accountEmail,
+    );
+    if (!people.length) continue;
+    for (const address of people) {
+      const assigned = senderDisplayNameForAddress(
+        result.fromName,
+        addresses,
+        people,
+        address,
+      );
+      const fromName = assigned.name;
+      let minFromName: string | null = null;
+      if (fromName && assigned.split) {
+        minFromName =
+          senderDisplayNameForAddress(
+            result.minFromName,
+            addresses,
+            people,
+            address,
+          ).name || fromName;
+      } else if (fromName) {
+        minFromName = result.minFromName;
+      }
+      const existing = merged.get(address);
+      if (!existing) {
+        merged.set(address, {
+          from: address,
+          fromName,
+          minFromName,
+          count: asNumber(result.count),
+          inboxEmails: asNumber(result.inboxEmails),
+          readEmails: asNumber(result.readEmails),
+          unsubscribeLink: result.unsubscribeLink,
+        });
+        continue;
+      }
+      existing.count += asNumber(result.count);
+      existing.inboxEmails += asNumber(result.inboxEmails);
+      existing.readEmails += asNumber(result.readEmails);
+      if (!existing.fromName && fromName) {
+        existing.fromName = fromName;
+        existing.minFromName = minFromName;
+      }
+      if (!existing.unsubscribeLink && result.unsubscribeLink) {
+        existing.unsubscribeLink = result.unsubscribeLink;
+      }
+    }
+  }
+  return [...merged.values()].sort(
+    (left, right) =>
+      right.count - left.count || left.from.localeCompare(right.from),
+  );
+}
+
+function asNumber(value: number | bigint) {
+  return typeof value === "bigint" ? Number(value) : value;
 }

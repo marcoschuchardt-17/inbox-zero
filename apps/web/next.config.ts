@@ -27,6 +27,10 @@ const zodV4CorePath = path.join(
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
+  // Dokploy already compresses responses. Next's gzip pauses a Flight stream
+  // under backpressure, the document ends with rows still pending, and React
+  // replaces the painted page with error #412.
+  compress: false,
   // Sequential Playwright feature groups use separate dev servers. Isolating
   // their caches prevents a new Turbopack process from restoring stale tasks.
   ...(playwrightRunId && !isProductionBuild
@@ -124,6 +128,11 @@ const nextConfig: NextConfig = {
       {
         key: "Strict-Transport-Security",
         value: "max-age=31536000",
+      },
+      // Proxies must flush RSC streams. Buffering them closed shows React #412.
+      {
+        key: "X-Accel-Buffering",
+        value: "no",
       },
     ];
 

@@ -19,6 +19,9 @@ import {
 import { toastError } from "@/components/Toast";
 import { getGmailUrl } from "@/utils/url";
 import { CleanAction } from "@/generated/prisma/enums";
+import { useAccount } from "@/providers/EmailAccountProvider";
+import { isGoogleProvider } from "@/utils/email/provider-types";
+import { prefixPath } from "@/utils/path";
 
 type Status = "markedDone" | "markingDone" | "keep" | "labelled" | "processing";
 
@@ -39,10 +42,17 @@ export function EmailItem({
   setUndoing: (threadId: string) => void;
   setUndone: (threadId: string) => void;
 }) {
+  const { provider } = useAccount();
   const status = getStatus(email);
   const pending = isPending(email);
   const archive = email.archive === true;
   const label = !!email.label;
+  const messageHref = isGoogleProvider(provider)
+    ? getGmailUrl(email.threadId, userEmail)
+    : prefixPath(
+        emailAccountId,
+        `/mail?side-panel-thread-id=${encodeURIComponent(email.threadId)}`,
+      );
 
   return (
     <div
@@ -59,8 +69,8 @@ export function EmailItem({
           <div className="truncate font-medium">{email.subject}</div>
           <Link
             className="ml-2 hover:text-foreground"
-            href={getGmailUrl(email.threadId, userEmail)}
-            target="_blank"
+            href={messageHref}
+            target={isGoogleProvider(provider) ? "_blank" : undefined}
           >
             <ExternalLinkIcon className="size-3" />
           </Link>

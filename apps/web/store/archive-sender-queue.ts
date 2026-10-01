@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import { useAccount } from "@/providers/EmailAccountProvider";
 import { createSenderQueue } from "./sender-queue";
 
 const { addToQueue, clearStatuses, useQueueProgress, useSenderStatus } =
@@ -12,6 +13,7 @@ export const useArchiveQueueProgress = useQueueProgress;
 export const clearArchiveSenderStatuses = clearStatuses;
 
 export function useArchiveSenderQueueActions(emailAccountId: string) {
+  const { provider } = useAccount();
   const progress = useArchiveQueueProgress(emailAccountId);
 
   const queueArchiveSenders = useCallback(
@@ -23,6 +25,7 @@ export function useArchiveSenderQueueActions(emailAccountId: string) {
           const queued = await addToArchiveSenderThreadQueue({
             sender,
             emailAccountId,
+            provider,
           });
           if (queued) queuedSenders += 1;
         } catch {}
@@ -30,7 +33,7 @@ export function useArchiveSenderQueueActions(emailAccountId: string) {
 
       return queuedSenders;
     },
-    [emailAccountId],
+    [emailAccountId, provider],
   );
 
   return useMemo(

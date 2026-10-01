@@ -13,22 +13,30 @@ import { EmailList } from "./EmailList";
 
 const query = vi.hoisted(() => ({ setThreadId: vi.fn() }));
 const source = vi.hoisted(() => ({ refetch: vi.fn() }));
+const engine = vi.hoisted(() => ({
+  getDiagnostics: vi.fn(),
+  submitConversations: vi.fn(),
+}));
 const mail = vi.hoisted(() => ({
-  client: {
-    getDiagnostics: vi.fn(),
-    submitConversations: vi.fn(),
-  },
+  client: engine as null | typeof engine,
+}));
+const account = vi.hoisted(() => ({
+  emailAccountId: "account-1",
+  provider: "google",
+  userEmail: "user@example.com",
+}));
+const http = vi.hoisted(() => ({
+  fetchWithAccount: vi.fn(),
 }));
 
 vi.mock("nuqs", () => ({
   useQueryState: () => [null, query.setThreadId],
 }));
 vi.mock("@/providers/EmailAccountProvider", () => ({
-  useAccount: () => ({
-    emailAccountId: "account-1",
-    provider: "google",
-    userEmail: "user@example.com",
-  }),
+  useAccount: () => account,
+}));
+vi.mock("@/utils/fetch", () => ({
+  fetchWithAccount: (...args: unknown[]) => http.fetchWithAccount(...args),
 }));
 vi.mock("@inboxzero/mail-react/MailEngineProvider", () => ({
   useOptionalMailClient: () => mail.client,
@@ -82,9 +90,34 @@ describe("EmailList durable actions", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    account.provider = "google";
+    mail.client = engine;
     source.refetch.mockResolvedValue(undefined);
-    mail.client.getDiagnostics.mockResolvedValue({ revision: 1 });
-    mail.client.submitConversations.mockResolvedValue({ status: "queued" });
+    engine.getDiagnostics.mockResolvedValue({ revision: 1 });
+    engine.submitConversations.mockResolvedValue({ status: "queued" });
+    http.fetchWithAccount.mockResolvedValue({ ok: true });
+  });
+
+  it("archives an IMAP conversation through the mailbox API", async () => {
+    account.provider = "imap";
+    mail.client = null;
+    const thread = createThread();
+    render(<EmailList refetch={source.refetch} threads={[thread]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive thread-1" }));
+
+    await waitFor(() =>
+      expect(http.fetchWithAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "/api/threads/thread-1/archive",
+          emailAccountId: "account-1",
+          init: { method: "POST" },
+        }),
+      ),
+    );
+    expect(source.refetch).toHaveBeenCalledWith({
+      removedThreadIds: ["thread-1"],
+    });
   });
 
   it("archives and marks unread threads read through the engine", async () => {
@@ -102,7 +135,7 @@ describe("EmailList durable actions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Archive thread-1" }));
     await waitFor(() =>
-      expect(mail.client.submitConversations).toHaveBeenCalledWith(
+      expect(engine.submitConversations).toHaveBeenCalledWith(
         expect.objectContaining({
           accountId: "account-1",
           conversations: [
@@ -118,7 +151,7 @@ describe("EmailList durable actions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open thread-1" }));
     await waitFor(() =>
-      expect(mail.client.submitConversations).toHaveBeenLastCalledWith(
+      expect(engine.submitConversations).toHaveBeenLastCalledWith(
         expect.objectContaining({
           change: { kind: "set_read", read: true },
         }),
@@ -132,7 +165,7 @@ describe("EmailList durable actions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open thread-1" }));
 
-    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(engine.submitConversations).not.toHaveBeenCalled();
   });
 
   it("shows an empty state immediately", () => {

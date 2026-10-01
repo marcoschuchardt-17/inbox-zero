@@ -23,8 +23,51 @@ describe("parseMessageReply", () => {
 
     expect(parseMessageReply(message)).toMatchObject({
       textPlain: "Fresh reply",
-      textHtml: "Fresh reply",
+      textHtml: "<div>Fresh reply</div>",
     });
+  });
+
+  it("keeps an inline image in the opened reply", () => {
+    const message = createMessage({
+      textPlain: "Inline photo check",
+      textHtml:
+        '<p>Inline photo check</p><img src="cid:photo@inboxzero.local" alt="red block"><div class="gmail_quote">Older quoted line</div>',
+    });
+
+    const parsed = parseMessageReply(message);
+
+    expect(parsed.textPlain).toBe("Inline photo check");
+    expect(parsed.textHtml).toContain('src="cid:photo@inboxzero.local"');
+    expect(parsed.textHtml).not.toContain("Older quoted line");
+  });
+
+  it("keeps a forwarded message that uses the reply quote markup", () => {
+    const message = createMessage({
+      textPlain:
+        "Passing this along.\n\n---------- Forwarded message ----------\nFrom: Digest <digest@example.com>\n\nCan you reply to this?",
+      textHtml:
+        '<p>Passing this along.</p><div class="gmail_quote gmail_quote_container"><div class="gmail_attr">---------- Forwarded message ----------<br>From: Digest &lt;digest@example.com&gt;</div><p>Can you reply to this?</p></div>',
+    });
+
+    const parsed = parseMessageReply(message);
+
+    expect(parsed.textHtml).toContain("Passing this along.");
+    expect(parsed.textHtml).toContain("digest@example.com");
+    expect(parsed.textHtml).toContain("Can you reply to this?");
+  });
+
+  it("still removes a reply that quotes an older forward", () => {
+    const message = createMessage({
+      textPlain: "Fresh reply",
+      textHtml:
+        '<div>Fresh reply</div><div class="gmail_quote gmail_quote_container"><div class="gmail_attr">On Tue, Sender wrote:</div><blockquote class="gmail_quote"><div>Older quoted line</div><div class="gmail_quote">---------- Forwarded message ----------<p>Nested forward</p></div></blockquote></div>',
+    });
+
+    const parsed = parseMessageReply(message);
+
+    expect(parsed.textHtml).toContain("Fresh reply");
+    expect(parsed.textHtml).not.toContain("Nested forward");
+    expect(parsed.textHtml).not.toContain("Older quoted line");
   });
 });
 

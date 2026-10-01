@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useSWRConfig, type ScopedMutator } from "swr";
 import { buildMailCommandPalette } from "@/app/(app)/[emailAccountId]/mail/mail-command-palette";
 import { buildSnoozeCommandPalette } from "@/app/(app)/[emailAccountId]/mail/snooze-command-palette";
 import { ShortcutsDialog } from "@/app/(app)/[emailAccountId]/mail/ShortcutsDialog";
@@ -35,6 +36,7 @@ import type {
   MailCommandContext,
   SenderCommandContext,
 } from "@/store/command-palette";
+import { messageIdForShortcut } from "@/components/email-list/EmailThread";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useCommandPaletteCommands } from "@/hooks/useCommandPaletteCommands";
@@ -49,9 +51,19 @@ import {
 } from "@/lib/shortcuts/registry";
 import { useThread } from "@/hooks/useThread";
 import { useOptionalMailClient } from "@inboxzero/mail-react/MailEngineProvider";
-import { mutationPayloadToChange } from "@/utils/mail-engine/mutation-change";
+import type { MailClient } from "@inboxzero/mail-core/engine";
+import {
+  mutationPayloadToChange,
+  type ThreadMutationPayload,
+} from "@/utils/mail-engine/mutation-change";
+import { enqueueThreadMailMutationBatch } from "@/utils/mail-engine/thread-mail-mutations";
 import { submitConversationChange } from "@/utils/mail-engine/submit-conversations";
 import { admissionRejectionCopy } from "@/utils/mail-engine/admission-notice";
+import {
+  imapFilingCommandVisible,
+  imapThreadNeedsMove,
+} from "@/utils/email/imap-flags";
+import { isImapProvider } from "@/utils/email/provider-types";
 import { AccountCommandList } from "@/components/AccountCommandList";
 import { toastError } from "@/components/Toast";
 
@@ -133,9 +145,10 @@ function CommandPaletteContent({
       : activePage;
   const { setTheme } = useTheme();
 
-  const { emailAccountId } = useAccount();
+  const { emailAccountId, provider } = useAccount();
+  const { mutate } = useSWRConfig();
   const client = useOptionalMailClient();
-  const { threadId, showEmail } = displayedEmail;
+  const { threadId, messageId: focusedMessageId, showEmail } = displayedEmail;
   const { data: displayedThread, isLoading: isDisplayedThreadLoading } =
     useThread({ id: threadId });
   const { onOpen: onOpenComposeModal } = useComposeModal();
@@ -151,43 +164,56 @@ function CommandPaletteContent({
     },
     compose: onOpenComposeModal,
     help: () => setShortcutsOpen(true),
-    archive: threadId
-      ? async () => {
-          if (displayedThread?.thread.id !== threadId) {
-            toastError({
-              description: isDisplayedThreadLoading
-                ? "Email is still loading"
-                : "Email is unavailable",
-            });
-            return;
-          }
-          try {
-            const change = mutationPayloadToChange({ kind: "archive" });
-            if (!client || !change) {
-              throw new Error("Mail engine is unavailable");
-            }
-            const { admission } = await submitConversationChange({
-              accountId: emailAccountId,
-              change,
-              client,
-              conversationId: threadId,
-            });
-            if (admission.status === "rejected") {
+    archive:
+      threadId &&
+      (!isImapProvider(provider) ||
+        imapFilingCommandVisible(
+          displayedThread?.thread.id === threadId
+            ? displayedThread.thread.messages
+            : null,
+          "archive",
+        ))
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
               toastError({
-                description:
-                  admissionRejectionCopy(admission.code) ??
-                  "Couldn't queue archiving this email",
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
               });
               return;
             }
-            showEmail(null);
-          } catch {
-            toastError({
-              description: "Couldn't queue archiving this email",
-            });
+            if (
+              isImapProvider(provider) &&
+              !imapThreadNeedsMove(displayedThread.thread.messages, "archive")
+            ) {
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "archive" },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn't queue archiving this email",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+              showEmail(null);
+            } catch {
+              toastError({
+                description: "Couldn't queue archiving this email",
+              });
+            }
           }
-        }
-      : undefined,
+        : undefined,
     star: threadId
       ? async () => {
           if (displayedThread?.thread.id !== threadId) {
@@ -199,26 +225,26 @@ function CommandPaletteContent({
             return;
           }
           try {
-            const change = mutationPayloadToChange({
-              kind: "set_starred_state",
-              starred: !isThreadStarred(displayedThread.thread.messages),
-            });
-            if (!client || !change) {
-              throw new Error("Mail engine is unavailable");
-            }
-            const { admission } = await submitConversationChange({
-              accountId: emailAccountId,
-              change,
+            const admission = await queueDisplayedThread({
               client,
-              conversationId: threadId,
+              emailAccountId,
+              messages: displayedThread.thread.messages,
+              payload: {
+                kind: "set_starred_state",
+                starred: !isThreadStarred(displayedThread.thread.messages),
+              },
+              provider,
+              threadId,
             });
-            if (admission.status === "rejected") {
+            if (admission?.status === "rejected") {
               toastError({
                 description:
                   admissionRejectionCopy(admission.code) ??
                   "Couldn’t update the star for this email",
               });
+              return;
             }
+            if (!admission) await refreshImapThreads(mutate);
           } catch {
             toastError({
               description: "Couldn’t update the star for this email",
@@ -226,10 +252,162 @@ function CommandPaletteContent({
           }
         }
       : undefined,
+    markSpam:
+      threadId && isImapProvider(provider)
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
+              toastError({
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
+              });
+              return;
+            }
+            if (!imapThreadNeedsMove(displayedThread.thread.messages, "junk")) {
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "spam" },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn't mark this email as spam",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+              showEmail(null);
+            } catch {
+              toastError({
+                description: "Couldn't mark this email as spam",
+              });
+            }
+          }
+        : undefined,
+    markUnread:
+      threadId && isImapProvider(provider)
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
+              toastError({
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
+              });
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "set_read_state", read: false },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn’t mark this email unread",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+            } catch {
+              toastError({
+                description: "Couldn’t mark this email unread",
+              });
+            }
+          }
+        : undefined,
+    delete:
+      threadId && isImapProvider(provider)
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
+              toastError({
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
+              });
+              return;
+            }
+            if (
+              !imapThreadNeedsMove(displayedThread.thread.messages, "trash")
+            ) {
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "trash" },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn't move this email to Trash",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+              showEmail(null);
+            } catch {
+              toastError({
+                description: "Couldn't move this email to Trash",
+              });
+            }
+          }
+        : undefined,
+    reply:
+      threadId && displayedThread?.thread.id === threadId
+        ? () => {
+            const messageId = messageIdForShortcut(
+              displayedThread.thread.messages,
+              focusedMessageId,
+            );
+            if (!messageId) return;
+            showEmail({
+              threadId,
+              autoOpenReplyForMessageId: messageId,
+              showReplyButton: true,
+            });
+          }
+        : undefined,
+    replyAll:
+      threadId && displayedThread?.thread.id === threadId
+        ? () => {
+            const messageId = messageIdForShortcut(
+              displayedThread.thread.messages,
+              focusedMessageId,
+            );
+            if (!messageId) return;
+            showEmail({
+              threadId,
+              autoOpenReplyForMessageId: messageId,
+              replyAll: true,
+              showReplyButton: true,
+            });
+          }
+        : undefined,
     forward:
       threadId && displayedThread?.thread.id === threadId
         ? () => {
-            const messageId = displayedThread.thread.messages.at(-1)?.id;
+            const messageId = messageIdForShortcut(
+              displayedThread.thread.messages,
+              focusedMessageId,
+            );
             if (!messageId) return;
             showEmail({
               threadId,
@@ -452,6 +630,48 @@ function CommandPaletteContent({
       </CommandList>
     </CommandDialog>
   );
+}
+
+async function queueDisplayedThread({
+  client,
+  emailAccountId,
+  messages,
+  payload,
+  provider,
+  threadId,
+}: {
+  client: MailClient | null;
+  emailAccountId: string;
+  messages: { id: string }[];
+  payload: ThreadMutationPayload;
+  provider: string;
+  threadId: string;
+}) {
+  if (isImapProvider(provider)) {
+    await enqueueThreadMailMutationBatch({
+      emailAccountId,
+      provider,
+      payload,
+      threads: [{ id: threadId, messages }],
+    });
+    return null;
+  }
+
+  const change = mutationPayloadToChange(payload);
+  if (!client || !change) throw new Error("Mail engine is unavailable");
+  const { admission } = await submitConversationChange({
+    accountId: emailAccountId,
+    change,
+    client,
+    conversationId: threadId,
+  });
+  return admission;
+}
+
+async function refreshImapThreads(mutate: ScopedMutator) {
+  await mutate(
+    (key) => typeof key === "string" && key.startsWith("/api/threads"),
+  ).catch(() => undefined);
 }
 
 function groupCommands(commands: Command[]) {

@@ -194,6 +194,22 @@ describe("runRulesAction", () => {
     );
   });
 
+  it("says to add a chat model key when no model list is configured", async () => {
+    runRulesMock.mockRejectedValueOnce(
+      new Error("No configured LLM model list resolved for chat"),
+    );
+
+    const result = await runRulesAction("account-1", {
+      messageId: "message-1",
+      threadId: "thread-1",
+      isTest: true,
+    });
+
+    expect(result?.serverError).toBe(
+      "Add an API key for a chat model before running rules.",
+    );
+  });
+
   it("flushes logs when a test-mode run fails before returning", async () => {
     createEmailProviderMock.mockRejectedValueOnce(
       new Error("provider unavailable"),
@@ -340,6 +356,20 @@ describe("testAiCustomContentAction", () => {
         action: "testAiCustomContent",
         flushReason: "test-mode",
       }),
+    );
+  });
+
+  it("says to add a chat model key when a custom content test has no model list", async () => {
+    runRulesMock.mockRejectedValueOnce(
+      new Error("No configured LLM model list resolved for chat"),
+    );
+
+    const result = await testAiCustomContentAction("account-1", {
+      content: "x",
+    });
+
+    expect(result?.serverError).toBe(
+      "Add an API key for a chat model before running rules.",
     );
   });
 

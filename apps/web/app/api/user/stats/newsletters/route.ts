@@ -44,6 +44,7 @@ export type NewsletterStatsResponse = Awaited<
 async function getEmailMessages(
   options: {
     emailAccountId: string;
+    accountEmail: string;
     emailProvider: EmailProvider;
     logger: Logger;
   } & NewsletterStatsQuery,
@@ -64,6 +65,7 @@ async function getEmailMessages(
       orderBy: options.orderBy,
       orderDirection: options.orderDirection,
       limit: options.limit,
+      accountEmail: options.accountEmail,
       logger,
     }),
     getEmailFilters(emailProvider, logger),
@@ -128,6 +130,7 @@ export const GET = withEmailProvider(
     const result = await getEmailMessages({
       ...params,
       emailAccountId,
+      accountEmail: request.auth.email,
       emailProvider,
       logger: request.logger,
     });

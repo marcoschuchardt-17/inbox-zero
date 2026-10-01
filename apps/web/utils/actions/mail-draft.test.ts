@@ -73,6 +73,34 @@ describe("deleteDraftAction", () => {
     });
   });
 
+  it("sends the complete attachment list when a draft edit includes files", async () => {
+    const note = {
+      filename: "reply-note.txt",
+      content: "bm90ZQ==",
+      contentType: "text/plain",
+      size: 4,
+    };
+    const result = await updateDraftAction(EMAIL_ACCOUNT_ID, {
+      draftMessageId: "old-message",
+      draftId: "draft-1",
+      messageHtml: "<p>Edited</p>",
+      subject: "Reply",
+      to: "person@example.com",
+      cc: "",
+      bcc: "",
+      attachments: [note],
+    });
+    expect(result?.data).toEqual({ draftId: "draft-1" });
+    expect(mocks.updateDraft).toHaveBeenCalledWith("draft-1", {
+      messageHtml: "<p>Edited</p>",
+      subject: "Reply",
+      to: "person@example.com",
+      cc: "",
+      bcc: "",
+      attachments: [note],
+    });
+  });
+
   it("reports a provider rejection when a draft has been sent or deleted", async () => {
     mocks.updateDraft.mockRejectedValueOnce(
       new SafeError("Could not find this draft to update."),

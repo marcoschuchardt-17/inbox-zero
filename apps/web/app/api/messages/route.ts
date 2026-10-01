@@ -3,14 +3,15 @@ import { withEmailProvider } from "@/utils/middleware";
 import { messageQuerySchema } from "@/app/api/messages/validation";
 import { GmailLabel } from "@/utils/gmail/label";
 import type { EmailProvider } from "@/utils/email/types";
-import { isGoogleProvider } from "@/utils/email/provider-types";
+import { messageIsFromAccountOnly } from "@/utils/email";
+import { isGoogleProvider, isImapProvider } from "@/utils/email/provider-types";
 import type { Logger } from "@/utils/logger";
 
 export type MessagesResponse = Awaited<ReturnType<typeof getMessages>>;
 
 export const GET = withEmailProvider("messages", async (request) => {
   const { emailProvider } = request;
-  const { emailAccountId } = request.auth;
+  const { emailAccountId, email } = request.auth;
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q");
@@ -21,6 +22,7 @@ export const GET = withEmailProvider("messages", async (request) => {
     emailAccountId,
     query: r.q,
     pageToken: r.pageToken,
+    accountEmail: email,
     emailProvider,
     logger: request.logger,
   });
@@ -32,34 +34,41 @@ async function getMessages({
   query,
   pageToken,
   emailAccountId,
+  accountEmail,
   emailProvider,
   logger,
 }: {
   query?: string | null;
   pageToken?: string | null;
   emailAccountId: string;
+  accountEmail: string;
   emailProvider: EmailProvider;
   logger: Logger;
 }) {
   try {
     const { messages, nextPageToken } =
       await emailProvider.getMessagesWithPagination({
-        query: query?.trim(),
+        query: query?.trim() ?? "",
         maxResults: 20,
         pageToken: pageToken ?? undefined,
       });
 
-    // Filter messages based on provider-specific logic
     const incomingMessages = messages.filter((message) => {
-      // Provider-specific filtering
-      if (isGoogleProvider(emailProvider.name)) {
-        const isSent = message.labelIds?.includes(GmailLabel.SENT);
+      // Sent and draft rows are mail this account wrote. Rule tests stay on
+      // incoming mail, including a sent copy that is still in the inbox.
+      if (
+        isGoogleProvider(emailProvider.name) ||
+        isImapProvider(emailProvider.name)
+      ) {
         const isDraft = message.labelIds?.includes(GmailLabel.DRAFT);
         const isInbox = message.labelIds?.includes(GmailLabel.INBOX);
+        const wroteIt =
+          !!message.labelIds?.includes(GmailLabel.SENT) ||
+          messageIsFromAccountOnly(message.headers?.from || "", accountEmail);
 
         if (isDraft) return false;
 
-        if (isSent) {
+        if (wroteIt) {
           // Only show sent message that are in the inbox
           return isInbox;
         }

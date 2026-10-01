@@ -168,6 +168,7 @@ async function sendEmail({
   const [senderStats, newsletterStatuses, emailFilters] = await Promise.all([
     getSenderEmailStats({
       emailAccountId,
+      accountEmail: emailAccount.email,
       fromDate: subMonths(now, 3).getTime(),
       logger,
     }),

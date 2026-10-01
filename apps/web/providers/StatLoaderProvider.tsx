@@ -7,9 +7,11 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useSWRConfig } from "swr";
 import { toastError, toastSuccess } from "@/components/Toast";
 import { isError } from "@/utils/error";
 import { loadEmailStatsAction } from "@/utils/actions/stats";
+import { statsLoadHasMore } from "@/utils/stats/load-progress";
 import { useAccount } from "@/providers/EmailAccountProvider";
 
 type Context = {
@@ -53,7 +55,7 @@ class StatLoader {
     const res = await loadEmailStatsAction(emailAccountId, { loadBefore });
 
     if (showToast) {
-      if (isError(res)) {
+      if (isError(res) || res?.serverError) {
         toastError({ description: "Error loading stats." });
       } else {
         toastSuccess({ description: "Stats loaded!" });
@@ -61,6 +63,7 @@ class StatLoader {
     }
 
     this.#isLoading = false;
+    return res;
   }
 }
 
@@ -70,34 +73,61 @@ export function StatLoaderProvider(props: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [stopLoading, setStopLoading] = useState(false);
   const { emailAccountId } = useAccount();
+  const { mutate } = useSWRConfig();
+
+  const refreshStoredStats = useCallback(
+    () => mutate(isStoredStatsKey),
+    [mutate],
+  );
 
   const onLoad = useCallback(
     async (options: { loadBefore: boolean; showToast: boolean }) => {
       setIsLoading(true);
-      await statLoader.loadStats({
-        emailAccountId,
-        loadBefore: options.loadBefore,
-        showToast: options.showToast,
-      });
-      setIsLoading(false);
+      try {
+        await statLoader.loadStats({
+          emailAccountId,
+          loadBefore: options.loadBefore,
+          showToast: options.showToast,
+        });
+      } finally {
+        setIsLoading(false);
+        await refreshStoredStats().catch(() => undefined);
+      }
     },
-    [emailAccountId],
+    [emailAccountId, refreshStoredStats],
   );
 
   const onLoadBatch = useCallback(
     async (options: { loadBefore: boolean; showToast: boolean }) => {
-      const batchSize = 50;
-      for (let i = 0; i < batchSize; i++) {
-        if (stopLoading) break;
-        console.log("Loading batch", i);
-        await onLoad({
-          ...options,
-          showToast: options.showToast && i === batchSize - 1,
-        });
+      setIsLoading(true);
+      let failed = false;
+      try {
+        for (let i = 0; i < 50; i++) {
+          if (stopLoading) break;
+          const res = await statLoader.loadStats({
+            emailAccountId,
+            loadBefore: options.loadBefore,
+            showToast: false,
+          });
+          if (res?.serverError) {
+            failed = true;
+            break;
+          }
+          if (!statsLoadHasMore(options.loadBefore, res?.data)) break;
+        }
+      } finally {
+        setIsLoading(false);
+        setStopLoading(false);
+        await refreshStoredStats().catch(() => undefined);
       }
-      setStopLoading(false);
+      if (!options.showToast) return;
+      if (failed) {
+        toastError({ description: "Error loading stats." });
+      } else {
+        toastSuccess({ description: "Stats loaded!" });
+      }
     },
-    [onLoad, stopLoading],
+    [emailAccountId, refreshStoredStats, stopLoading],
   );
 
   const onCancelLoadBatch = useCallback(() => {
@@ -121,4 +151,8 @@ export function LoadStats(props: { loadBefore: boolean; showToast: boolean }) {
   }, [onLoad, props]);
 
   return null;
+}
+
+function isStoredStatsKey(key: unknown) {
+  return typeof key === "string" && key.includes("/api/user/stats");
 }

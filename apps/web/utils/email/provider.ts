@@ -41,6 +41,7 @@ export async function createEmailProvider({
         emailAccount: {
           select: {
             email: true,
+            name: true,
           },
         },
       },
@@ -52,6 +53,7 @@ export async function createEmailProvider({
       {
         emailAccountId,
         ownerEmail: config.emailAccount.email,
+        displayName: config.emailAccount.name,
         syncFolder: config.syncFolder,
         imapHost: config.imapHost,
         imapPort: config.imapPort,

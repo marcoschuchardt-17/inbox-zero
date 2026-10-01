@@ -25,9 +25,15 @@ import { actionClient } from "@/utils/actions/safe-action";
 import { SafeError } from "@/utils/error";
 import { createEmailProvider } from "@/utils/email/provider";
 import { isGoogleProvider } from "@/utils/email/provider-types";
+import {
+  applyImapCleanAction,
+  runImapClean,
+  undoImapClean,
+} from "@/utils/clean/imap-clean";
 import { getUserPremium } from "@/utils/user/get";
 import { isActivePremium } from "@/utils/premium";
 import { ONE_DAY_MS } from "@/utils/date";
+import type { Logger } from "@/utils/logger";
 
 export const cleanInboxAction = actionClient
   .metadata({ name: "cleanInbox" })
@@ -37,15 +43,22 @@ export const cleanInboxAction = actionClient
       ctx: { emailAccountId, provider, userId, logger },
       parsedInput: { action, instructions, daysOld, skips, maxEmails },
     }) => {
-      if (!isGoogleProvider(provider)) {
-        throw new SafeError(
-          "Clean inbox is only supported for Google accounts",
-        );
-      }
-
       const premium = await getUserPremium({ userId });
       if (!premium) throw new SafeError("User not premium");
       if (!isActivePremium(premium)) throw new SafeError("Premium not active");
+
+      if (!isGoogleProvider(provider)) {
+        return runImapClean({
+          emailAccountId,
+          provider,
+          logger,
+          action,
+          instructions,
+          daysOld,
+          skips,
+          maxEmails,
+        });
+      }
 
       const emailProvider = await createEmailProvider({
         emailAccountId,
@@ -173,9 +186,26 @@ export const undoCleanInboxAction = actionClient
   .inputSchema(undoCleanInboxSchema)
   .action(
     async ({
-      ctx: { emailAccountId, logger },
+      ctx: { emailAccountId, provider, logger },
       parsedInput: { threadId, markedDone, action },
     }) => {
+      if (!isGoogleProvider(provider)) {
+        if (!markedDone) return { success: true };
+        const emailProvider = await createEmailProvider({
+          emailAccountId,
+          provider,
+          logger,
+        });
+        await undoImapClean({ action, emailProvider, threadId });
+        await setCleanupThreadArchived({
+          emailAccountId,
+          threadId,
+          archived: false,
+          logger,
+        });
+        return { success: true };
+      }
+
       const gmail = await getGmailClientForEmail({ emailAccountId, logger });
 
       // nothing to do atm if wasn't marked done
@@ -238,9 +268,35 @@ export const changeKeepToDoneAction = actionClient
   .inputSchema(changeKeepToDoneSchema)
   .action(
     async ({
-      ctx: { emailAccountId, logger },
+      ctx: { emailAccountId, provider, logger },
       parsedInput: { threadId, action },
     }) => {
+      if (!isGoogleProvider(provider)) {
+        const emailProvider = await createEmailProvider({
+          emailAccountId,
+          provider,
+          logger,
+        });
+        const account = await prisma.emailAccount.findUnique({
+          where: { id: emailAccountId },
+          select: { email: true },
+        });
+        if (!account) throw new SafeError("Email account not found");
+        await applyImapCleanAction({
+          action,
+          emailProvider,
+          ownerEmail: account.email,
+          threadId,
+        });
+        await setCleanupThreadArchived({
+          emailAccountId,
+          threadId,
+          archived: true,
+          logger,
+        });
+        return { success: true };
+      }
+
       const gmail = await getGmailClientForEmail({ emailAccountId, logger });
 
       // Get the label to add (archived or marked_read)
@@ -291,3 +347,44 @@ export const changeKeepToDoneAction = actionClient
       return { success: true };
     },
   );
+
+async function setCleanupThreadArchived({
+  emailAccountId,
+  threadId,
+  archived,
+  logger,
+}: {
+  emailAccountId: string;
+  threadId: string;
+  archived: boolean;
+  logger: Logger;
+}) {
+  const thread = await prisma.cleanupThread.findFirst({
+    where: { emailAccountId, threadId },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!thread) return;
+
+  await prisma.cleanupThread.update({
+    where: { id: thread.id },
+    data: { archived },
+  });
+
+  try {
+    await updateThread({
+      emailAccountId,
+      jobId: thread.jobId,
+      threadId,
+      update: {
+        archive: archived,
+        status: "completed",
+        undone: !archived,
+      },
+    });
+  } catch (error) {
+    logger.error("Failed to update Redis for cleaned thread", {
+      error,
+      threadId,
+    });
+  }
+}

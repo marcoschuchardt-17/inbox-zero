@@ -202,6 +202,17 @@ export function combineEmailHtml({
     .join("<br>");
 }
 
+export function contentIdFromImageElement(element: {
+  getAttribute(name: string): string | null;
+}) {
+  const explicit = element.getAttribute("data-content-id")?.trim();
+  if (explicit) return explicit;
+  const source = element.getAttribute("src")?.trim() ?? "";
+  if (!source.toLowerCase().startsWith("cid:")) return null;
+  const contentId = source.slice(4).trim().replace(/^<|>$/g, "").trim();
+  return contentId || null;
+}
+
 export function finalizeEditableEmailHtml({
   html,
   inlineAttachments,
@@ -222,7 +233,15 @@ export function finalizeEditableEmailHtml({
 
     const contentId = getAttribute(element, "data-content-id");
     const source = getAttribute(element, "src") ?? "";
-    if (contentId && contentIds.has(contentId)) {
+    // A reopened draft previews the stored picture locally. The file is already
+    // on the draft, so the content id stays even when this save does not resend it.
+    if (
+      contentId &&
+      isSafeContentId(contentId) &&
+      (contentIds.has(contentId) ||
+        source.startsWith("blob:") ||
+        source.startsWith("cid:"))
+    ) {
       setAttribute(element, "src", `cid:${contentId}`);
       removeAttribute(element, "data-content-id");
       return;

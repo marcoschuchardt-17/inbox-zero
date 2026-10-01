@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { emailListItemDate } from "@/components/email-list/email-list-item-date";
 import { isDefined } from "@/utils/types";
 import { withEmailProvider } from "@/utils/middleware";
+import { messageIsFromAccountOnly } from "@/utils/email";
 import { createEmailProvider } from "@/utils/email/provider";
 import type { Logger } from "@/utils/logger";
 
@@ -24,29 +26,41 @@ async function getNoReply({
   });
 
   const sentEmails = await emailProvider.getSentMessages(50);
-
-  const sentEmailsWithThreads = (
+  const threadIds = sentEmails.map((message) => message.threadId || "");
+  // A copy the account sent can sit in Archive without a Sent label.
+  if (provider === "imap") {
+    const fromAccount = await emailProvider.getThreadsWithQuery({
+      query: { fromEmail: userEmail },
+      maxResults: 50,
+    });
+    for (const thread of fromAccount.threads) {
+      if (thread.id) threadIds.push(thread.id);
+    }
+  }
+  const seenIds = new Set<string>();
+  const uniqueThreadIds: string[] = [];
+  for (const threadId of threadIds) {
+    if (!threadId || seenIds.has(threadId)) continue;
+    seenIds.add(threadId);
+    uniqueThreadIds.push(threadId);
+  }
+  const threads = (
     await Promise.all(
-      sentEmails.map(async (message) => {
-        const thread = await emailProvider.getThread(message.threadId || "");
-
-        const lastMessage = thread.messages?.[thread.messages?.length - 1];
-        const lastMessageFrom = lastMessage?.headers?.from;
-        const isSentByUser = lastMessageFrom?.includes(userEmail);
-
-        if (isSentByUser)
-          return {
-            ...message,
-            thread: {
-              ...thread,
-              messages: thread.messages,
-            },
-          };
-      }) || [],
+      uniqueThreadIds.map(async (threadId) => {
+        try {
+          return await emailProvider.getThread(threadId);
+        } catch (error) {
+          if (isMissingThread(error)) return;
+          throw error;
+        }
+      }),
     )
   ).filter(isDefined);
 
-  return sentEmailsWithThreads;
+  return sortAwaitingReplyByShownDate(
+    threadsStillAwaitingReply(threads, userEmail),
+    provider,
+  );
 }
 
 export const GET = withEmailProvider("user/no-reply", async (request) => {
@@ -62,3 +76,49 @@ export const GET = withEmailProvider("user/no-reply", async (request) => {
 
   return NextResponse.json(result);
 });
+
+function threadsStillAwaitingReply<
+  T extends { id: string; messages: { headers: { from: string } }[] },
+>(threads: T[], userEmail: string) {
+  const seen = new Set<string>();
+  const awaiting: T[] = [];
+  for (const thread of threads) {
+    if (!thread.id || seen.has(thread.id)) continue;
+    const from = thread.messages.at(-1)?.headers.from || "";
+    // A shorter address inside another sender is not this account, and a
+    // message sent together with someone else is not waiting on our reply.
+    if (!messageIsFromAccountOnly(from, userEmail)) continue;
+    seen.add(thread.id);
+    awaiting.push(thread);
+  }
+  return awaiting;
+}
+
+function isMissingThread(error: unknown) {
+  return error instanceof Error && error.message === "Thread not found";
+}
+
+type DatedReplyThread = {
+  messages: {
+    internalDate?: string | null;
+    headers: { date?: string | null };
+  }[];
+};
+
+// Sent mail and archived copies arrive in mailbox order. The list shows the
+// date written on the message, so that date has to decide the order too.
+function sortAwaitingReplyByShownDate<T extends DatedReplyThread>(
+  threads: T[],
+  provider: string,
+) {
+  return [...threads].sort(
+    (left, right) => shownDateMs(right, provider) - shownDateMs(left, provider),
+  );
+}
+
+function shownDateMs(thread: DatedReplyThread, provider: string) {
+  const time = emailListItemDate(thread.messages.at(-1), provider, {
+    fallbackToNow: false,
+  }).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}

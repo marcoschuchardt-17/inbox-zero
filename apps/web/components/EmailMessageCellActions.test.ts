@@ -33,6 +33,20 @@ describe("getEmailMessageCellActions", () => {
     });
   });
 
+  it("does not send an IMAP message to Gmail", () => {
+    expect(
+      getEmailMessageCellActions({
+        messageId: "1",
+        provider: "imap",
+        threadId: "welcome to the mailbox",
+        userEmail: "inbox.imap@example.com",
+      }),
+    ).toEqual({
+      openUrl: undefined,
+      showViewEmailButton: true,
+    });
+  });
+
   it("falls back to the provider URL for Gmail", () => {
     expect(
       getEmailMessageCellActions({

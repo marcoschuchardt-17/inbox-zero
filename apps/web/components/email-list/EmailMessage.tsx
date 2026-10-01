@@ -12,11 +12,16 @@ import {
 import { Tooltip } from "@/components/Tooltip";
 import {
   extractEmailAddress,
+  extractEmailAddresses,
   extractNameFromEmail,
+  incomingReplyRecipients,
   isSameEmailAddress,
+  messageWasSentByAccount,
+  sentReplyRecipients,
   splitRecipientList,
 } from "@/utils/email";
 import { formatShortDate } from "@/utils/date";
+import { initialsForSenderList } from "@/app/(app)/[emailAccountId]/mail/thread-participants";
 import { ComposeEmailFormLazy } from "@/app/(app)/[emailAccountId]/compose/ComposeEmailFormLazy";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -34,6 +39,11 @@ import { EmailDetails } from "@/components/email-list/EmailDetails";
 import { HtmlEmail, PlainEmail } from "@/components/email-list/EmailContents";
 import { EmailAttachments } from "@/components/email-list/EmailAttachments";
 import { useAccount } from "@/providers/EmailAccountProvider";
+import { shouldCloseConversationAfterDraftDiscard } from "@/utils/email/discarded-thread";
+import { storedDraftAttachmentRefs } from "@/utils/email/draft-update-attachments";
+import { normalizeContentId } from "@/utils/email/inline-images";
+import { composeRequestReopens } from "@/hooks/useDisplayedEmail";
+import { buildReplyAllRecipients, formatCcList } from "@/utils/email/reply-all";
 import { formatReplySubject } from "@/utils/email/subject";
 import { env } from "@/env";
 import { isTypingTarget } from "@/lib/shortcuts/registry";
@@ -60,6 +70,8 @@ export function EmailMessage({
   showReplyButton,
   defaultComposeMode,
   draftMessages,
+  conversationMessageIds = [],
+  onConversationGone,
   expanded,
   onToggle,
   onSendSuccess,
@@ -70,12 +82,17 @@ export function EmailMessage({
   onSelect,
   onNavigateMessage,
   sentMessageOpen,
+  replyAll = false,
+  composeRequest = 0,
+  onOpenedComposeDismissed,
 }: {
   message: ThreadMessage;
   bodyAvailable?: boolean;
   missingBodyIds?: Set<string>;
   menu?: React.ReactNode;
   draftMessages?: ThreadMessage[];
+  conversationMessageIds?: readonly string[];
+  onConversationGone?: () => void;
   refetch: () => void;
   showReplyButton: boolean;
   defaultComposeMode?: ReplyDraftMode;
@@ -90,6 +107,9 @@ export function EmailMessage({
   onSelect?: () => void;
   onNavigateMessage?: (direction: -1 | 1) => void;
   sentMessageOpen?: SentMessageOpenState;
+  replyAll?: boolean;
+  composeRequest?: number;
+  onOpenedComposeDismissed?: () => void;
 }) {
   const { emailAccountId } = useAccount();
   // `null` follows `defaultComposeMode`, which the reader's Reply button flips
@@ -97,6 +117,16 @@ export function EmailMessage({
   const [composeOverride, setComposeOverride] = useState<
     ReplyDraftMode | "closed" | null
   >(null);
+  const [preferSender, setPreferSender] = useState(false);
+  const [seenComposeRequest, setSeenComposeRequest] = useState(composeRequest);
+  if (composeRequest !== seenComposeRequest) {
+    setSeenComposeRequest(composeRequest);
+    if (composeRequestReopens(seenComposeRequest, composeRequest)) {
+      setPreferSender(false);
+      setComposeOverride(null);
+    }
+  }
+  const includeEveryone = replyAll && !preferSender;
   const composeMode = resolveComposeMode(composeOverride, defaultComposeMode);
   const serverDrafts = draftMessages ?? [];
   const [dismissedDraftIds, setDismissedDraftIds] = useState(
@@ -121,6 +151,7 @@ export function EmailMessage({
 
   const onReply = useCallback(() => {
     composeSessionRef.current += 1;
+    setPreferSender(true);
     setComposeOverride("reply");
   }, []);
   const onForward = useCallback(() => {
@@ -130,7 +161,8 @@ export function EmailMessage({
 
   const onCloseCompose = useCallback(() => {
     setComposeOverride("closed");
-  }, []);
+    onOpenedComposeDismissed?.();
+  }, [onOpenedComposeDismissed]);
   const [composerKey, setComposerKey] = useState(0);
   const undoSendSessionRef = useRef<ComposeSession | null>(null);
 
@@ -277,10 +309,12 @@ export function EmailMessage({
             <ReplyPanel
               key={draft.id}
               autoScroll={!composeMode && index === visibleDrafts.length - 1}
+              conversationMessageIds={conversationMessageIds}
               draftBodyAvailable={!missingBodyIds?.has(draft.id)}
               draftMessage={draft}
               message={message}
               onCloseCompose={() => setDraftDismissed(draft.id, true)}
+              onConversationGone={onConversationGone}
               onRestoreCompose={() => setDraftDismissed(draft.id, false)}
               onRestore={() => setDraftDismissed(draft.id, false)}
               onSendSuccess={onSendSuccess}
@@ -298,11 +332,14 @@ export function EmailMessage({
           ))}
           {composeMode && (
             <ReplyPanel
-              key={composerKey}
+              key={`${composerKey}:${includeEveryone ? "all" : "one"}`}
               autoScroll
               bodyAvailable={bodyAvailable}
+              replyAll={includeEveryone}
+              conversationMessageIds={conversationMessageIds}
               message={message}
               onCloseCompose={onCloseComposeAfterSend}
+              onConversationGone={onConversationGone}
               onRestore={onRestoreComposeAfterSend}
               onRestoreCompose={onRestoreCompose}
               onSendSuccess={onSendSuccess}
@@ -354,11 +391,18 @@ function MessageHeader({
 }) {
   const { emailAccount, emailAccountId, userEmail } = useAccount();
 
-  const isSent = message.labelIds?.includes(GmailLabel.SENT) ?? false;
-  const senderEmail = extractEmailAddress(message.headers.from);
+  const isSent = messageWasSentByAccount(message, userEmail);
+  const fromPeople = splitRecipientList(message.headers.from);
+  const senderEmail = extractEmailAddress(fromPeople[0] || "");
   const senderName = isSent
     ? "Me"
-    : extractNameFromEmail(message.headers.from) || senderEmail;
+    : fromPeople
+        .map(
+          (person) =>
+            extractNameFromEmail(person) || extractEmailAddress(person),
+        )
+        .filter(Boolean)
+        .join(", ") || senderEmail;
   const { data: contacts } = useSWR<ContactsResponse>(
     expanded &&
       env.NEXT_PUBLIC_CONTACTS_ENABLED &&
@@ -380,8 +424,7 @@ function MessageHeader({
   const canResearchSender =
     Boolean(onOpenSenderContext) &&
     !isSent &&
-    Boolean(senderEmail) &&
-    !isSameEmailAddress(senderEmail, userEmail);
+    fromPeople.some((person) => !isSameEmailAddress(person, userEmail));
 
   // Collapsing is the thread's call, so a row is only interactive once it has
   // been handed a toggle.
@@ -423,7 +466,7 @@ function MessageHeader({
   const senderNameClassName = cn(
     "truncate text-sm",
     expanded
-      ? "max-w-40 shrink font-semibold text-foreground"
+      ? "shrink-0 font-semibold text-foreground"
       : "w-24 shrink-0 font-medium text-secondary-foreground sm:w-28",
   );
 
@@ -439,10 +482,7 @@ function MessageHeader({
         <Tooltip content="View public profile">
           <button
             aria-label={`View public profile for ${senderName}`}
-            className={cn(
-              "group/sender flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              expanded ? "min-w-0" : "shrink-0",
-            )}
+            className="group/sender flex shrink-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={(event) => {
               event.stopPropagation();
               onOpenSenderContext?.(message);
@@ -470,7 +510,7 @@ function MessageHeader({
       {expanded ? (
         <>
           <span className="hidden min-w-0 truncate text-muted-foreground text-xs sm:block">
-            {recipientSummary(message.headers.to, userEmail)}
+            {recipientSummary(message.headers, userEmail)}
           </span>
           <Button
             aria-label={showDetails ? "Hide details" : "Show details"}
@@ -546,30 +586,36 @@ function ReplyPanel({
   onSendSuccess,
   onMarkDone,
   onCloseCompose,
+  onConversationGone,
   onRestore,
   onRestoreCompose,
   onStartDiscard,
   composeMode,
+  conversationMessageIds,
   draftMessage,
   draftBodyAvailable = true,
   autoScroll = false,
   bodyAvailable = true,
+  replyAll = false,
 }: {
   message: ParsedMessage;
   refetch: () => void;
   onSendSuccess: (messageId: string, threadId: string) => void;
   onMarkDone?: () => void;
   onCloseCompose: () => void;
+  onConversationGone?: () => void;
   onRestore?: () => void;
   onRestoreCompose: (composeSession: ComposeSession) => void;
   onStartDiscard: () => ComposeSession | undefined;
   composeMode: ReplyDraftMode;
+  conversationMessageIds: readonly string[];
   draftMessage?: ThreadMessage;
   draftBodyAvailable?: boolean;
   autoScroll?: boolean;
   bodyAvailable?: boolean;
+  replyAll?: boolean;
 }) {
-  const { emailAccountId } = useAccount();
+  const { emailAccountId, userEmail } = useAccount();
 
   const replyRef = useRef<HTMLDivElement>(null);
   // A forward owns its original source once composing starts. A later cache
@@ -594,10 +640,13 @@ function ReplyPanel({
     if (composeMode === "reply") {
       if (draftMessage) return prepareDraftReplyEmail(draftMessage);
 
-      return prepareReplyingToEmail(message);
+      return prepareReplyingToEmail(message, "", {
+        replyAll,
+        userEmail,
+      });
     }
     return forwardSource ? prepareForwardingEmail(forwardSource) : undefined;
-  }, [composeMode, message, draftMessage, forwardSource]);
+  }, [composeMode, draftMessage, forwardSource, message, replyAll, userEmail]);
 
   const { executeAsync: discardDraft } = useAction(
     deleteDraftAction.bind(null, emailAccountId),
@@ -617,6 +666,8 @@ function ReplyPanel({
       const composeSession = onStartDiscard();
       if (!composeSession) return false;
 
+      let discarded = false;
+      let closeConversation = false;
       try {
         const result = await discardPromise;
         if (
@@ -632,20 +683,30 @@ function ReplyPanel({
           onRestoreCompose(composeSession);
           return false;
         }
+        discarded = true;
       } catch {
         toastError({ description: "Failed to discard draft" });
         onRestoreCompose(composeSession);
         return false;
       } finally {
-        refetch();
+        closeConversation = shouldCloseConversationAfterDraftDiscard({
+          discarded,
+          hasCloseHandler: Boolean(onConversationGone),
+          messageIds: conversationMessageIds,
+          discardedMessageId: draftMessage.id,
+        });
+        if (!closeConversation) refetch();
       }
+      if (closeConversation) onConversationGone?.();
       return true;
     },
     [
       composeMode,
+      conversationMessageIds,
       draftMessage,
       discardDraft,
       onCloseCompose,
+      onConversationGone,
       onRestoreCompose,
       onStartDiscard,
       refetch,
@@ -701,6 +762,9 @@ function ReplyPanel({
 
 /** Two letters at most: initials from a display name, or the address's first letters. */
 function initialsFor(name: string) {
+  const listed = initialsForSenderList(name);
+  if (listed) return listed;
+
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return "?";
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
@@ -717,8 +781,15 @@ function resolveComposeMode(
 }
 
 /** "to me", "to Dana", "to me and 3 others" — who a message went out to. */
-function recipientSummary(to: string | undefined, userEmail: string) {
-  const recipients = splitRecipientList(to ?? "");
+function recipientSummary(
+  headers: { to?: string; cc?: string; bcc?: string },
+  userEmail: string,
+) {
+  const recipients = uniqueRecipients([
+    ...splitRecipientList(headers.to ?? ""),
+    ...splitRecipientList(headers.cc ?? ""),
+    ...splitRecipientList(headers.bcc ?? ""),
+  ]);
   if (recipients.length === 0) return "";
 
   // "me" leads whenever the account is in there at all, however it was addressed.
@@ -737,14 +808,55 @@ function recipientSummary(to: string | undefined, userEmail: string) {
 const prepareReplyingToEmail = (
   message: ParsedMessage,
   content = "",
+  options?: { replyAll?: boolean; userEmail?: string },
 ): ReplyingToEmail => {
-  const sentFromUser = message.labelIds?.includes("SENT");
+  // A co-sender is still mail this account sent. Reply to the recipients,
+  // not back to the account.
+  const sentFromUser =
+    messageWasSentByAccount(message, options?.userEmail) ||
+    splitRecipientList(message.headers.from || "").some((person) =>
+      isSameEmailAddress(person, options?.userEmail || ""),
+    );
+  const sentRecipients = sentReplyRecipients(
+    message.headers,
+    options?.userEmail,
+  );
+  const incomingRecipients = incomingReplyRecipients(
+    message.headers,
+    options?.userEmail,
+  );
 
   const { html } = createReplyContent({ message });
+  const everyone =
+    options?.replyAll && options.userEmail
+      ? buildReplyAllRecipients(
+          message.headers,
+          sentFromUser ? sentRecipients.to : undefined,
+          options.userEmail,
+        )
+      : undefined;
+  const replyAllCc = everyone
+    ? [
+        ...everyone.cc,
+        ...(sentFromUser
+          ? coSendersForReplyAll(
+              message.headers.from || "",
+              options?.userEmail || "",
+              [everyone.to, ...everyone.cc],
+            )
+          : []),
+      ]
+    : undefined;
 
   return {
-    // If following an email from yourself, use original recipients, otherwise reply to sender
-    to: sentFromUser ? message.headers.to : message.headers.from,
+    // A message the account sent keeps its original recipients. Otherwise
+    // honor Reply-To, which is where the sender asked replies to go.
+    // Reply all also keeps the other people on To and Cc.
+    to: everyone
+      ? everyone.to
+      : sentFromUser
+        ? sentRecipients.to
+        : incomingRecipients.to,
     // If following an email from yourself, don't add "Re:" prefix
     subject: sentFromUser
       ? message.headers.subject
@@ -752,10 +864,14 @@ const prepareReplyingToEmail = (
     headerMessageId: message.headers["message-id"] || undefined,
     messageId: message.id || undefined,
     threadId: message.threadId || undefined,
-    // Keep original CC
-    cc: message.headers.cc,
+    // Keep the other people on Cc. Reply all also adds the other To addresses.
+    cc: replyAllCc
+      ? formatCcList(replyAllCc)
+      : sentFromUser
+        ? (sentRecipients.cc ?? undefined)
+        : incomingRecipients.cc,
     // Keep original BCC if available
-    bcc: sentFromUser ? message.headers.bcc : "",
+    bcc: sentFromUser ? (sentRecipients.bcc ?? undefined) : "",
     references: message.headers.references,
     draftHtml: content || "",
     quotedContentHtml: html,
@@ -796,6 +912,53 @@ function prepareDraftReplyEmail(draft: ParsedMessage): ReplyingToEmail {
     bcc: draft.headers.bcc,
     references: draft.headers.references,
     draftHtml: splitHtml.draftHtml,
+    storedAttachments: storedDraftAttachmentRefs(
+      draft.attachments,
+      draft.inline,
+    ),
+    draftInlineAttachments: draft.inline.flatMap((attachment) => {
+      const contentId = normalizeContentId(attachment.headers["content-id"]);
+      if (!attachment.attachmentId || !contentId) return [];
+      return [
+        {
+          attachmentId: attachment.attachmentId,
+          contentId,
+          filename: attachment.filename || "image",
+          mimeType: attachment.mimeType || "application/octet-stream",
+        },
+      ];
+    }),
     quotedContentHtml: splitHtml.originalHtml,
   };
+}
+
+function uniqueRecipients(recipients: string[]) {
+  const unique: string[] = [];
+  for (const recipient of recipients) {
+    if (unique.some((existing) => isSameEmailAddress(existing, recipient))) {
+      continue;
+    }
+    unique.push(recipient);
+  }
+  return unique;
+}
+
+function coSendersForReplyAll(
+  from: string,
+  userEmail: string,
+  alreadyAddressed: readonly string[],
+) {
+  const addressed = new Set(
+    alreadyAddressed.flatMap((value) =>
+      extractEmailAddresses(value).map((email) => email.toLowerCase()),
+    ),
+  );
+  return splitRecipientList(from).filter((person) => {
+    const email = extractEmailAddress(person).toLowerCase();
+    return (
+      Boolean(email) &&
+      !isSameEmailAddress(person, userEmail) &&
+      !addressed.has(email)
+    );
+  });
 }

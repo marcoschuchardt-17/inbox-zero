@@ -16,6 +16,123 @@ export function extractNameFromEmail(email: string) {
   return email;
 }
 
+export function recipientDisplayNames(recipients: string) {
+  return splitRecipientList(recipients)
+    .map(
+      (person) => extractNameFromEmail(person) || extractEmailAddress(person),
+    )
+    .filter(Boolean)
+    .join(", ");
+}
+
+export function collapsedRecipientNames(fields: {
+  to?: string | null;
+  cc?: string | null;
+  bcc?: string | null;
+}) {
+  return recipientDisplayNames(
+    [fields.to, fields.cc, fields.bcc]
+      .filter((value): value is string => Boolean(value))
+      .join(", "),
+  );
+}
+
+export function collapsedReplyRecipientNames(fields: {
+  to?: string | null;
+  cc?: string | null;
+  bcc?: string | null;
+  savedTo?: string | null;
+  savedCc?: string | null;
+  savedBcc?: string | null;
+}) {
+  return collapsedRecipientNames({
+    to: fields.to ?? fields.savedTo,
+    cc: fields.cc ?? fields.savedCc,
+    bcc: fields.bcc ?? fields.savedBcc,
+  });
+}
+
+export function storedAnalyticsAddresses(header: string) {
+  return extractEmailAddresses(header).join(", ");
+}
+
+export function storedRecipientAddresses(
+  headers: {
+    to?: string | null;
+    cc?: string | null;
+    bcc?: string | null;
+  },
+  accountEmail?: string | null,
+) {
+  const headersInOrder = [headers.to, headers.cc, headers.bcc];
+  for (const header of headersInOrder) {
+    if (replyHeaderReachesSomeoneElse(header, accountEmail)) {
+      // The account is already in the conversation, so the count skips it.
+      return addressesOtherThanAccount(
+        extractEmailAddresses(header || ""),
+        accountEmail,
+      ).join(", ");
+    }
+  }
+  // A note sent only to this account still has that address.
+  for (const header of headersInOrder) {
+    const addresses = storedAnalyticsAddresses(header || "");
+    if (addresses) return addresses;
+  }
+  return "Missing";
+}
+
+export function incomingReplyRecipients(
+  headers: {
+    from: string;
+    "reply-to"?: string | null;
+    cc?: string | null;
+  },
+  accountEmail?: string | null,
+) {
+  const target = headers["reply-to"] || headers.from;
+  if (!accountEmail) return { to: target, cc: headers.cc || undefined };
+  // The account is already reading the message, so the reply skips it.
+  const to = headerWithoutAccount(target, accountEmail);
+  return {
+    to: to || target,
+    cc: headerWithoutAccount(headers.cc, accountEmail),
+  };
+}
+
+export function sentReplyRecipients(
+  headers: {
+    to?: string | null;
+    cc?: string | null;
+    bcc?: string | null;
+  },
+  accountEmail?: string | null,
+) {
+  // A header that only names this account is not who the reply should reach.
+  let chosen: {
+    to: string;
+    cc: string | null | undefined;
+    bcc: string | null | undefined;
+  };
+  if (replyHeaderReachesSomeoneElse(headers.to, accountEmail)) {
+    chosen = { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
+  } else if (replyHeaderReachesSomeoneElse(headers.cc, accountEmail)) {
+    chosen = { to: headers.cc || "", cc: undefined, bcc: headers.bcc };
+  } else if (replyHeaderReachesSomeoneElse(headers.bcc, accountEmail)) {
+    chosen = { to: headers.bcc || "", cc: undefined, bcc: undefined };
+  } else {
+    chosen = { to: headers.to || "", cc: headers.cc, bcc: headers.bcc };
+  }
+  if (!accountEmail) return chosen;
+  // The account is already in the conversation, so the reply skips it.
+  const to = headerWithoutAccount(chosen.to, accountEmail);
+  return {
+    to: to || chosen.to,
+    cc: headerWithoutAccount(chosen.cc, accountEmail),
+    bcc: headerWithoutAccount(chosen.bcc, accountEmail),
+  };
+}
+
 // Extracts all email addresses from a comma-separated header string
 // e.g., "John <john@example.com>, Jane <jane@example.com>" -> ["john@example.com", "jane@example.com"]
 export function extractEmailAddresses(header: string): string[] {
@@ -75,6 +192,65 @@ export function canonicalizeEmailAddress(email: string): string {
 
 export function isSameEmailAddress(left: string, right: string) {
   return canonicalizeEmailAddress(left) === canonicalizeEmailAddress(right);
+}
+
+export function addressesOtherThanAccount(
+  addresses: readonly string[],
+  accountEmail?: string | null,
+) {
+  if (!accountEmail) return [...addresses];
+  return addresses.filter(
+    (address) => !isSameEmailAddress(address, accountEmail),
+  );
+}
+
+export function senderDisplayNameForAddress(
+  fromName: string | null | undefined,
+  addresses: readonly string[],
+  people: readonly string[],
+  address: string,
+) {
+  const names = namesListedForEveryAddress(fromName, addresses);
+  if (names) {
+    const index = addresses.findIndex((item) =>
+      isSameEmailAddress(item, address),
+    );
+    return {
+      name: index >= 0 ? names[index] || null : null,
+      split: true,
+    };
+  }
+  if (
+    people.length === 1 &&
+    (!addresses.length || isSameEmailAddress(addresses[0] || "", address))
+  ) {
+    return { name: fromName ?? null, split: false };
+  }
+  return { name: null, split: false };
+}
+
+export function messageIsFromAccountOnly(
+  from: string,
+  accountEmail?: string | null,
+) {
+  const addresses = extractEmailAddresses(from);
+  return (
+    addresses.length > 0 &&
+    addressesOtherThanAccount(addresses, accountEmail).length === 0
+  );
+}
+
+export function messageWasSentByAccount(
+  message: {
+    labelIds?: readonly string[] | null;
+    headers: { from?: string | null };
+  },
+  accountEmail?: string | null,
+) {
+  return (
+    !!message.labelIds?.includes("SENT") ||
+    messageIsFromAccountOnly(message.headers.from || "", accountEmail)
+  );
 }
 
 export function messageRepliesToSourceSender({
@@ -160,12 +336,30 @@ export function extractDomainFromEmail(email: string): string {
 // if we're the sender, then return the recipient
 // if we're the recipient, then return the sender
 export function participant(
-  message: { headers: Pick<ParsedMessage["headers"], "from" | "to"> },
+  message: {
+    headers: Pick<ParsedMessage["headers"], "from" | "to"> & {
+      cc?: string | null;
+      bcc?: string | null;
+    };
+  },
   userEmail: string,
 ) {
   if (!userEmail) return message.headers.from;
-  if (message.headers.from.includes(userEmail)) return message.headers.to;
-  return message.headers.from;
+  const fromAddresses = extractEmailAddresses(message.headers.from);
+  const sentByAccount =
+    fromAddresses.length > 0 &&
+    fromAddresses.every((address) => isSameEmailAddress(address, userEmail));
+  if (!sentByAccount) return message.headers.from;
+  // The account is not someone this mail is waiting on.
+  for (const header of [
+    message.headers.to,
+    message.headers.cc,
+    message.headers.bcc,
+  ]) {
+    const others = recipientPeopleOtherThanAccount(header, userEmail);
+    if (others.length) return others.join(", ");
+  }
+  return message.headers.to;
 }
 
 // Converts name and email to "Name <email@example.com>" or just "email@example.com" if no name
@@ -190,13 +384,14 @@ export function getNewsletterSenderDisplayName({
   minFromName?: string | null;
   maxFromName?: string | null;
 }) {
-  const hasMultipleDisplayNames =
-    !!minFromName && !!maxFromName && minFromName !== maxFromName;
+  const min = displayNameBesideAddress(minFromName, email);
+  const max = displayNameBesideAddress(maxFromName, email);
+  const hasMultipleDisplayNames = !!min && !!max && min !== max;
   const domain = extractDomainFromEmail(email);
 
   if (hasMultipleDisplayNames && domain) return domain;
 
-  return fromName?.trim() || "";
+  return max || min || displayNameBesideAddress(fromName, email);
 }
 
 // Public email providers where we should search by full email address
@@ -251,10 +446,77 @@ export function getSearchTermForSender(email: string): string {
 // Sharing a public provider says nothing about affiliation, so those compare by address.
 export function isSameOrganization(left: string, right: string): boolean {
   if (!left || !right) return false;
+
+  const people = splitRecipientList(left);
+  if (people.length > 1) {
+    return people.some((person) => isSameOrganization(person, right));
+  }
+
   if (isSameEmailAddress(left, right)) return true;
 
   const leftDomain = extractDomainFromEmail(left).toLowerCase();
   if (!leftDomain || isPublicEmailDomain(leftDomain)) return false;
 
   return leftDomain === extractDomainFromEmail(right).toLowerCase();
+}
+
+export function legacySubjectThreadKey(subject: string) {
+  return subject.toLowerCase().replace(/^(re|fwd):\s*/g, "");
+}
+
+function displayNameBesideAddress(
+  name: string | null | undefined,
+  email: string,
+) {
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed) return "";
+  const display = extractNameFromEmail(trimmed);
+  // A header with no display name stores the address itself. That is not a
+  // second name, so it must not replace Billing with the domain.
+  if (!display || isSameEmailAddress(display, email)) return "";
+  return display;
+}
+
+function headerWithoutAccount(
+  header: string | null | undefined,
+  accountEmail: string,
+) {
+  if (header == null || header === "") return header ?? undefined;
+  const people = splitRecipientList(header);
+  const others = recipientPeopleOtherThanAccount(header, accountEmail);
+  if (others.length === people.length) return header;
+  if (!others.length) return;
+  return others.join(", ");
+}
+
+function recipientPeopleOtherThanAccount(
+  header: string | null | undefined,
+  accountEmail: string,
+) {
+  return splitRecipientList(header || "").filter((person) => {
+    const address = extractEmailAddress(person);
+    return Boolean(address) && !isSameEmailAddress(address, accountEmail);
+  });
+}
+
+function replyHeaderReachesSomeoneElse(
+  header: string | null | undefined,
+  accountEmail?: string | null,
+) {
+  const addresses = extractEmailAddresses(header || "");
+  if (!addresses.length) return false;
+  return addressesOtherThanAccount(addresses, accountEmail).length > 0;
+}
+
+function namesListedForEveryAddress(
+  fromName: string | null | undefined,
+  addresses: readonly string[],
+) {
+  if (!fromName || addresses.length < 2) return null;
+  const names = fromName
+    .split(", ")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (names.length !== addresses.length) return null;
+  return names;
 }

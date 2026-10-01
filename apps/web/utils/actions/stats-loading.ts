@@ -7,8 +7,12 @@ import { Prisma } from "@/generated/prisma/client";
 import { isDefined } from "@/utils/types";
 import {
   extractDomainFromEmail,
-  extractEmailAddress,
-  extractNameFromEmail,
+  extractEmailAddresses,
+  legacySubjectThreadKey,
+  messageIsFromAccountOnly,
+  recipientDisplayNames,
+  storedAnalyticsAddresses,
+  storedRecipientAddresses,
 } from "@/utils/email";
 import type { EmailProvider } from "@/utils/email/types";
 import { internalDateToDate } from "@/utils/date";
@@ -176,6 +180,10 @@ export async function saveBatch({
   });
 
   const messages = res.messages ?? [];
+  const account = await prisma.emailAccount.findUnique({
+    where: { id: emailAccountId },
+    select: { email: true },
+  });
 
   const emailsToSave = messages
     .map((m) => {
@@ -193,17 +201,25 @@ export async function saveBatch({
         return;
       }
 
+      const fromAddresses = extractEmailAddresses(m.headers.from);
+      const sent =
+        !!m.labelIds?.includes("SENT") ||
+        messageIsFromAccountOnly(m.headers.from, account?.email);
       return {
         threadId: m.threadId,
         messageId: m.id,
-        from: extractEmailAddress(m.headers.from),
-        fromName: extractNameFromEmail(m.headers.from),
-        fromDomain: extractDomainFromEmail(m.headers.from),
-        to: m.headers.to ? extractEmailAddress(m.headers.to) : "Missing",
+        subject: m.subject || "",
+        from: storedAnalyticsAddresses(m.headers.from) || "Missing",
+        fromName: recipientDisplayNames(m.headers.from),
+        fromDomain: extractDomainFromEmail(fromAddresses[0] || ""),
+        to: storedRecipientAddresses(
+          m.headers,
+          sent ? account?.email : undefined,
+        ),
         date,
         unsubscribeLink,
         read: !m.labelIds?.includes("UNREAD"),
-        sent: !!m.labelIds?.includes("SENT"),
+        sent,
         draft: !!m.labelIds?.includes("DRAFT"),
         inbox: !!m.labelIds?.includes("INBOX"),
         emailAccountId,
@@ -227,6 +243,7 @@ async function saveEmailMessages(
   emails: {
     threadId: string;
     messageId: string;
+    subject: string;
     from: string;
     fromName: string;
     fromDomain: string;
@@ -296,6 +313,45 @@ async function saveEmailMessages(
       "inbox" = EXCLUDED."inbox",
       "updatedAt" = NOW()
   `;
+
+  await dropMovedMessageCopies(emails);
+}
+
+async function dropMovedMessageCopies(
+  emails: {
+    threadId: string;
+    messageId: string;
+    subject: string;
+    from: string;
+    date: Date;
+    sent: boolean;
+    draft: boolean;
+    emailAccountId: string;
+  }[],
+) {
+  const savedIds = emails.map((email) => email.messageId);
+  const copies = emails.flatMap((email) => {
+    if (email.sent || email.draft || !email.from) return [];
+    const threadIds = [email.threadId];
+    const legacyThreadId = legacySubjectThreadKey(email.subject);
+    if (legacyThreadId && legacyThreadId !== email.threadId) {
+      threadIds.push(legacyThreadId);
+    }
+    return [
+      {
+        emailAccountId: email.emailAccountId,
+        sent: false,
+        draft: false,
+        from: email.from,
+        date: email.date,
+        messageId: { notIn: savedIds },
+        threadId: { in: threadIds },
+      },
+    ];
+  });
+  if (!copies.length) return;
+
+  await prisma.emailMessage.deleteMany({ where: { OR: copies } });
 }
 
 function mergeUnsubscribeSources({

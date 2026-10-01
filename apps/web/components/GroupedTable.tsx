@@ -42,7 +42,10 @@ import {
   useArchiveSenderStatus,
   useArchiveSenderQueueActions,
 } from "@/store/archive-sender-queue";
-import { getEmailUrl, getGmailSearchUrl } from "@/utils/url";
+import { OpenMailboxMessage } from "@/components/OpenMailboxMessage";
+import { isImapProvider } from "@/utils/email/provider-types";
+import { prefixPath } from "@/utils/path";
+import { getGmailSearchUrl } from "@/utils/url";
 import { MessageText } from "@/components/Typography";
 import { CreateCategoryDialog } from "@/app/(app)/[emailAccountId]/smart-categories/CreateCategoryButton";
 import {
@@ -72,7 +75,7 @@ export function GroupedTable({
   emailGroups: EmailGroup[];
   categories: CategoryWithRules[];
 }) {
-  const { emailAccountId, userEmail } = useAccount();
+  const { emailAccountId, provider, userEmail } = useAccount();
   const { queueArchiveSenders } = useArchiveSenderQueueActions(emailAccountId);
 
   const categoryMap = useMemo(
@@ -131,8 +134,15 @@ export function GroupedTable({
         accessorKey: "address",
         cell: ({ row }) => (
           <Link
-            href={getGmailSearchUrl(row.original.address, userEmail)}
-            target="_blank"
+            href={
+              isImapProvider(provider)
+                ? prefixPath(
+                    emailAccountId,
+                    `/mail?q=${encodeURIComponent(row.original.address)}`,
+                  )
+                : getGmailSearchUrl(row.original.address, userEmail)
+            }
+            target={isImapProvider(provider) ? undefined : "_blank"}
             className="hover:underline"
           >
             <div className="flex items-center justify-between">
@@ -185,7 +195,7 @@ export function GroupedTable({
         ),
       },
     ],
-    [categories, userEmail, emailAccountId],
+    [categories, emailAccountId, provider, userEmail],
   );
 
   const table = useReactTable({
@@ -258,11 +268,7 @@ export function GroupedTable({
                   onRemoveAllFromCategory={onRemoveAllFromCategory}
                 />
                 {isCategoryExpanded && (
-                  <SenderRows
-                    table={table}
-                    senders={senders}
-                    userEmail={userEmail}
-                  />
+                  <SenderRows table={table} senders={senders} />
                 )}
               </Fragment>
             );
@@ -293,7 +299,7 @@ export function SendersTable({
   senders: EmailGroup[];
   categories: CategoryWithRules[];
 }) {
-  const { emailAccountId, userEmail } = useAccount();
+  const { emailAccountId } = useAccount();
 
   const columns: ColumnDef<EmailGroup>[] = useMemo(
     () => [
@@ -357,7 +363,7 @@ export function SendersTable({
   return (
     <Table>
       <TableBody>
-        <SenderRows table={table} senders={senders} userEmail={userEmail} />
+        <SenderRows table={table} senders={senders} />
       </TableBody>
     </Table>
   );
@@ -430,11 +436,9 @@ function GroupRow({
 function SenderRows({
   table,
   senders,
-  userEmail,
 }: {
   table: ReturnType<typeof useReactTable<EmailGroup>>;
   senders: EmailGroup[];
-  userEmail: string;
 }) {
   if (!senders.length) {
     return (
@@ -468,23 +472,13 @@ function SenderRows({
             </TableCell>
           ))}
         </TableRow>
-        {row.getIsExpanded() && (
-          <ExpandedRows sender={row.original.address} userEmail={userEmail} />
-        )}
+        {row.getIsExpanded() && <ExpandedRows sender={row.original.address} />}
       </Fragment>
     );
   });
 }
 
-function ExpandedRows({
-  sender,
-  userEmail,
-}: {
-  sender: string;
-  userEmail: string;
-}) {
-  const { provider } = useAccount();
-
+function ExpandedRows({ sender }: { sender: string }) {
   const { data, isLoading, error } = useThreads({
     fromEmail: sender,
     limit: 5,
@@ -530,13 +524,13 @@ function ExpandedRows({
               <ViewEmailButton threadId={thread.id} messageId={thread.id} />
             </TableCell>
             <TableCell className="py-3">
-              <Link
-                href={getEmailUrl(thread.id, userEmail, provider)}
-                target="_blank"
+              <OpenMailboxMessage
+                threadId={thread.id}
+                messageId={firstMessage.id}
                 className="hover:underline"
               >
                 {subject}
-              </Link>
+              </OpenMailboxMessage>
             </TableCell>
             <TableCell className="py-3">
               {decodeSnippet(thread.messages[0].snippet)}

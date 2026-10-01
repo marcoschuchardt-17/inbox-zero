@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import useSWR from "swr";
 import sortBy from "lodash/sortBy";
 import { toast } from "sonner";
-import Link from "next/link";
+import { OpenMailboxMessage } from "@/components/OpenMailboxMessage";
 import {
   ArchiveIcon,
   ChevronDownIcon,
@@ -32,7 +32,6 @@ import { ArchiveProgress } from "@/app/(app)/[emailAccountId]/bulk-unsubscribe/A
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useThreads } from "@/hooks/useThreads";
 import { formatShortDate } from "@/utils/date";
-import { getEmailUrl } from "@/utils/url";
 import {
   getArchiveCandidates,
   type ConfidenceLevel,
@@ -74,7 +73,7 @@ const confidenceConfig = {
 };
 
 export function BulkArchiveTab() {
-  const { emailAccountId, userEmail } = useAccount();
+  const { emailAccountId } = useAccount();
   const { queueArchiveSenders } = useArchiveSenderQueueActions(emailAccountId);
 
   const { data, error, isLoading } = useSWR<CategorizedSendersResponse>(
@@ -418,7 +417,6 @@ export function BulkArchiveTab() {
                       onToggleExpanded={() =>
                         toggleSenderExpanded(candidate.address)
                       }
-                      userEmail={userEmail}
                     />
                   ))}
                 </div>
@@ -438,7 +436,6 @@ function SenderRow({
   isExpanded,
   onToggleSelection,
   onToggleExpanded,
-  userEmail,
 }: {
   emailAccountId: string;
   candidate: ArchiveCandidate;
@@ -446,7 +443,6 @@ function SenderRow({
   isExpanded: boolean;
   onToggleSelection: () => void;
   onToggleExpanded: () => void;
-  userEmail: string;
 }) {
   const status = useArchiveSenderStatus(emailAccountId, candidate.address);
 
@@ -496,9 +492,7 @@ function SenderRow({
         </div>
       </div>
 
-      {isExpanded && (
-        <ExpandedEmails sender={candidate.address} userEmail={userEmail} />
-      )}
+      {isExpanded && <ExpandedEmails sender={candidate.address} />}
     </div>
   );
 }
@@ -532,15 +526,7 @@ function ArchiveStatus({
   }
 }
 
-function ExpandedEmails({
-  sender,
-  userEmail,
-}: {
-  sender: string;
-  userEmail: string;
-}) {
-  const { provider } = useAccount();
-
+function ExpandedEmails({ sender }: { sender: string }) {
   const { data, isLoading, error } = useThreads({
     fromEmail: sender,
     limit: 5,
@@ -587,9 +573,9 @@ function ExpandedEmails({
                 <div className="h-full w-px bg-border" />
                 <div className="h-px w-4 bg-border" />
               </div>
-              <Link
-                href={getEmailUrl(thread.id, userEmail, provider)}
-                target="_blank"
+              <OpenMailboxMessage
+                threadId={thread.id}
+                messageId={firstMessage.id}
                 className="mr-2 flex flex-1 items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/50"
               >
                 <MailIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -616,7 +602,7 @@ function ExpandedEmails({
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatShortDate(new Date(date))}
                 </span>
-              </Link>
+              </OpenMailboxMessage>
             </div>
           );
         })}

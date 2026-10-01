@@ -98,6 +98,7 @@ import {
 } from "@/providers/EmailAccountProvider";
 import {
   isGoogleProvider,
+  isImapProvider,
   isMicrosoftProvider,
 } from "@/utils/email/provider-types";
 import { useEmail } from "@/providers/EmailProvider";
@@ -164,6 +165,8 @@ export function MailShell() {
   const { data: accountsData } = useAccounts();
   const isGoogle = isGoogleProvider(provider);
   const isOutlook = isMicrosoftProvider(provider);
+  const isImap = isImapProvider(provider);
+  const labelEditMode = mailboxLabelEditMode({ isOutlook, isImap });
   const categories = getMailCategories({ isGoogle, isOutlook });
   const terminology = getEmailTerminology(provider);
   const { userLabels } = useEmail();
@@ -213,6 +216,8 @@ export function MailShell() {
     targets: ThreadSelection[];
   } | null>(null);
   const [replyToMessageId, setReplyToMessageId] = useState<string>();
+  const [replyToEveryone, setReplyToEveryone] = useState(false);
+  const [composeRequest, setComposeRequest] = useState(0);
   const [forwardToMessageId, setForwardToMessageId] = useState<string>();
   const pendingComposeRequest = useRef<{
     mode: "reply" | "forward";
@@ -639,6 +644,8 @@ export function MailShell() {
     const messageId = openMessages.at(-1)?.id;
     if (messageId) {
       pendingComposeRequest.current = null;
+      setReplyToEveryone(false);
+      setComposeRequest((request) => request + 1);
       setForwardToMessageId(undefined);
       setReplyToMessageId(messageId);
       return;
@@ -682,6 +689,7 @@ export function MailShell() {
 
     pendingComposeRequest.current = null;
     if (pendingRequest.mode === "reply") {
+      setReplyToEveryone(false);
       setForwardToMessageId(undefined);
       setReplyToMessageId(messageId);
     } else {
@@ -1147,6 +1155,17 @@ export function MailShell() {
       markUnread: markUnreadTargets,
       delete: trashTargets,
       reply: () => {
+        setReplyToEveryone(false);
+        setComposeRequest((request) => request + 1);
+        setForwardToMessageId(undefined);
+        if (!openThreadId && focusedThread) {
+          setOpenThread(getListThreadSelection(focusedThread, emailAccountId));
+        }
+        setReplyToMessageId(openMessages.at(-1)?.id);
+      },
+      replyAll: () => {
+        setReplyToEveryone(true);
+        setComposeRequest((request) => request + 1);
         setForwardToMessageId(undefined);
         if (!openThreadId && focusedThread) {
           setOpenThread(getListThreadSelection(focusedThread, emailAccountId));
@@ -1622,7 +1641,7 @@ export function MailShell() {
             onCreateLabel={onCreateLabel}
             onEditMailboxItem={onEditMailboxItem}
             onDeleteMailboxItem={onDeleteMailboxItem}
-            labelEditMode={isOutlook ? "color" : "name-and-color"}
+            labelEditMode={labelEditMode}
             supportsLabelVisibility={isGoogle}
             labelColorOptions={
               isOutlook ? OUTLOOK_LABEL_COLOR_OPTIONS : GMAIL_LABEL_COLORS
@@ -1846,6 +1865,8 @@ export function MailShell() {
                       });
                     }}
                     autoOpenReplyForMessageId={replyToMessageId}
+                    autoOpenReplyAll={replyToEveryone}
+                    composeRequest={composeRequest}
                     autoOpenForwardForMessageId={forwardToMessageId}
                     renderMessageMenu={(message) => (
                       <MessageActionsMenu
@@ -1902,6 +1923,18 @@ function getMailCategories({
   if (isGoogle) return MAIL_CATEGORIES;
   if (isOutlook) return OUTLOOK_INBOX_CATEGORIES;
   return [];
+}
+
+function mailboxLabelEditMode({
+  isOutlook,
+  isImap,
+}: {
+  isOutlook: boolean;
+  isImap: boolean;
+}) {
+  if (isOutlook) return "color" as const;
+  if (isImap) return "name" as const;
+  return "name-and-color" as const;
 }
 
 function getMailNavPath(target: MailNavTarget): `/${string}` {

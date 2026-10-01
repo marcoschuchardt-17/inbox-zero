@@ -171,6 +171,15 @@ export class SafeError extends Error {
   }
 }
 
+export function safeErrorStatusCode(statusCode?: number) {
+  return typeof statusCode === "number" &&
+    Number.isInteger(statusCode) &&
+    statusCode >= 400 &&
+    statusCode <= 599
+    ? statusCode
+    : 400;
+}
+
 export class EmailProviderRateLimitError extends Error {
   constructor() {
     super(EMAIL_PROVIDER_RATE_LIMIT_MESSAGE);

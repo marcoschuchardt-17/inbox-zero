@@ -7,7 +7,7 @@ import {
   ReactNodeViewRenderer,
   type NodeViewProps,
 } from "@tiptap/react";
-import { isSafeEmailUrl } from "../core/email-html";
+import { contentIdFromImageElement, isSafeEmailUrl } from "../core/email-html";
 import {
   PreservedBlockView,
   type RenderedPreservedEmailBlock,
@@ -49,7 +49,7 @@ const EmailImage = Image.extend({
       ...this.parent?.(),
       contentId: {
         default: null,
-        parseHTML: (element) => element.getAttribute("data-content-id"),
+        parseHTML: (element) => contentIdFromImageElement(element),
         renderHTML: (attributes) =>
           attributes.contentId
             ? { "data-content-id": attributes.contentId }

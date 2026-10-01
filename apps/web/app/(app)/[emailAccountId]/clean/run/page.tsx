@@ -9,6 +9,10 @@ import {
 } from "@/app/(app)/[emailAccountId]/clean/helpers";
 import { CleanRun } from "@/app/(app)/[emailAccountId]/clean/CleanRun";
 import { checkUserOwnsEmailAccount } from "@/utils/email-account";
+import { isCleanerApiEnabled } from "@/utils/cleaner-feature";
+import { cleanupThreadsForDisplay } from "@/utils/clean/cleanup-threads";
+import { createEmailProvider } from "@/utils/email/provider";
+import { createScopedLogger } from "@/utils/logger";
 
 export default async function CleanRunPage(props: {
   params: Promise<{ emailAccountId: string }>;
@@ -23,12 +27,12 @@ export default async function CleanRunPage(props: {
 
   const emailAccount = await prisma.emailAccount.findUnique({
     where: { id: emailAccountId },
-    select: { email: true },
+    select: {
+      account: { select: { provider: true } },
+    },
   });
 
   if (!emailAccount) return <CardTitle>Email account not found</CardTitle>;
-
-  const threads = await getThreadsByJobId({ emailAccountId, jobId });
 
   const job = jobId
     ? await getJobById({ emailAccountId, jobId })
@@ -36,14 +40,27 @@ export default async function CleanRunPage(props: {
 
   if (!job) return <CardTitle>Job not found</CardTitle>;
 
+  let threads = await getThreadsByJobId({
+    emailAccountId,
+    jobId: job.id,
+  });
+
   const [total, done] = await Promise.all([
     prisma.cleanupThread.count({
-      where: { jobId, emailAccountId },
+      where: { jobId: job.id, emailAccountId },
     }),
     prisma.cleanupThread.count({
-      where: { jobId, emailAccountId, archived: true },
+      where: { jobId: job.id, emailAccountId, archived: true },
     }),
   ]);
+
+  if (threads.length === 0 && total > 0) {
+    threads = await storedCleanupThreads({
+      emailAccountId,
+      jobId: job.id,
+      provider: emailAccount.account.provider,
+    });
+  }
 
   return (
     <Suspense fallback={<Loading />}>
@@ -53,7 +70,56 @@ export default async function CleanRunPage(props: {
         threads={threads}
         total={total}
         done={done}
+        streamEnabled={isCleanerApiEnabled()}
       />
     </Suspense>
   );
+}
+
+async function storedCleanupThreads({
+  emailAccountId,
+  jobId,
+  provider,
+}: {
+  emailAccountId: string;
+  jobId: string;
+  provider: string;
+}) {
+  const rows = await prisma.cleanupThread.findMany({
+    where: { jobId, emailAccountId },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+    select: { threadId: true, archived: true, createdAt: true },
+  });
+  const logger = createScopedLogger("clean-run").with({ emailAccountId });
+  const emailProvider = await createEmailProvider({
+    emailAccountId,
+    provider,
+    logger,
+  });
+
+  return cleanupThreadsForDisplay({
+    emailAccountId,
+    jobId,
+    rows,
+    loadThread: async (threadId) => {
+      try {
+        const thread = await emailProvider.getThread(threadId);
+        return {
+          messages: thread.messages.map((message) => ({
+            subject: message.subject,
+            snippet: message.snippet,
+            date: message.date,
+            headers: { from: message.headers.from },
+          })),
+        };
+      } catch (error) {
+        logger.warn("Clean result could not load a thread", {
+          error,
+          threadId,
+        });
+        return null;
+      }
+    },
+  });
 }

@@ -13,8 +13,16 @@ const mail = vi.hoisted(() => ({
   },
 }));
 
+const http = vi.hoisted(() => ({
+  fetchWithAccount: vi.fn(),
+}));
+
 vi.mock("@/utils/mail-engine/active-client", () => ({
   getActiveMailClient: () => mail.current,
+}));
+
+vi.mock("@/utils/fetch", () => ({
+  fetchWithAccount: (...args: unknown[]) => http.fetchWithAccount(...args),
 }));
 
 describe("thread mail mutation batches", () => {
@@ -23,6 +31,7 @@ describe("thread mail mutation batches", () => {
     mail.current = mail.client;
     mail.client.getDiagnostics.mockResolvedValue({ revision: 1 });
     mail.client.submitConversations.mockResolvedValue({ status: "queued" });
+    http.fetchWithAccount.mockResolvedValue({ ok: true });
   });
 
   it("submits each complete thread snapshot through the engine", async () => {
@@ -67,6 +76,160 @@ describe("thread mail mutation batches", () => {
       },
     ]);
     expect(mail.client.submitConversations).toHaveBeenCalledTimes(2);
+  });
+
+  it("archives IMAP threads over HTTP without waiting for the mail engine", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        clientSource: { kind: "sender", sender: "receipts@example.com" },
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [
+          { id: "thread-1", messages: [{ id: "message-1" }] },
+          { id: "thread-2", messages: [{ id: "message-2" }] },
+        ],
+        payload: { kind: "archive" },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenNthCalledWith(1, {
+      url: "/api/threads/thread-1/archive",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(http.fetchWithAccount).toHaveBeenNthCalledWith(2, {
+      url: "/api/threads/thread-2/archive",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      {
+        emailAccountId: "account",
+        threadId: "thread-1",
+        messageIds: ["message-1"],
+        status: "succeeded",
+      },
+      {
+        emailAccountId: "account",
+        threadId: "thread-2",
+        messageIds: ["message-2"],
+        status: "succeeded",
+      },
+    ]);
+  });
+
+  it("marks IMAP threads read over HTTP without waiting for the mail engine", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "thread-1", messages: [{ id: "message-1" }] }],
+        payload: { kind: "set_read_state", read: true },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/read",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      { threadId: "thread-1", read: true, status: "succeeded" },
+    ]);
+  });
+
+  it("marks an IMAP thread as spam over HTTP", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "thread-1", messages: [{ id: "INBOX/1" }] }],
+        payload: { kind: "spam" },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/spam",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      { threadId: "thread-1", kind: "spam", status: "succeeded" },
+    ]);
+  });
+
+  it("marks an IMAP thread unread over HTTP", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "thread-1", messages: [{ id: "INBOX/1" }] }],
+        payload: { kind: "set_read_state", read: false },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/thread-1/unread",
+      emailAccountId: "account",
+      init: { method: "POST" },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      { threadId: "thread-1", read: false, status: "succeeded" },
+    ]);
+  });
+
+  it("stars an IMAP thread over HTTP without waiting for the mail engine", async () => {
+    mail.current = null;
+    const result = await enqueueThreadMailMutationBatch(
+      {
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "<note@example.com>", messages: [{ id: "INBOX/4" }] }],
+        payload: { kind: "set_starred_state", starred: false },
+      },
+      10,
+    );
+
+    expect(http.fetchWithAccount).toHaveBeenCalledWith({
+      url: "/api/threads/%3Cnote%40example.com%3E/star",
+      emailAccountId: "account",
+      init: {
+        method: "POST",
+        body: JSON.stringify({ starred: false }),
+        headers: { "Content-Type": "application/json" },
+      },
+    });
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
+    expect(result.mutations).toMatchObject([
+      { threadId: "<note@example.com>", starred: false, status: "succeeded" },
+    ]);
+  });
+
+  it("reports a failed IMAP archive without waiting for the mail engine", async () => {
+    mail.current = null;
+    http.fetchWithAccount.mockResolvedValue({ ok: false });
+
+    await expect(
+      enqueueThreadMailMutationBatch({
+        emailAccountId: "account",
+        provider: "imap",
+        threads: [{ id: "thread-1", messages: [{ id: "message-1" }] }],
+        payload: { kind: "archive" },
+      }),
+    ).rejects.toThrow("Failed to archive email");
+    expect(mail.client.submitConversations).not.toHaveBeenCalled();
   });
 
   it("waits until the mail engine is published", async () => {

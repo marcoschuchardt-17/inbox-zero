@@ -10,7 +10,7 @@ import clsx from "clsx";
 import { ActionButtons } from "@/components/ActionButtons";
 import { PlanBadge } from "@/components/PlanBadge";
 import type { Thread } from "@/components/email-list/types";
-import { extractNameFromEmail, participant } from "@/utils/email";
+import { participant, recipientDisplayNames } from "@/utils/email";
 import { Checkbox } from "@/components/Checkbox";
 import { EmailDate } from "@/components/email-list/EmailDate";
 import { decodeSnippet } from "@/utils/gmail/decode";
@@ -18,7 +18,7 @@ import { useIsInAiQueue } from "@/store/ai-queue";
 import { Button } from "@/components/ui/button";
 import { findCtaLink } from "@/utils/parse/parseHtml.client";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { internalDateToDate } from "@/utils/date";
+import { emailListItemDate } from "@/components/email-list/email-list-item-date";
 import { useEmail } from "@/providers/EmailProvider";
 import { getEmailMessageCellLabels } from "@/components/EmailMessageCellLabels";
 import { LabelBadges } from "@/components/LabelBadges";
@@ -125,7 +125,7 @@ export const EmailListItem = forwardRef(
                 </div>
 
                 <div className="ml-4 w-28 shrink-0 overflow-hidden truncate text-foreground sm:w-36 xl:w-48">
-                  {extractNameFromEmail(
+                  {recipientDisplayNames(
                     participant(lastMessage, props.userEmail),
                   )}{" "}
                   {thread.messages.length > 1 ? (
@@ -183,9 +183,7 @@ export const EmailListItem = forwardRef(
                       refetch={props.refetch}
                     />
                   </div>
-                  <EmailDate
-                    date={internalDateToDate(lastMessage?.internalDate)}
-                  />
+                  <EmailDate date={emailListItemDate(lastMessage, provider)} />
                 </div>
 
                 {!!thread.plan && (

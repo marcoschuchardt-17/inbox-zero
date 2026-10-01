@@ -16,6 +16,16 @@ import {
   type EmailEditorState,
 } from "@inboxzero/email-editor/web";
 import {
+  fetchAttachment,
+  getAttachmentUrl,
+} from "@/utils/attachments/download";
+import {
+  attachmentsForDraftUpdate,
+  type DraftAttachmentFile,
+  type StoredDraftAttachmentRef,
+} from "@/utils/email/draft-update-attachments";
+import { blobToBase64 } from "@/utils/voice/recording";
+import {
   Combobox,
   ComboboxInput,
   ComboboxOption,
@@ -78,12 +88,14 @@ import {
   updateDraftAction,
   saveComposeDraftAction,
   discardComposeDraftAction,
+  sendEmailAction,
 } from "@/utils/actions/mail";
 import { scheduleEmailAction } from "@/utils/actions/scheduled-email";
 import {
   extractEmailAddress,
   extractNameFromEmail,
   isValidEmail,
+  collapsedReplyRecipientNames,
   splitRecipientList,
 } from "@/utils/email";
 import type { StoredReplyDraft } from "@/utils/mail-engine/reply-drafts";
@@ -96,7 +108,10 @@ import {
 } from "@/utils/mail-engine/reply-drafts";
 import { createPreservedEmailBlocks } from "@/utils/email/preserved-blocks";
 import { resolveSendDraftId } from "@/app/(app)/[emailAccountId]/compose/send-draft-reference";
-import { isMicrosoftProvider } from "@/utils/email/provider-types";
+import {
+  isImapProvider,
+  isMicrosoftProvider,
+} from "@/utils/email/provider-types";
 import { stripBrandingSignatures } from "@/utils/referral/signature";
 import { renderSentWithFooterHtml } from "@/utils/email/sent-with-footer";
 import { getActionErrorMessage } from "@/utils/error";
@@ -147,6 +162,13 @@ export type ReplyingToEmail = {
   cc?: string;
   bcc?: string;
   draftHtml?: string;
+  draftInlineAttachments?: {
+    attachmentId: string;
+    contentId: string;
+    filename: string;
+    mimeType: string;
+  }[];
+  storedAttachments?: StoredDraftAttachmentRef[];
   quotedContentHtml?: string;
   signatureHtml?: string;
   date?: string;
@@ -302,6 +324,7 @@ function ComposeEmailFormContent({
     return times.valid ? "" : times.error;
   });
   const editorInitialized = useRef(false);
+  const [editorReady, setEditorReady] = useState(false);
   const providerDraftId = useRef(storedDraft?.content?.providerDraftId);
   const savedAttachments = useRef<string | undefined>(undefined);
 
@@ -477,6 +500,10 @@ function ComposeEmailFormContent({
     loadError: draftLoadError,
     getContent: getDraftContent,
   });
+  const storedAttachmentRefs = useRef(replyingToEmail?.storedAttachments);
+  storedAttachmentRefs.current = replyingToEmail?.storedAttachments;
+  const originalStoredFiles = useRef<DraftAttachmentFile[] | null>(null);
+  const attachmentListChanged = useRef(false);
   const providerAutosave = useProviderDraftAutosave({
     enabled: Boolean(providerDraftMessageId) || isNewCompose,
     sessionKey: isNewCompose
@@ -567,13 +594,31 @@ function ComposeEmailFormContent({
         return;
       }
       if (!providerDraftMessageId) return;
-      if (draftAttachments.length)
-        throw new Error(
-          "Drafts with newly added attachments are saved on this device until sent.",
-        );
+      if (draftAttachments.length > 0) attachmentListChanged.current = true;
+      const draftMessageId = providerDraftMessageId;
+      let attachments: DraftAttachmentFile[] | undefined;
+      if (attachmentListChanged.current) {
+        try {
+          attachments = attachmentsForDraftUpdate({
+            composerAttachments: draftAttachments,
+            storedAttachments: await loadOriginalStoredDraftFiles({
+              cache: originalStoredFiles,
+              refs: storedAttachmentRefs.current ?? [],
+              messageId: draftMessageId,
+              emailAccountId: selectedEmailAccountId,
+            }),
+            attachmentListChanged: true,
+          });
+        } catch {
+          throw new Error(
+            "Drafts with newly added attachments are saved on this device until sent.",
+          );
+        }
+      }
       const result = await updateDraftAction(selectedEmailAccountId, {
         ...content,
-        draftMessageId: providerDraftMessageId,
+        ...(attachments ? { attachments } : {}),
+        draftMessageId,
         draftId: providerDraftId.current,
       });
       if (!result?.data) throw new Error(getActionErrorMessage(result ?? {}));
@@ -635,6 +680,7 @@ function ComposeEmailFormContent({
       if (!editorInitialized.current) {
         queueMicrotask(() => {
           editorInitialized.current = true;
+          setEditorReady(true);
         });
         return;
       }
@@ -642,6 +688,57 @@ function ComposeEmailFormContent({
     },
     [captureDraft, removeUnusedInlineAttachments],
   );
+
+  const inlinePreviewKey = (replyingToEmail?.draftInlineAttachments ?? [])
+    .map((attachment) => `${attachment.attachmentId}:${attachment.contentId}`)
+    .join("|");
+  const draftInlineAttachmentsRef = useRef(
+    replyingToEmail?.draftInlineAttachments,
+  );
+  draftInlineAttachmentsRef.current = replyingToEmail?.draftInlineAttachments;
+  useEffect(() => {
+    const messageId = providerDraftMessageId || replyingToEmail?.messageId;
+    const attachments = draftInlineAttachmentsRef.current;
+    if (!editorReady || !inlinePreviewKey || !messageId || !attachments?.length)
+      return;
+    const controller = new AbortController();
+    const previewUrls: string[] = [];
+    const load = async () => {
+      for (const attachment of attachments) {
+        try {
+          const blob = await fetchAttachment({
+            url: getAttachmentUrl({
+              accountId: selectedEmailAccountId,
+              messageId,
+              attachmentId: attachment.attachmentId,
+            }),
+            emailAccountId: selectedEmailAccountId,
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted) return;
+          const previewUrl = URL.createObjectURL(blob);
+          previewUrls.push(previewUrl);
+          editorRef.current?.showInlineImagePreview(
+            attachment.contentId,
+            previewUrl,
+          );
+        } catch {
+          // The picture stays stored on the draft when the preview cannot load.
+        }
+      }
+    };
+    load().catch(() => undefined);
+    return () => {
+      controller.abort();
+      for (const previewUrl of previewUrls) URL.revokeObjectURL(previewUrl);
+    };
+  }, [
+    editorReady,
+    inlinePreviewKey,
+    providerDraftMessageId,
+    replyingToEmail?.messageId,
+    selectedEmailAccountId,
+  ]);
 
   const addFiles = useCallback(
     async (files: File[], disposition: ComposeAttachment["disposition"]) => {
@@ -902,6 +999,45 @@ function ComposeEmailFormContent({
           localDraftIdentity?.messageId ??
           requestId;
         const online = navigator.onLine;
+        if (!client && isImapProvider(accountProvider)) {
+          const result = await sendEmailAction(
+            selectedEmailAccountId,
+            enrichedData,
+          );
+          if (!result?.data?.success) {
+            setSubmissionError(
+              getActionErrorMessage(result ?? {}, {
+                prefix: "Could not send this email",
+              }),
+            );
+            return;
+          }
+          deliveryAccepted = true;
+          if (providerDraftId.current) {
+            const discarded = await discardComposeDraftAction(
+              selectedEmailAccountId,
+              { draftId: providerDraftId.current },
+            );
+            if (!discarded?.data) {
+              toastError({
+                description:
+                  "Email sent, but the saved draft is still in Drafts.",
+              });
+            }
+          }
+          try {
+            await clearLocalDraft();
+          } catch {
+            toastError({
+              description:
+                "Email sent, but its local draft copy could not be cleared.",
+            });
+          }
+          onSuccess?.(result.data.messageId, result.data.threadId);
+          onClose?.();
+          refetch?.();
+          return;
+        }
         if (!client) {
           setSubmissionError(
             "Mail is still starting. Try sending again in a moment.",
@@ -1058,6 +1194,7 @@ function ComposeEmailFormContent({
       refetch,
       replyingToEmail,
       selectedEmailAccountId,
+      accountProvider,
     ],
   );
 
@@ -1316,8 +1453,14 @@ function ComposeEmailFormContent({
             </span>
             <span className="min-w-0 truncate">
               to{" "}
-              {extractNameFromEmail(watch("to") || replyingToEmail?.to || "") ||
-                "recipients"}
+              {collapsedReplyRecipientNames({
+                to: watch("to"),
+                cc: watch("cc"),
+                bcc: watch("bcc"),
+                savedTo: replyingToEmail?.to,
+                savedCc: replyingToEmail?.cc,
+                savedBcc: replyingToEmail?.bcc,
+              }) || "recipients"}
             </span>
             <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
           </button>
@@ -1908,6 +2051,46 @@ async function ingestMailboxDraft(
     messageId,
   });
   await client.requestSync([emailAccountId]);
+}
+
+async function loadOriginalStoredDraftFiles({
+  cache,
+  refs,
+  messageId,
+  emailAccountId,
+}: {
+  cache: { current: DraftAttachmentFile[] | null };
+  refs: StoredDraftAttachmentRef[];
+  messageId: string;
+  emailAccountId: string;
+}) {
+  if (cache.current) return cache.current;
+  if (refs.length === 0) {
+    cache.current = [];
+    return cache.current;
+  }
+  const files = await Promise.all(
+    refs.map(async (attachment) => {
+      const blob = await fetchAttachment({
+        url: getAttachmentUrl({
+          accountId: emailAccountId,
+          messageId,
+          attachmentId: attachment.attachmentId,
+        }),
+        emailAccountId,
+      });
+      return {
+        filename: attachment.filename,
+        content: await blobToBase64(blob),
+        contentType: attachment.mimeType,
+        size: blob.size,
+        disposition: attachment.disposition,
+        contentId: attachment.contentId,
+      };
+    }),
+  );
+  cache.current = files;
+  return files;
 }
 
 function serializeComposeAttachments(attachments: EmailComposerAttachment[]) {
