@@ -11,6 +11,7 @@ type DatedListMessage = {
 export function emailListItemDate(
   message: DatedListMessage | null | undefined,
   provider: string,
+  options?: { fallbackToNow?: boolean },
 ) {
   if (isImapProvider(provider)) {
     const header = message?.headers?.date;
@@ -19,5 +20,5 @@ export function emailListItemDate(
       if (!Number.isNaN(shown.getTime())) return shown;
     }
   }
-  return internalDateToDate(message?.internalDate);
+  return internalDateToDate(message?.internalDate, options);
 }

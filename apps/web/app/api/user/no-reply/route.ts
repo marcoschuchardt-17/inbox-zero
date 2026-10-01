@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { emailListItemDate } from "@/components/email-list/email-list-item-date";
 import { isDefined } from "@/utils/types";
 import { withEmailProvider } from "@/utils/middleware";
 import { messageIsFromAccountOnly } from "@/utils/email";
@@ -56,7 +57,10 @@ async function getNoReply({
     )
   ).filter(isDefined);
 
-  return threadsStillAwaitingReply(threads, userEmail);
+  return sortAwaitingReplyByShownDate(
+    threadsStillAwaitingReply(threads, userEmail),
+    provider,
+  );
 }
 
 export const GET = withEmailProvider("user/no-reply", async (request) => {
@@ -92,4 +96,29 @@ function threadsStillAwaitingReply<
 
 function isMissingThread(error: unknown) {
   return error instanceof Error && error.message === "Thread not found";
+}
+
+type DatedReplyThread = {
+  messages: {
+    internalDate?: string | null;
+    headers: { date?: string | null };
+  }[];
+};
+
+// Sent mail and archived copies arrive in mailbox order. The list shows the
+// date written on the message, so that date has to decide the order too.
+function sortAwaitingReplyByShownDate<T extends DatedReplyThread>(
+  threads: T[],
+  provider: string,
+) {
+  return [...threads].sort(
+    (left, right) => shownDateMs(right, provider) - shownDateMs(left, provider),
+  );
+}
+
+function shownDateMs(thread: DatedReplyThread, provider: string) {
+  const time = emailListItemDate(thread.messages.at(-1), provider, {
+    fallbackToNow: false,
+  }).getTime();
+  return Number.isNaN(time) ? 0 : time;
 }
