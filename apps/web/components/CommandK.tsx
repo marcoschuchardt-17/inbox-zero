@@ -59,7 +59,10 @@ import {
 import { enqueueThreadMailMutationBatch } from "@/utils/mail-engine/thread-mail-mutations";
 import { submitConversationChange } from "@/utils/mail-engine/submit-conversations";
 import { admissionRejectionCopy } from "@/utils/mail-engine/admission-notice";
-import { imapThreadNeedsMove } from "@/utils/email/imap-flags";
+import {
+  imapFilingCommandVisible,
+  imapThreadNeedsMove,
+} from "@/utils/email/imap-flags";
 import { isImapProvider } from "@/utils/email/provider-types";
 import { AccountCommandList } from "@/components/AccountCommandList";
 import { toastError } from "@/components/Toast";
@@ -161,48 +164,56 @@ function CommandPaletteContent({
     },
     compose: onOpenComposeModal,
     help: () => setShortcutsOpen(true),
-    archive: threadId
-      ? async () => {
-          if (displayedThread?.thread.id !== threadId) {
-            toastError({
-              description: isDisplayedThreadLoading
-                ? "Email is still loading"
-                : "Email is unavailable",
-            });
-            return;
-          }
-          if (
-            isImapProvider(provider) &&
-            !imapThreadNeedsMove(displayedThread.thread.messages, "archive")
-          ) {
-            return;
-          }
-          try {
-            const admission = await queueDisplayedThread({
-              client,
-              emailAccountId,
-              messages: displayedThread.thread.messages,
-              payload: { kind: "archive" },
-              provider,
-              threadId,
-            });
-            if (admission?.status === "rejected") {
+    archive:
+      threadId &&
+      (!isImapProvider(provider) ||
+        imapFilingCommandVisible(
+          displayedThread?.thread.id === threadId
+            ? displayedThread.thread.messages
+            : null,
+          "archive",
+        ))
+        ? async () => {
+            if (displayedThread?.thread.id !== threadId) {
               toastError({
-                description:
-                  admissionRejectionCopy(admission.code) ??
-                  "Couldn't queue archiving this email",
+                description: isDisplayedThreadLoading
+                  ? "Email is still loading"
+                  : "Email is unavailable",
               });
               return;
             }
-            if (!admission) await refreshImapThreads(mutate);
-            showEmail(null);
-          } catch {
-            toastError({
-              description: "Couldn't queue archiving this email",
-            });
+            if (
+              isImapProvider(provider) &&
+              !imapThreadNeedsMove(displayedThread.thread.messages, "archive")
+            ) {
+              return;
+            }
+            try {
+              const admission = await queueDisplayedThread({
+                client,
+                emailAccountId,
+                messages: displayedThread.thread.messages,
+                payload: { kind: "archive" },
+                provider,
+                threadId,
+              });
+              if (admission?.status === "rejected") {
+                toastError({
+                  description:
+                    admissionRejectionCopy(admission.code) ??
+                    "Couldn't queue archiving this email",
+                });
+                return;
+              }
+              if (!admission) await refreshImapThreads(mutate);
+              showEmail(null);
+            } catch {
+              toastError({
+                description: "Couldn't queue archiving this email",
+              });
+            }
           }
-        }
-      : undefined,
+        : undefined,
     star: threadId
       ? async () => {
           if (displayedThread?.thread.id !== threadId) {

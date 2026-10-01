@@ -156,6 +156,19 @@ export function imapThreadNeedsMove(
   return targets.some((message) => !messageIsFiled(message, role));
 }
 
+// Archive stays out of the palette until a copy is still sitting in the inbox.
+// A sent-only message has nowhere to file, and the command would do nothing.
+export function imapFilingCommandVisible(
+  messages:
+    | readonly { id: string; labelIds?: readonly string[] | null }[]
+    | null
+    | undefined,
+  role: ImapFilingRole,
+) {
+  if (!messages?.length) return false;
+  return imapThreadNeedsMove(messages, role);
+}
+
 export function imapSearchRestoreAction(messageId: string | null | undefined) {
   const mailbox = imapMessageMailbox(messageId);
   if (!mailbox) return null;

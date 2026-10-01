@@ -9,6 +9,7 @@ import {
   imapThreadIsUnread,
   imapMessageMailbox,
   imapRowLabelIds,
+  imapFilingCommandVisible,
   imapSearchRestoreAction,
   imapSenderMark,
   imapThreadLabelIds,
@@ -210,6 +211,22 @@ describe("imapThreadNeedsMove", () => {
           { id: "INBOX/4", labelIds: ["INBOX"] },
           { id: "Archive/4", labelIds: ["ARCHIVE"] },
         ],
+        "archive",
+      ),
+    ).toBe(true);
+  });
+
+  it("offers archive only while a copy is still outside the archive", () => {
+    expect(
+      imapFilingCommandVisible(
+        [{ id: "Sent/3", labelIds: ["SENT"] }],
+        "archive",
+      ),
+    ).toBe(false);
+    expect(imapFilingCommandVisible(undefined, "archive")).toBe(false);
+    expect(
+      imapFilingCommandVisible(
+        [{ id: "INBOX/22", labelIds: ["INBOX", "UNREAD"] }],
         "archive",
       ),
     ).toBe(true);
