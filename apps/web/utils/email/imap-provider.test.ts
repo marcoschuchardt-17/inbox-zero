@@ -735,6 +735,48 @@ describe("createImapProvider", () => {
     });
   });
 
+  it("replies to the other person when reply-to also names this account", async () => {
+    sentMail.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.replyToEmail(
+      replySource({
+        replyTo:
+          "Starttls <owner@example.com>, Ada Replyto <ada-replyto@example.com>",
+        cc: "Starttls <owner@example.com>, Pat Replycc <pat-replycc@example.com>",
+      }),
+      "Thanks",
+    );
+
+    expect(sentMail[0]).toMatchObject({
+      to: "Ada Replyto <ada-replyto@example.com>",
+      cc: "Pat Replycc <pat-replycc@example.com>",
+      subject: "Re: Please keep this",
+    });
+  });
+
+  it("keeps the other copied person when a rule replies to sent mail", async () => {
+    sentMail.length = 0;
+    const provider = createImapProvider(imapConfig(), logger);
+
+    await provider.replyToEmail(
+      replySource({
+        from: "Starttls <owner@example.com>",
+        to: "Sam <sam@example.com>",
+        cc: "Pat <pat@example.com>",
+        labelIds: ["SENT"],
+        subject: "Notes for both",
+      }),
+      "Following up",
+    );
+
+    expect(sentMail[0]).toMatchObject({
+      to: "Sam <sam@example.com>",
+      cc: "Pat <pat@example.com>",
+      subject: "Notes for both",
+    });
+  });
+
   it("keeps a file on a rule reply", async () => {
     sentMail.length = 0;
     appended.length = 0;
@@ -6330,6 +6372,7 @@ function replySource(
     from?: string;
     to?: string;
     cc?: string;
+    replyTo?: string;
     labelIds?: string[];
     subject?: string;
   } = {},
@@ -6348,6 +6391,7 @@ function replySource(
       from: overrides.from ?? "Sam <sam@example.com>",
       to: overrides.to ?? "Starttls <owner@example.com>",
       ...(overrides.cc ? { cc: overrides.cc } : {}),
+      ...(overrides.replyTo ? { "reply-to": overrides.replyTo } : {}),
       subject: overrides.subject ?? "Please keep this",
       date: "Mon, 01 Sep 2026 12:05:00 +0000",
       "message-id": "<please-keep@example.com>",

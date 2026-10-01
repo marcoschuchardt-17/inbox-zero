@@ -15,6 +15,7 @@ import {
   getSearchTermForSender,
   legacySubjectThreadKey,
   splitRecipientList,
+  incomingReplyRecipients,
   messageWasSentByAccount,
   sentReplyRecipients,
   storedRecipientAddresses,
@@ -858,10 +859,13 @@ export function createImapProvider(
     },
     replyToEmail: async (email, content, options) => {
       const sentFromUser = messageWasSentByAccount(email, config.ownerEmail);
-      const sentRecipients = sentReplyRecipients(
-        email.headers,
-        config.ownerEmail,
-      );
+      const sentRecipients = sentFromUser
+        ? sentReplyRecipients(email.headers, config.ownerEmail)
+        : undefined;
+      const incomingRecipients = sentFromUser
+        ? undefined
+        : incomingReplyRecipients(email.headers, config.ownerEmail);
+      const recipients = sentRecipients ?? incomingRecipients;
       const headerMessageId = email.headers["message-id"] || "";
       const references = [email.headers.references, headerMessageId]
         .filter(Boolean)
@@ -871,9 +875,9 @@ export function createImapProvider(
         message: email,
       });
       const sent = await core.sendEmailWithHtml({
-        to: sentFromUser
-          ? sentRecipients.to
-          : email.headers["reply-to"] || email.headers.from,
+        to: recipients?.to || "",
+        cc: recipients?.cc,
+        bcc: sentRecipients?.bcc || undefined,
         subject: sentFromUser
           ? email.subject
           : formatReplySubject(email.subject),
