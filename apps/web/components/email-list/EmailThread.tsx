@@ -19,6 +19,7 @@ import {
 import { internalDateToDate } from "@/utils/date";
 import { GmailLabel } from "@/utils/gmail/label";
 import { useSentMessageOpens } from "@/hooks/useSentMessageOpens";
+import { autoOpenMessageId } from "@/hooks/useDisplayedEmail";
 
 export function EmailThread({
   messages,
@@ -91,7 +92,10 @@ export function EmailThread({
     version: number;
   }>();
   useEffect(() => {
-    const messageId = autoOpenForwardForMessageId ?? autoOpenReplyForMessageId;
+    const messageId = autoOpenMessageId(
+      autoOpenForwardForMessageId,
+      autoOpenReplyForMessageId,
+    );
     if (messageId)
       setExpansionOverrides((previous) =>
         new Map(previous).set(messageId, true),

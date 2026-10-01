@@ -55,14 +55,14 @@ export function EmailViewer() {
             }
             autoOpenReplyForMessageId={
               supportsViewerReplies
-                ? (autoOpenReplyForMessageId ?? undefined)
+                ? autoOpenReplyForMessageId || undefined
                 : undefined
             }
             autoOpenReplyAll={supportsViewerReplies && autoOpenReplyAll}
             composeRequest={composeRequest}
             autoOpenForwardForMessageId={
               supportsViewerReplies
-                ? (autoOpenForwardForMessageId ?? undefined)
+                ? autoOpenForwardForMessageId || undefined
                 : undefined
             }
             expandMessageId={messageId}

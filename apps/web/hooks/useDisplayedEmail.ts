@@ -29,7 +29,7 @@ export const useDisplayedEmail = () => {
         replyAll?: boolean;
       } | null,
     ) => {
-      setAutoOpenReplyForMessageId(options?.autoOpenReplyForMessageId || "");
+      setAutoOpenReplyForMessageId(options?.autoOpenReplyForMessageId || null);
       setAutoOpenReplyAll(options?.replyAll ? true : null);
       if (options?.autoOpenReplyForMessageId) {
         setComposeRequest((current) => (current ?? 0) + 1);
@@ -37,7 +37,7 @@ export const useDisplayedEmail = () => {
         setComposeRequest(null);
       }
       setAutoOpenForwardForMessageId(
-        options?.autoOpenForwardForMessageId || "",
+        options?.autoOpenForwardForMessageId || null,
       );
       setThreadId(options?.threadId ?? null);
       setMessageId(options?.messageId ?? null);
@@ -64,3 +64,12 @@ export const useDisplayedEmail = () => {
     composeRequest,
   };
 };
+
+// An empty query value is not a message id. A cleared forward must not hide
+// the reply that should open.
+export function autoOpenMessageId(
+  forwardId?: string | null,
+  replyId?: string | null,
+) {
+  return forwardId || replyId || null;
+}
