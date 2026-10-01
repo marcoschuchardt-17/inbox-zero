@@ -211,13 +211,32 @@ function resolveTarget(
   }
   if (
     target?.type === "entry" &&
-    ["backToList", "open", "nextSplit", "search"].includes(target.entry.id) &&
-    event.target instanceof Element &&
-    event.target.closest('[role="dialog"]')
+    shortcutYieldsToDialog(target.entry.id, event.target)
   ) {
     return;
   }
   return target;
+}
+
+// Escape, Enter, and Tab stay with whatever dialog has focus. Slash does too,
+// except on the open message: that sheet is the message, and slash has to
+// reach the mailbox search behind it.
+export function shortcutYieldsToDialog(
+  shortcutId: string,
+  target: EventTarget | null,
+) {
+  if (!(target instanceof Element)) return false;
+  const dialog = target.closest('[role="dialog"]');
+  if (!dialog) return false;
+  if (
+    shortcutId === "backToList" ||
+    shortcutId === "open" ||
+    shortcutId === "nextSplit"
+  ) {
+    return true;
+  }
+  if (shortcutId === "search") return !dialog.hasAttribute("data-mail-reader");
+  return false;
 }
 
 function isSequence(hotkeysEvent: HotkeysEvent): boolean {

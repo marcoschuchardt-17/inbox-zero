@@ -41,6 +41,7 @@ export function EmailViewer() {
   return (
     <Sheet open={!!threadId} onOpenChange={hideEmail}>
       <SheetContent
+        data-mail-reader=""
         side="right"
         size="5xl"
         className="overflow-y-auto bg-background p-6"

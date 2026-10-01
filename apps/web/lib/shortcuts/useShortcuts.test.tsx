@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Suspense, startTransition } from "react";
 import type { ShortcutHandlers, ShortcutScope } from "./registry";
 import { ShortcutsProvider } from "./ShortcutsProvider";
-import { useShortcuts } from "./useShortcuts";
+import { shortcutYieldsToDialog, useShortcuts } from "./useShortcuts";
 
 const MAIL_SCOPES: ShortcutScope[] = ["global", "mail"];
 const GLOBAL_SCOPES: ShortcutScope[] = ["global"];
@@ -339,6 +339,33 @@ describe("useShortcuts", () => {
     const event = press({ key: "z", code: "KeyZ" });
 
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("shortcutYieldsToDialog", () => {
+  it("keeps slash inside a dialog that is not the open message", () => {
+    document.body.innerHTML = '<div role="dialog"><button>Go</button></div>';
+    const button = document.querySelector("button");
+
+    expect(shortcutYieldsToDialog("search", button)).toBe(true);
+  });
+
+  it("lets slash leave the open message for the mailbox search", () => {
+    document.body.innerHTML =
+      '<div role="dialog" data-mail-reader=""><button>Go</button></div>';
+    const button = document.querySelector("button");
+
+    expect(shortcutYieldsToDialog("search", button)).toBe(false);
+    expect(shortcutYieldsToDialog("backToList", button)).toBe(true);
+    expect(shortcutYieldsToDialog("open", button)).toBe(true);
+    expect(shortcutYieldsToDialog("nextSplit", button)).toBe(true);
+  });
+
+  it("does not treat slash outside a dialog as a dialog key", () => {
+    document.body.innerHTML = "<div><button>Go</button></div>";
+    const button = document.querySelector("button");
+
+    expect(shortcutYieldsToDialog("search", button)).toBe(false);
   });
 });
 
