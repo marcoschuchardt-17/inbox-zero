@@ -3,6 +3,7 @@ import {
   imapListCursor,
   imapMailboxQuery,
   imapMailboxViewFromQuery,
+  imapCloseMessageOnViewChange,
   imapSearchInputValue,
   imapSearchStateAfterQueryChange,
 } from "./imap-folder-query";
@@ -55,6 +56,41 @@ describe("imapMailboxQuery", () => {
       type: null,
       folderId: "Junk",
     });
+  });
+});
+
+describe("imapCloseMessageOnViewChange", () => {
+  it("keeps a deep-linked message on the first view", () => {
+    expect(
+      imapCloseMessageOnViewChange(null, { folder: "archive", search: "" }),
+    ).toBe(false);
+    expect(
+      imapCloseMessageOnViewChange(
+        { folder: "inbox", search: "" },
+        { folder: "inbox", search: "" },
+      ),
+    ).toBe(false);
+  });
+
+  it("closes the message when the folder or the search changes", () => {
+    expect(
+      imapCloseMessageOnViewChange(
+        { folder: "archive", search: "" },
+        { folder: "inbox", search: "" },
+      ),
+    ).toBe(true);
+    expect(
+      imapCloseMessageOnViewChange(
+        { folder: "inbox", search: "" },
+        { folder: "inbox", search: "billing" },
+      ),
+    ).toBe(true);
+    expect(
+      imapCloseMessageOnViewChange(
+        { folder: "archive", search: "billing" },
+        { folder: "archive", search: "" },
+      ),
+    ).toBe(true);
   });
 });
 

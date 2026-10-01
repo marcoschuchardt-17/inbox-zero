@@ -42,6 +42,16 @@ export function imapSearchStateAfterQueryChange<T>(
   return { committedQuery, draft: null };
 }
 
+// The open message belongs to the list on screen. Another folder or search
+// has to show that list, so a deep link stays and a view change closes it.
+export function imapCloseMessageOnViewChange(
+  previous: { folder: string; search: string } | null,
+  next: { folder: string; search: string },
+) {
+  if (!previous) return false;
+  return previous.folder !== next.folder || previous.search !== next.search;
+}
+
 export function imapMailboxQuery(folder: string) {
   if (folder.startsWith("mailbox:")) {
     return { type: null, folderId: folder.slice("mailbox:".length) };

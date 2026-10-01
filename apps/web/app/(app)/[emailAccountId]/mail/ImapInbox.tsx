@@ -51,6 +51,7 @@ import {
   imapListCursor,
   imapMailboxQuery,
   imapMailboxViewFromQuery,
+  imapCloseMessageOnViewChange,
   imapSearchInputValue,
   imapSearchStateAfterQueryChange,
 } from "@/app/(app)/[emailAccountId]/mail/imap-folder-query";
@@ -152,6 +153,16 @@ export function ImapInbox() {
     ...olderThreads,
   ]);
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
+  const mailboxViewRef = useRef<{ folder: string; search: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    const next = { folder, search: submittedSearch };
+    const previous = mailboxViewRef.current;
+    mailboxViewRef.current = next;
+    if (!openThreadId || !imapCloseMessageOnViewChange(previous, next)) return;
+    showEmail(null);
+  }, [folder, submittedSearch, openThreadId, showEmail]);
   const syncedAccountId = useRef("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pendingSearchFocus = useRef(false);
