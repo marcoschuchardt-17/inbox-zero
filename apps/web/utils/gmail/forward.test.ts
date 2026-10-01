@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
-import { forwardEmailHtml } from "./forward";
+import { forwardEmailHtml, forwardEmailSubject } from "./forward";
 import type { ParsedMessage } from "@/utils/types";
 
 describe("email forwarding", () => {
@@ -268,5 +268,26 @@ ${message.textHtml}
     // Basic case should work
     expect(html).toContain("From: attacker@example.com");
     expect(html).toContain("To: victim@example.com");
+  });
+});
+
+describe("forwardEmailSubject", () => {
+  it("adds one Fwd prefix", () => {
+    expect(forwardEmailSubject("Please reply")).toBe("Fwd: Please reply");
+  });
+
+  it("does not stack a prefix the message already has", () => {
+    expect(forwardEmailSubject("Fwd: Please reply")).toBe("Fwd: Please reply");
+    expect(forwardEmailSubject("fwd: Please reply")).toBe("fwd: Please reply");
+    expect(forwardEmailSubject("FW: Please reply")).toBe("FW: Please reply");
+    expect(forwardEmailSubject("  Fwd: Please reply  ")).toBe(
+      "Fwd: Please reply",
+    );
+  });
+
+  it("still marks a reply as forwarded", () => {
+    expect(forwardEmailSubject("Re: Please reply")).toBe(
+      "Fwd: Re: Please reply",
+    );
   });
 });

@@ -3,7 +3,13 @@ import { splitRecipientList } from "@/utils/email";
 import type { ParsedMessage } from "@/utils/types";
 import { escapeHtml, textToHtmlParagraphs } from "@/utils/string";
 
-export const forwardEmailSubject = (subject: string) => `Fwd: ${subject}`;
+// A forward already marked Fwd/Fw keeps that one prefix, the same way a reply
+// keeps a single Re:.
+export const forwardEmailSubject = (subject: string) => {
+  const trimmed = (subject ?? "").trim();
+  if (/^fw(?:d)?:/i.test(trimmed)) return trimmed;
+  return `Fwd: ${trimmed}`;
+};
 
 export const forwardEmailHtml = ({
   content,
