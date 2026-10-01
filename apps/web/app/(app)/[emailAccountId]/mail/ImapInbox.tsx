@@ -34,6 +34,7 @@ import {
   imapThreadIsStarred,
   imapThreadIsUnread,
   imapSearchRestoreAction,
+  imapSenderMark,
   imapVisibleThreadLabelIds,
 } from "@/utils/email/imap-flags";
 import { prefixPath } from "@/utils/path";
@@ -551,17 +552,17 @@ export function ImapInbox() {
                         {sender}
                         {submittedSearch && location !== "inbox" && mailbox ? (
                           <span className="ml-2 font-normal text-xs text-muted-foreground">
-                            {mailbox}
+                            {imapSenderMark(mailbox)}
                           </span>
                         ) : null}
                         {unread ? (
                           <span className="ml-2 font-normal text-xs text-muted-foreground">
-                            Unread
+                            {imapSenderMark("Unread")}
                           </span>
                         ) : null}
                         {starred ? (
                           <span className="ml-2 font-normal text-xs text-muted-foreground">
-                            Starred
+                            {imapSenderMark("Starred")}
                           </span>
                         ) : null}
                       </div>

@@ -102,6 +102,11 @@ export function imapListLocation(mailbox: string) {
   return (flag && LIST_LOCATION_BY_FLAG[flag]) || "folder";
 }
 
+// The sender and these marks share one line. Without the space it reads SamSent.
+export function imapSenderMark(label: string) {
+  return ` ${label}`;
+}
+
 export function imapListMessage<T extends { id: string }>(
   messages: readonly T[],
 ) {

@@ -10,6 +10,7 @@ import {
   imapMessageMailbox,
   imapRowLabelIds,
   imapSearchRestoreAction,
+  imapSenderMark,
   imapThreadLabelIds,
   imapThreadNeedsMove,
   imapVisibleThreadLabelIds,
@@ -126,6 +127,14 @@ describe("imap message mailbox", () => {
     expect(imapMessageMailbox("")).toBe("");
     expect(imapMessageMailbox("not-an-id")).toBe("");
     expect(imapSearchRestoreAction(undefined)).toBeNull();
+  });
+});
+
+describe("imapSenderMark", () => {
+  it("keeps a space before the folder and the read state", () => {
+    expect(`Sam${imapSenderMark("Sent")}`).toBe("Sam Sent");
+    expect(`Ads${imapSenderMark("Unread")}`).toBe("Ads Unread");
+    expect(`Sam${imapSenderMark("Starred")}`).toBe("Sam Starred");
   });
 });
 
