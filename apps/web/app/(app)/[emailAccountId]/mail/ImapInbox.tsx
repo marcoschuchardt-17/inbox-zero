@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { useQueryState } from "nuqs";
+import { parseAsString, useQueryStates } from "nuqs";
 import Link from "next/link";
 import useSWR from "swr";
 import { LoadingContent } from "@/components/LoadingContent";
@@ -45,6 +45,10 @@ import {
 } from "@/utils/actions/mail";
 import { imapConnectionErrorMessage } from "@/utils/email/imap-connection-error";
 import { getActionErrorMessage } from "@/utils/error";
+import {
+  imapMailboxQuery,
+  imapMailboxViewFromQuery,
+} from "@/app/(app)/[emailAccountId]/mail/imap-folder-query";
 
 const folders = [
   { id: "inbox", label: "Inbox", query: "/api/threads?limit=30&view=list" },
@@ -73,8 +77,16 @@ const folders = [
 export function ImapInbox() {
   const { emailAccountId, userEmail } = useAccount();
   const { onOpen: openCompose } = useComposeModal();
-  const [folder, setFolder] = useState("inbox");
-  const [queryParam, setQueryParam] = useQueryState("q");
+  const [mailboxQuery, setMailboxQuery] = useQueryStates({
+    q: parseAsString,
+    type: parseAsString,
+    folderId: parseAsString,
+  });
+  const queryParam = mailboxQuery.q;
+  const folder = imapMailboxViewFromQuery(
+    mailboxQuery.type,
+    mailboxQuery.folderId,
+  );
   const [search, setSearch] = useState(queryParam ?? "");
   const submittedSearch = queryParam?.trim() ?? "";
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
@@ -123,6 +135,17 @@ export function ImapInbox() {
   ]);
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
   const syncedAccountId = useRef("");
+
+  function openFolder(next: string) {
+    setArchiveError("");
+    setSearch("");
+    const nextQuery = imapMailboxQuery(next);
+    setMailboxQuery({
+      q: null,
+      type: nextQuery.type,
+      folderId: nextQuery.folderId,
+    }).catch(() => undefined);
+  }
 
   useEffect(() => {
     if (!emailAccountId || syncedAccountId.current === emailAccountId) return;
@@ -321,7 +344,7 @@ export function ImapInbox() {
             setArchiveError("");
             const next = search.trim();
             setSearch(next);
-            setQueryParam(next || null).catch(() => undefined);
+            setMailboxQuery({ q: next || null }).catch(() => undefined);
           }}
         >
           <input
@@ -342,7 +365,7 @@ export function ImapInbox() {
               onClick={() => {
                 setSearch("");
                 setArchiveError("");
-                setQueryParam(null).catch(() => undefined);
+                setMailboxQuery({ q: null }).catch(() => undefined);
               }}
             >
               Clear
@@ -358,12 +381,7 @@ export function ImapInbox() {
                 !submittedSearch && item.id === folder ? "default" : "outline"
               }
               size="sm"
-              onClick={() => {
-                setArchiveError("");
-                setSearch("");
-                setQueryParam(null).catch(() => undefined);
-                setFolder(item.id);
-              }}
+              onClick={() => openFolder(item.id)}
             >
               {item.label}
             </Button>
@@ -378,12 +396,7 @@ export function ImapInbox() {
                   : "outline"
               }
               size="sm"
-              onClick={() => {
-                setArchiveError("");
-                setSearch("");
-                setQueryParam(null).catch(() => undefined);
-                setFolder(mailboxFolderId(item.id));
-              }}
+              onClick={() => openFolder(mailboxFolderId(item.id))}
             >
               {item.displayName}
             </Button>
