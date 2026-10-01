@@ -148,6 +148,27 @@ describe("email utils", () => {
         ),
       ).toBe("ada-stats@example.com");
     });
+
+    it("counts the other person when sent mail also addresses this account", () => {
+      expect(
+        storedRecipientAddresses(
+          {
+            to: "Owner <owner@example.com>, Ada Statsboth <ada-statsboth@example.com>",
+            cc: "Pat <pat@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toBe("ada-statsboth@example.com");
+    });
+
+    it("keeps this account when the sent mail names nobody else", () => {
+      expect(
+        storedRecipientAddresses(
+          { to: "Owner <owner@example.com>" },
+          "owner@example.com",
+        ),
+      ).toBe("owner@example.com");
+    });
   });
 
   describe("sentReplyRecipients", () => {

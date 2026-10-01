@@ -67,7 +67,11 @@ export function storedRecipientAddresses(
   const headersInOrder = [headers.to, headers.cc, headers.bcc];
   for (const header of headersInOrder) {
     if (replyHeaderReachesSomeoneElse(header, accountEmail)) {
-      return storedAnalyticsAddresses(header || "");
+      // The account is already in the conversation, so the count skips it.
+      return addressesOtherThanAccount(
+        extractEmailAddresses(header || ""),
+        accountEmail,
+      ).join(", ");
     }
   }
   // A note sent only to this account still has that address.
