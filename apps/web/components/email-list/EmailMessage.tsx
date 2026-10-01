@@ -14,6 +14,7 @@ import {
   extractEmailAddress,
   extractEmailAddresses,
   extractNameFromEmail,
+  incomingReplyRecipients,
   isSameEmailAddress,
   messageWasSentByAccount,
   sentReplyRecipients,
@@ -814,6 +815,10 @@ const prepareReplyingToEmail = (
     message.headers,
     options?.userEmail,
   );
+  const incomingRecipients = incomingReplyRecipients(
+    message.headers,
+    options?.userEmail,
+  );
 
   const { html } = createReplyContent({ message });
   const everyone =
@@ -845,7 +850,7 @@ const prepareReplyingToEmail = (
       ? everyone.to
       : sentFromUser
         ? sentRecipients.to
-        : message.headers["reply-to"] || message.headers.from,
+        : incomingRecipients.to,
     // If following an email from yourself, don't add "Re:" prefix
     subject: sentFromUser
       ? message.headers.subject
@@ -853,12 +858,12 @@ const prepareReplyingToEmail = (
     headerMessageId: message.headers["message-id"] || undefined,
     messageId: message.id || undefined,
     threadId: message.threadId || undefined,
-    // Keep original CC. Reply all also adds the other To addresses.
+    // Keep the other people on Cc. Reply all also adds the other To addresses.
     cc: replyAllCc
       ? formatCcList(replyAllCc)
       : sentFromUser
         ? (sentRecipients.cc ?? undefined)
-        : message.headers.cc,
+        : incomingRecipients.cc,
     // Keep original BCC if available
     bcc: sentFromUser ? (sentRecipients.bcc ?? undefined) : "",
     references: message.headers.references,

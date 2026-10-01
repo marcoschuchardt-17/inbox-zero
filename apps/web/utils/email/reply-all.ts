@@ -56,7 +56,11 @@ export function buildReplyAllRecipients(
   });
 
   return {
-    to: replyToRaw, // Keep the original format for the TO field
+    // A reply the user already addressed keeps that To line. Otherwise the
+    // account is already reading the message, so reply-to skips it.
+    to: overrideTo
+      ? replyToRaw
+      : replyTargetWithoutAccount(replyToRaw, currentUserEmailSet),
     cc: Array.from(ccSet),
   };
 }
@@ -98,6 +102,20 @@ export function mergeAndDedupeRecipients(
   }
 
   return result;
+}
+
+function replyTargetWithoutAccount(
+  replyToRaw: string,
+  currentUserEmailSet: Set<string>,
+) {
+  const people = splitRecipientList(replyToRaw);
+  const others = people.filter((person) => {
+    const email = extractEmailAddress(person).toLowerCase();
+    return Boolean(email) && !currentUserEmailSet.has(email);
+  });
+  // A reply-to that only names this account still has somewhere to go.
+  if (!others.length || others.length === people.length) return replyToRaw;
+  return others.join(", ");
 }
 
 function addHeaderRecipientsToCcSet({

@@ -579,6 +579,72 @@ describe("EmailMessage reply address", () => {
     expect(screen.getByText("SP", { exact: true, hidden: true })).toBeTruthy();
   });
 
+  it("replies to the other person when reply-to also names this account", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>",
+            subject: "Reply to listed",
+            to: "user@example.com",
+            cc: "Me <user@example.com>, Pat Replycc <pat-replycc@example.com>",
+            "reply-to":
+              "Me <user@example.com>, Ada Replyto <ada-replyto@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Replyto <ada-replyto@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Pat Replycc <pat-replycc@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.subject).toBe(
+      "Re: Reply to listed",
+    );
+  });
+
+  it("leaves this account off reply-all when reply-to also names it", () => {
+    render(
+      <EmailMessage
+        defaultComposeMode="reply"
+        expanded
+        message={{
+          ...createMessage("message-1"),
+          headers: {
+            date: "2026-01-01T00:00:00.000Z",
+            from: "Sam <sam@example.com>",
+            subject: "Reply to listed",
+            to: "user@example.com",
+            cc: "Me <user@example.com>, Pat Replycc <pat-replycc@example.com>",
+            "reply-to":
+              "Me <user@example.com>, Ada Replyto <ada-replyto@example.com>",
+          },
+        }}
+        onSendSuccess={vi.fn()}
+        refetch={vi.fn()}
+        replyAll
+        showReplyButton
+      />,
+    );
+
+    expect(screen.getByTestId("composer").dataset.to).toBe(
+      "Ada Replyto <ada-replyto@example.com>",
+    );
+    expect(screen.getByTestId("composer").dataset.cc).toBe(
+      "Pat Replycc <pat-replycc@example.com>",
+    );
+  });
+
   it("includes the other recipients when replying to everyone", () => {
     render(
       <EmailMessage

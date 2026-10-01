@@ -18,6 +18,7 @@ import {
   messageRepliesToSourceSender,
   isSameOrganization,
   messageIsFromAccountOnly,
+  incomingReplyRecipients,
   messageWasSentByAccount,
   sentReplyRecipients,
 } from "./email";
@@ -229,6 +230,55 @@ describe("email utils", () => {
         to: "Ada Replylist <ada-replylist@example.com>",
         cc: "Pat <pat@example.com>",
         bcc: undefined,
+      });
+    });
+  });
+
+  describe("incomingReplyRecipients", () => {
+    it("keeps reply-to when the account email is omitted", () => {
+      expect(
+        incomingReplyRecipients({
+          from: "Sam <sam@example.com>",
+          "reply-to":
+            "Owner <owner@example.com>, Ada Replyto <ada-replyto@example.com>",
+          cc: "Owner <owner@example.com>, Pat Replycc <pat-replycc@example.com>",
+        }),
+      ).toEqual({
+        to: "Owner <owner@example.com>, Ada Replyto <ada-replyto@example.com>",
+        cc: "Owner <owner@example.com>, Pat Replycc <pat-replycc@example.com>",
+      });
+    });
+
+    it("replies to the other person when reply-to also names this account", () => {
+      expect(
+        incomingReplyRecipients(
+          {
+            from: "Sam <sam@example.com>",
+            "reply-to":
+              "Owner <owner@example.com>, Ada Replyto <ada-replyto@example.com>",
+            cc: "Owner <owner@example.com>, Pat Replycc <pat-replycc@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Ada Replyto <ada-replyto@example.com>",
+        cc: "Pat Replycc <pat-replycc@example.com>",
+      });
+    });
+
+    it("keeps reply-to when it only names this account", () => {
+      expect(
+        incomingReplyRecipients(
+          {
+            from: "Sam <sam@example.com>",
+            "reply-to": "Owner <owner@example.com>",
+            cc: "Owner <owner@example.com>",
+          },
+          "owner@example.com",
+        ),
+      ).toEqual({
+        to: "Owner <owner@example.com>",
+        cc: undefined,
       });
     });
   });

@@ -482,6 +482,44 @@ describe("buildReplyAllRecipients", () => {
     expect(result.cc).toEqual(["Pat <pat@example.com>"]);
   });
 
+  it("leaves this account off reply-to when someone else is listed", () => {
+    const headers: ParsedMessageHeaders = {
+      from: "Sam <sam@example.com>",
+      "reply-to": "Me <me@example.com>, Ada Replyto <ada-replyto@example.com>",
+      to: "me@example.com",
+      cc: "Me <me@example.com>, Pat Replycc <pat-replycc@example.com>",
+      subject: "Reply to listed",
+      date: "2024-01-01",
+    };
+
+    const result = buildReplyAllRecipients(
+      headers,
+      undefined,
+      "me@example.com",
+    );
+
+    expect(result.to).toBe("Ada Replyto <ada-replyto@example.com>");
+    expect(result.cc).toEqual(["Pat Replycc <pat-replycc@example.com>"]);
+  });
+
+  it("keeps reply-to when it only names this account", () => {
+    const headers: ParsedMessageHeaders = {
+      from: "Sam <sam@example.com>",
+      "reply-to": "Me <me@example.com>",
+      to: "me@example.com",
+      subject: "Reply to listed",
+      date: "2024-01-01",
+    };
+
+    const result = buildReplyAllRecipients(
+      headers,
+      undefined,
+      "me@example.com",
+    );
+
+    expect(result.to).toBe("Me <me@example.com>");
+  });
+
   it("does not copy the first of two senders onto Cc", () => {
     const headers: ParsedMessageHeaders = {
       from: "Sam <sam@example.com>, Ada <ada@example.com>",

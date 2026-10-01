@@ -82,6 +82,24 @@ export function storedRecipientAddresses(
   return "Missing";
 }
 
+export function incomingReplyRecipients(
+  headers: {
+    from: string;
+    "reply-to"?: string | null;
+    cc?: string | null;
+  },
+  accountEmail?: string | null,
+) {
+  const target = headers["reply-to"] || headers.from;
+  if (!accountEmail) return { to: target, cc: headers.cc || undefined };
+  // The account is already reading the message, so the reply skips it.
+  const to = headerWithoutAccount(target, accountEmail);
+  return {
+    to: to || target,
+    cc: headerWithoutAccount(headers.cc, accountEmail),
+  };
+}
+
 export function sentReplyRecipients(
   headers: {
     to?: string | null;
