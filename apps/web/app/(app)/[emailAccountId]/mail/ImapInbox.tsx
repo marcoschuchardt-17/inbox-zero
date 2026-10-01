@@ -52,6 +52,7 @@ import {
   imapMailboxQuery,
   imapMailboxViewFromQuery,
   imapSearchInputValue,
+  imapSearchStateAfterQueryChange,
 } from "@/app/(app)/[emailAccountId]/mail/imap-folder-query";
 
 const folders = [
@@ -92,11 +93,19 @@ export function ImapInbox() {
     mailboxQuery.folderId,
   );
   const committedSearch = queryParam ?? "";
-  const [searchDraft, setSearchDraft] = useState<{
+  const [searchState, setSearchState] = useState<{
     committedQuery: string;
-    text: string;
-  } | null>(null);
-  const search = imapSearchInputValue(committedSearch, searchDraft);
+    draft: { committedQuery: string; text: string } | null;
+  }>({ committedQuery: committedSearch, draft: null });
+  if (searchState.committedQuery !== committedSearch) {
+    setSearchState(
+      imapSearchStateAfterQueryChange(searchState, committedSearch),
+    );
+  }
+  const search = imapSearchInputValue(
+    committedSearch,
+    searchState.committedQuery === committedSearch ? searchState.draft : null,
+  );
   const submittedSearch = committedSearch.trim();
   const { data: mailboxList } = useSWR<GetFoldersResponse>("/api/user/folders");
   const { data: labelList, mutate: mutateLabels } =
@@ -155,7 +164,10 @@ export function ImapInbox() {
 
   function openFolder(next: string) {
     setArchiveError("");
-    setSearchDraft({ committedQuery: committedSearch, text: "" });
+    setSearchState((current) => ({
+      committedQuery: current.committedQuery,
+      draft: { committedQuery: committedSearch, text: "" },
+    }));
     const nextQuery = imapMailboxQuery(next);
     setMailboxQuery({
       q: null,
@@ -428,7 +440,10 @@ export function ImapInbox() {
             event.preventDefault();
             setArchiveError("");
             const next = search.trim();
-            setSearchDraft({ committedQuery: committedSearch, text: next });
+            setSearchState((current) => ({
+              committedQuery: current.committedQuery,
+              draft: { committedQuery: committedSearch, text: next },
+            }));
             setMailboxQuery({ q: next || null }).catch(() => undefined);
           }}
         >
@@ -437,10 +452,13 @@ export function ImapInbox() {
             aria-label="Search mail"
             value={search}
             onChange={(event) =>
-              setSearchDraft({
-                committedQuery: committedSearch,
-                text: event.target.value,
-              })
+              setSearchState((current) => ({
+                committedQuery: current.committedQuery,
+                draft: {
+                  committedQuery: committedSearch,
+                  text: event.target.value,
+                },
+              }))
             }
             placeholder="Search mail"
             className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
@@ -454,7 +472,10 @@ export function ImapInbox() {
               variant="outline"
               size="sm"
               onClick={() => {
-                setSearchDraft({ committedQuery: committedSearch, text: "" });
+                setSearchState((current) => ({
+                  committedQuery: current.committedQuery,
+                  draft: { committedQuery: committedSearch, text: "" },
+                }));
                 setArchiveError("");
                 setMailboxQuery({ q: null }).catch(() => undefined);
               }}

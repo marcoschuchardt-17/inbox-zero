@@ -32,6 +32,16 @@ export function imapSearchInputValue(
   return committedQuery;
 }
 
+// Once the address changes, the typed draft belongs to the previous query.
+// Keeping it would put the old search back when that query returns.
+export function imapSearchStateAfterQueryChange<T>(
+  state: { committedQuery: string; draft: T },
+  committedQuery: string,
+) {
+  if (state.committedQuery === committedQuery) return state;
+  return { committedQuery, draft: null };
+}
+
 export function imapMailboxQuery(folder: string) {
   if (folder.startsWith("mailbox:")) {
     return { type: null, folderId: folder.slice("mailbox:".length) };

@@ -4,6 +4,7 @@ import {
   imapMailboxQuery,
   imapMailboxViewFromQuery,
   imapSearchInputValue,
+  imapSearchStateAfterQueryChange,
 } from "./imap-folder-query";
 
 describe("imapMailboxViewFromQuery", () => {
@@ -73,5 +74,19 @@ describe("imapSearchInputValue", () => {
         text: "please keep",
       }),
     ).toBe("");
+  });
+
+  it("drops the draft once the address leaves the search", () => {
+    const typed = {
+      committedQuery: "",
+      draft: { committedQuery: "", text: "please keep" },
+    };
+    const searching = imapSearchStateAfterQueryChange(typed, "please keep");
+    expect(searching.draft).toBeNull();
+    expect(imapSearchInputValue("please keep", searching.draft)).toBe(
+      "please keep",
+    );
+    const inbox = imapSearchStateAfterQueryChange(searching, "");
+    expect(imapSearchInputValue("", inbox.draft)).toBe("");
   });
 });
