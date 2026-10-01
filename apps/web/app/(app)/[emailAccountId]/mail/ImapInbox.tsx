@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/empty";
 import { AlertCircle } from "lucide-react";
 import { useDisplayedEmail } from "@/hooks/useDisplayedEmail";
+import { useShortcuts } from "@/lib/shortcuts/useShortcuts";
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useComposeModal } from "@/providers/ComposeModalProvider";
 import type { ThreadsListResponse } from "@/app/api/threads/route";
@@ -46,6 +47,7 @@ import {
 import { imapConnectionErrorMessage } from "@/utils/email/imap-connection-error";
 import { getActionErrorMessage } from "@/utils/error";
 import {
+  imapListCursor,
   imapMailboxQuery,
   imapMailboxViewFromQuery,
 } from "@/app/(app)/[emailAccountId]/mail/imap-folder-query";
@@ -135,6 +137,14 @@ export function ImapInbox() {
   ]);
   const { showEmail, threadId: openThreadId } = useDisplayedEmail();
   const syncedAccountId = useRef("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const pendingSearchFocus = useRef(false);
+  const [cursorState, setCursorState] = useState({ key: "", index: 0 });
+  const focusedIndex = imapListCursor(
+    cursorState.key === listQuery ? cursorState.index : 0,
+    visibleThreads.length,
+    0,
+  );
 
   function openFolder(next: string) {
     setArchiveError("");
@@ -196,6 +206,74 @@ export function ImapInbox() {
     });
     if (response.ok) await mutate();
   }
+
+  function openListedThread(thread: (typeof visibleThreads)[number]) {
+    const message = imapListMessage(thread.messages);
+    showEmail({
+      threadId: thread.id,
+      messageId: message?.id,
+    });
+    if (!imapThreadIsUnread(thread.messages)) return;
+    const location = imapListLocation(imapMessageMailbox(message?.id));
+    const messageInInbox = submittedSearch
+      ? location === "inbox"
+      : folder === "inbox";
+    const unreadIds = messageInInbox
+      ? [undefined]
+      : thread.messages
+          .filter((item) => imapMessageIsUnread(item.labelIds))
+          .map((item) => item.id);
+    Promise.all(
+      unreadIds.map((id) => markOpenedThreadRead(thread.id, id)),
+    ).catch(() => undefined);
+  }
+
+  function moveCursor(delta: number) {
+    const next = imapListCursor(focusedIndex, visibleThreads.length, delta);
+    if (next === focusedIndex) return;
+    setCursorState({ key: listQuery, index: next });
+    const thread = visibleThreads[next];
+    if (openThreadId && thread) openListedThread(thread);
+    document
+      .querySelector(`[data-imap-row="${next}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }
+
+  function focusSearch() {
+    if (openThreadId) {
+      pendingSearchFocus.current = true;
+      showEmail(null);
+      return;
+    }
+    pendingSearchFocus.current = false;
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  }
+
+  useEffect(() => {
+    if (openThreadId || !pendingSearchFocus.current) return;
+    pendingSearchFocus.current = false;
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  }, [openThreadId]);
+
+  useShortcuts({
+    next: (event) => {
+      if (openThreadId && event?.key === "ArrowDown") return;
+      moveCursor(1);
+    },
+    previous: (event) => {
+      if (openThreadId && event?.key === "ArrowUp") return;
+      moveCursor(-1);
+    },
+    open: openThreadId
+      ? undefined
+      : () => {
+          const thread = visibleThreads[focusedIndex];
+          if (thread) openListedThread(thread);
+        },
+    search: focusSearch,
+  });
 
   async function loadOlderMail() {
     if (!nextPageToken) return;
@@ -348,6 +426,7 @@ export function ImapInbox() {
           }}
         >
           <input
+            ref={searchInputRef}
             aria-label="Search mail"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -412,7 +491,7 @@ export function ImapInbox() {
         ) : null}
         {visibleThreads.length ? (
           <ul className="mt-4 divide-y">
-            {visibleThreads.map((thread) => {
+            {visibleThreads.map((thread, index) => {
               const message = imapListMessage(thread.messages);
               const sender =
                 getThreadParticipantNames(thread.messages, userEmail).join(
@@ -449,26 +528,16 @@ export function ImapInbox() {
                 >
                   <button
                     type="button"
-                    className="w-full min-w-0 px-2 py-3 text-left hover:bg-muted"
+                    data-imap-row={index}
+                    data-imap-cursor={
+                      index === focusedIndex ? "true" : undefined
+                    }
+                    className={`w-full min-w-0 px-2 py-3 text-left hover:bg-muted${
+                      index === focusedIndex ? " bg-accent" : ""
+                    }`}
                     onClick={() => {
-                      showEmail({
-                        threadId: thread.id,
-                        messageId: message?.id,
-                      });
-                      if (unread) {
-                        const unreadIds = messageInInbox
-                          ? [undefined]
-                          : thread.messages
-                              .filter((item) =>
-                                imapMessageIsUnread(item.labelIds),
-                              )
-                              .map((item) => item.id);
-                        Promise.all(
-                          unreadIds.map((id) =>
-                            markOpenedThreadRead(thread.id, id),
-                          ),
-                        ).catch(() => undefined);
-                      }
+                      setCursorState({ key: listQuery, index });
+                      openListedThread(thread);
                     }}
                   >
                     <div className="flex items-baseline justify-between gap-3">

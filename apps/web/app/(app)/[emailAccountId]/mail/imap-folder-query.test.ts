@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  imapListCursor,
   imapMailboxQuery,
   imapMailboxViewFromQuery,
 } from "./imap-folder-query";
@@ -20,6 +21,24 @@ describe("imapMailboxViewFromQuery", () => {
 
   it("opens an extra folder from its id", () => {
     expect(imapMailboxViewFromQuery("sent", "Junk")).toBe("mailbox:Junk");
+  });
+});
+
+describe("imapListCursor", () => {
+  it("moves through the list and stops at the ends", () => {
+    expect(imapListCursor(0, 6, 1)).toBe(1);
+    expect(imapListCursor(2, 6, -1)).toBe(1);
+    expect(imapListCursor(5, 6, 1)).toBe(5);
+    expect(imapListCursor(0, 6, -1)).toBe(0);
+  });
+
+  it("stays put when the folder is empty", () => {
+    expect(imapListCursor(0, 0, 1)).toBe(0);
+    expect(imapListCursor(3, 0, -1)).toBe(0);
+  });
+
+  it("clamps a stale index after the list shrinks", () => {
+    expect(imapListCursor(8, 3, 0)).toBe(2);
   });
 });
 

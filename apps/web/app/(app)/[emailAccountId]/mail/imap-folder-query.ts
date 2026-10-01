@@ -12,6 +12,16 @@ export function imapMailboxViewFromQuery(
   return "inbox";
 }
 
+// j and k stay inside this folder. The cursor does not wrap.
+export function imapListCursor(index: number, count: number, delta: number) {
+  if (count <= 0) return 0;
+  const current = Number.isInteger(index) ? index : 0;
+  const next = current + delta;
+  if (next < 0) return 0;
+  if (next > count - 1) return count - 1;
+  return next;
+}
+
 export function imapMailboxQuery(folder: string) {
   if (folder.startsWith("mailbox:")) {
     return { type: null, folderId: folder.slice("mailbox:".length) };
