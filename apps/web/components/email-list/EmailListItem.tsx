@@ -18,7 +18,7 @@ import { useIsInAiQueue } from "@/store/ai-queue";
 import { Button } from "@/components/ui/button";
 import { findCtaLink } from "@/utils/parse/parseHtml.client";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { internalDateToDate } from "@/utils/date";
+import { emailListItemDate } from "@/components/email-list/email-list-item-date";
 import { useEmail } from "@/providers/EmailProvider";
 import { getEmailMessageCellLabels } from "@/components/EmailMessageCellLabels";
 import { LabelBadges } from "@/components/LabelBadges";
@@ -183,9 +183,7 @@ export const EmailListItem = forwardRef(
                       refetch={props.refetch}
                     />
                   </div>
-                  <EmailDate
-                    date={internalDateToDate(lastMessage?.internalDate)}
-                  />
+                  <EmailDate date={emailListItemDate(lastMessage, provider)} />
                 </div>
 
                 {!!thread.plan && (
